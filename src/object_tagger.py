@@ -227,34 +227,31 @@ class FileHandler:
         image_filename = os.path.basename(image_path)
         folder_name = os.path.basename(os.path.dirname(image_path))
 
-        xml_str = "<annotation>\\n"
-        xml_str += f"\\t<folder>{folder_name}</folder>\\n"
-        xml_str += f"\\t<filename>{image_filename}</filename>\\n"
-        xml_str += f"\\t<path>{image_path}</path>\\n"
-        xml_str += "\\t<source>\\n\\t\\t<database>Unknown</database>\\n\\t</source>\\n"
+        xml_str = "<annotation>\n"
+        xml_str += f"    <folder>{folder_name}</folder>\n"
+        xml_str += f"    <filename>{image_filename}</filename>\n"
+        # xml_str += f"    <path>{image_path}</path>\n"
+        # xml_str += "    <source>\n        <database>Unknown</database>\n    </source>\n"
 
         # 讀取圖片大小
         img = cv2.imread(image_path)
         height, width, depth = img.shape
 
-        xml_str += f"\\t<size>\\n\\t\\t<width>{width}</width>\\n\\t\\t<height>{height}</height>\\n\\t\\t<depth>{depth}</depth>\\n\\t</size>\\n"
-        xml_str += "\\t<segmented>0</segmented>\\n"
+        xml_str += f"    <size>\n        <width>{width}</width>\n        <height>{height}</height>\n    </size>\n"
 
         for bbox in bboxes:
-            xml_str += "\\t<object>\\n"
-            xml_str += f"\\t\\t<name>{bbox.label}</name>\\n"
-            xml_str += "\\t\\t<pose>Unspecified</pose>\\n"
-            xml_str += "\\t\\t<truncated>0</truncated>\\n"
-            xml_str += "\\t\\t<difficult>0</difficult>\\n"
-            xml_str += "\\t\\t<bndbox>\\n"
-            xml_str += f"\\t\\t\\t<xmin>{bbox.x}</xmin>\\n"
-            xml_str += f"\\t\\t\\t<ymin>{bbox.y}</ymin>\\n"
-            xml_str += f"\\t\\t\\t<xmax>{bbox.x + bbox.width}</xmax>\\n"
-            xml_str += f"\\t\\t\\t<ymax>{bbox.y + bbox.height}</ymax>\\n"
-            xml_str += "\\t\\t</bndbox>\\n"
-            xml_str += "\\t</object>\\n"
+            xml_str += "    <object>\n"
+            xml_str += f"        <name>{bbox.label}</name>\n"
+            xml_str += "        <bndbox>\n"
+            xml_str += f"            <xmin>{bbox.x}</xmin>\n"
+            xml_str += f"            <ymin>{bbox.y}</ymin>\n"
+            xml_str += f"            <xmax>{bbox.x + bbox.width}</xmax>\n"
+            xml_str += f"            <ymax>{bbox.y + bbox.height}</ymax>\n"
+            xml_str += f"            <confidence>-1</confidence>\n"
+            xml_str += "        </bndbox>\n"
+            xml_str += "    </object>\n"
 
-        xml_str += "</annotation>\\n"
+        xml_str += "</annotation>\n"
         return xml_str
 
 if __name__ == '__main__':

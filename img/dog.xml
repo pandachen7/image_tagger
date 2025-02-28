@@ -1,0 +1,22 @@
+<annotation>
+    <folder>img</folder>
+    <filename>dog.jpg</filename>
+    <path>D:/ws/image_tagger/img\dog.jpg</path>
+    <source>
+        <database>Unknown</database>
+    </source>
+    <size>
+        <width>768</width>
+        <height>576</height>
+    </size>
+    <object>
+        <name>object</name>
+        <bndbox>
+            <xmin>134</xmin>
+            <ymin>198</ymin>
+            <xmax>330</xmax>
+            <ymax>512</ymax>
+            <confidence>-1</confidence>
+        </bndbox>
+    </object>
+</annotation>
