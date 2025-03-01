@@ -65,8 +65,8 @@ class MainWindow(QMainWindow):
         self.file_handler = FileHandler()
 
     def select_model(self):
-        model_path, ok = QInputDialog.getText(self, 'Input', 'Enter model path:', text="yolov8n.pt")
-        if ok:
+        model_path, _ = QFileDialog.getOpenFileName(self, 'Open Model File', '', "Model Files (*.pt)")
+        if model_path:
             self.load_model(model_path)
 
     def load_model(self, model_path):
@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
     def open_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, "Open Folder")
+        folder_path = QFileDialog.getExistingDirectory(self, "Open Folder") #PyQt6
         if folder_path:
             self.file_handler.load_folder(folder_path)
             if self.file_handler.image_files:
