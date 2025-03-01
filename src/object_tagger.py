@@ -7,18 +7,20 @@ from PyQt6.QtCore import Qt, QAbstractListModel, QTimer, QRect
 import cv2
 import os
 
+from src.model import Bbox
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Object Tagger (PyQt)")
+        self.setWindowTitle("Object Tagger")
 
         # 選單
-        self.menu = self.menuBar()
-        self.file_menu = self.menu.addMenu("&File")
-        self.edit_menu = self.menu.addMenu("&Edit")
-        self.view_menu = self.menu.addMenu("&View")
-        self.help_menu = self.menu.addMenu("&Help")
+        # self.menu = self.menuBar()
+        # self.file_menu = self.menu.addMenu("&File")
+        # self.edit_menu = self.menu.addMenu("&Edit")
+        # self.view_menu = self.menu.addMenu("&View")
+        # self.help_menu = self.menu.addMenu("&Help")
 
         # 工具列
         self.toolbar = QToolBar()
@@ -46,12 +48,12 @@ class MainWindow(QMainWindow):
         # 檔案相關動作
         self.open_folder_action = QAction("&Open Folder", self)
         self.open_folder_action.triggered.connect(self.open_folder)
-        self.file_menu.addAction(self.open_folder_action)
+        # self.file_menu.addAction(self.open_folder_action)
         self.toolbar.addAction(self.open_folder_action)
 
         self.save_action = QAction("&Save", self)
         self.save_action.triggered.connect(self.save_annotations)
-        self.file_menu.addAction(self.save_action)
+        # self.file_menu.addAction(self.save_action)
         self.toolbar.addAction(self.save_action)
 
         # 檔案處理器
@@ -85,9 +87,9 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage(f"Annotations saved to {file_path}")
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Right:
+        if event.key() == Qt.Key.Key_Right:
             self.next_image()
-        elif event.key() == Qt.Key_Left:
+        elif event.key() == Qt.Key.Key_Left:
             self.prev_image()
 
 class ImageWidget(QWidget):
@@ -95,7 +97,7 @@ class ImageWidget(QWidget):
         super().__init__()
         self.image_label = QLabel()
         self.pixmap = None
-        self.bboxes = []
+        self.bboxes: list[Bbox] = []
         self.start_pos = None
         self.end_pos = None
         self.drawing = False
@@ -169,13 +171,7 @@ class ImageWidget(QWidget):
                     self.bboxes.append(Bbox(min(x1,x2), min(y1,y2), width, height, label))
                     self.update()
 
-class Bbox:
-    def __init__(self, x, y, width, height, label):
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
-        self.label = label
+
 
 class BboxListModel(QAbstractListModel):
     def __init__(self, bboxes, parent=None):
@@ -254,8 +250,11 @@ class FileHandler:
         xml_str += "</annotation>\n"
         return xml_str
 
-if __name__ == '__main__':
+def main():
     app = QApplication(sys.argv)
     main_window = MainWindow()
     main_window.show()
     sys.exit(app.exec())
+
+if __name__ == '__main__':
+    main()
