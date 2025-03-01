@@ -1,11 +1,13 @@
+import cv2
+import os
 import sys
+
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QFileDialog,
                              QMenuBar, QToolBar, QStatusBar, QVBoxLayout,
                              QListView, QMessageBox, QInputDialog)
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QAction, QEnterEvent
 from PyQt6.QtCore import Qt, QAbstractListModel, QTimer, QRect
-import cv2
-import os
+from ultralytics import YOLO
 
 from src.model import Bbox
 
@@ -21,7 +23,7 @@ class MainWindow(QMainWindow):
         # self.edit_menu = self.menu.addMenu("&Edit")
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
-
+        
         # 工具列
         self.toolbar = QToolBar()
         self.addToolBar(self.toolbar)
@@ -45,6 +47,9 @@ class MainWindow(QMainWindow):
         self.bbox_list_view.setModel(self.bbox_list_model)
         self.main_layout.addWidget(self.bbox_list_view)
 
+        self.model_select_action = QAction("&Select Model", self)
+        self.model_select_action.triggered.connect(self.select_model)
+        self.toolbar.addAction(self.model_select_action)
         # 檔案相關動作
         self.open_folder_action = QAction("&Open Folder", self)
         self.open_folder_action.triggered.connect(self.open_folder)
@@ -58,6 +63,20 @@ class MainWindow(QMainWindow):
 
         # 檔案處理器
         self.file_handler = FileHandler()
+
+    def select_model(self):
+        model_path, ok = QInputDialog.getText(self, 'Input', 'Enter model path:', text="yolov8n.pt")
+        if ok:
+            self.load_model(model_path)
+
+    def load_model(self, model_path):
+        try:
+            if self.image_widget.model:
+                del self.image_widget.model
+            self.image_widget.model = YOLO(model_path)
+            self.statusbar.showMessage(f"Model loaded: {model_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
     def open_folder(self):
         folder_path = QFileDialog.getExistingDirectory(self, "Open Folder")
@@ -102,6 +121,8 @@ class ImageWidget(QWidget):
         self.end_pos = None
         self.drawing = False
 
+        self.model: None|YOLO = None
+
     def load_image(self, image_path):
         self.image = cv2.imread(image_path)
         height, width, channel = self.image.shape
@@ -109,8 +130,20 @@ class ImageWidget(QWidget):
         qImg = QImage(self.image.data, width, height, bytesPerLine, QImage.Format.Format_RGB888).rgbSwapped()
         self.pixmap = QPixmap.fromImage(qImg)
         self.setMinimumSize(width, height)  # 設定最小大小
+        self.bboxes = []  # 清空 Bounding Box
+
+        # 執行物件偵測
+        if hasattr(self, 'model') and self.model:
+            results = self.model.predict(self.image)
+            for result in results:
+                if result.boxes is not None:
+                    for box in result.boxes:
+                        b = box.xyxy[0]  # get box coordinates in (top, left, bottom, right) format
+                        c = box.cls
+                        conf = box.conf
+                        label = self.model.names[int(c)]
+                        self.bboxes.append(Bbox(int(b[0]), int(b[1]), int(b[2] - b[0]), int(b[3] - b[1]), label, float(conf)))
         self.update() # 觸發 paintEvent
-        self.bboxes = [] # 清空 Bounding Box
 
     def paintEvent(self, event):
         if self.pixmap:
@@ -123,7 +156,7 @@ class ImageWidget(QWidget):
             for bbox in self.bboxes:
                 rect = QRect(bbox.x, bbox.y, bbox.width, bbox.height)
                 painter.drawRect(rect)
-                painter.drawText(bbox.x, bbox.y - 5, bbox.label)
+                painter.drawText(bbox.x, bbox.y - 5, f"{bbox.label} ({bbox.confidence:.2f})")
 
             if self.drawing:
                 pen = QPen(QColor(255, 0, 0), 2) # 繪製中的 Bounding Box 用紅色
@@ -168,7 +201,7 @@ class ImageWidget(QWidget):
                 label, ok = QInputDialog.getText(self, 'Input', 'Enter label name:', text="object")
                 if ok:
                     # 建立 Bbox 物件 (這裡先用左上角座標和寬高)
-                    self.bboxes.append(Bbox(min(x1,x2), min(y1,y2), width, height, label))
+                    self.bboxes.append(Bbox(min(x1,x2), min(y1,y2), width, height, label, -1.0))
                     self.update()
 
 
@@ -243,7 +276,7 @@ class FileHandler:
             xml_str += f"            <ymin>{bbox.y}</ymin>\n"
             xml_str += f"            <xmax>{bbox.x + bbox.width}</xmax>\n"
             xml_str += f"            <ymax>{bbox.y + bbox.height}</ymax>\n"
-            xml_str += f"            <confidence>-1</confidence>\n"
+            xml_str += f"            <confidence>{bbox.confidence}</confidence>\n"
             xml_str += "        </bndbox>\n"
             xml_str += "    </object>\n"
 
