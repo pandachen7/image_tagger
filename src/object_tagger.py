@@ -42,10 +42,10 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.image_widget)
 
         # 建立 Bounding Box 列表
-        self.bbox_list_view = QListView()
-        self.bbox_list_model = BboxListModel([])
-        self.bbox_list_view.setModel(self.bbox_list_model)
-        self.main_layout.addWidget(self.bbox_list_view)
+        # self.bbox_list_view = QListView()
+        # self.bbox_list_model = BboxListModel([])
+        # self.bbox_list_view.setModel(self.bbox_list_model)
+        # self.main_layout.addWidget(self.bbox_list_view)
 
         self.model_select_action = QAction("&Select Model", self)
         self.model_select_action.triggered.connect(self.select_model)
@@ -148,7 +148,12 @@ class ImageWidget(QWidget):
     def paintEvent(self, event):
         if self.pixmap:
             painter = QPainter(self)
-            painter.drawPixmap(self.rect(), self.pixmap)
+            # 計算繪製區域，將縮放後的影像置中
+            scaled_pixmap = self.pixmap.scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio)
+            # x = (self.width() - scaled_pixmap.width()) / 2
+            # y = (self.height() - scaled_pixmap.height()) / 2
+            # painter.drawPixmap(int(x), int(y), scaled_pixmap)
+            painter.drawPixmap(0, 0, scaled_pixmap)
 
             # 繪製 Bounding Box
             pen = QPen(QColor(0, 255, 0), 2)  # 綠色，寬度 2
