@@ -156,10 +156,22 @@ class ImageWidget(QWidget):
             for bbox in self.bboxes:
                 rect = QRect(bbox.x, bbox.y, bbox.width, bbox.height)
                 painter.drawRect(rect)
-                painter.drawText(bbox.x, bbox.y - 5, f"{bbox.label} ({bbox.confidence:.2f})")
+
+                # 計算文字大小
+                text = f"{bbox.label} ({bbox.confidence:.2f})"
+                font_metrics = painter.fontMetrics()
+                text_width = font_metrics.horizontalAdvance(text)
+                text_height = font_metrics.height()
+
+                # 繪製文字底色
+                bg_rect = QRect(bbox.x, bbox.y - text_height - 5, text_width, text_height)
+                painter.fillRect(bg_rect, QColor(0, 0, 0, 127))  # 黑色半透明底色
+
+                # 繪製文字
+                painter.drawText(bbox.x, bbox.y - 5, text)
 
             if self.drawing:
-                pen = QPen(QColor(255, 0, 0), 2) # 繪製中的 Bounding Box 用紅色
+                pen = QPen(QColor(255, 0, 0), 2)  # 繪製中的 Bounding Box 用紅色
                 painter.setPen(pen)
                 rect = QRect(self.start_pos, self.end_pos)
                 painter.drawRect(rect)
