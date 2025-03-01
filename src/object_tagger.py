@@ -213,7 +213,7 @@ class ImageWidget(QWidget):
                 label, ok = QInputDialog.getText(self, 'Input', 'Enter label name:', text="object")
                 if ok:
                     # 建立 Bbox 物件 (這裡先用左上角座標和寬高)
-                    self.bboxes.append(Bbox(min(x1,x2), min(y1,y2), width, height, label, -1.0))
+                    self.bboxes.append(Bbox(min(x1,x2), min(y1,y2), width, height, label, 1.0))
                     self.update()
 
 
