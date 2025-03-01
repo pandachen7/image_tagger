@@ -18,9 +18,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Object Tagger")
 
         # 選單
-        # self.menu = self.menuBar()
-        # self.file_menu = self.menu.addMenu("&File")
-        # self.edit_menu = self.menu.addMenu("&Edit")
+        self.menu = self.menuBar()
+        self.file_menu = self.menu.addMenu("&File")
+        self.edit_menu = self.menu.addMenu("&Edit")
+        self.ai_menu = self.menu.addMenu("&Ai")
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
         
