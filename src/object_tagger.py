@@ -17,6 +17,9 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Object Tagger")
 
+        # 自動儲存
+        self.auto_save = False
+
         # 選單
         self.menu = self.menuBar()
         self.file_menu = self.menu.addMenu("&File")
@@ -24,6 +27,17 @@ class MainWindow(QMainWindow):
         self.ai_menu = self.menu.addMenu("&Ai")
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
+
+        # 退出
+        self.quit_action = QAction("&Quit", self)
+        self.quit_action.triggered.connect(self.close)
+        self.file_menu.addAction(self.quit_action)
+
+        # 自動儲存
+        self.auto_save_action = QAction("&Auto Save", self)
+        self.auto_save_action.setCheckable(True)
+        self.auto_save_action.triggered.connect(self.toggle_auto_save)
+        self.edit_menu.addAction(self.auto_save_action)
         
         # 工具列
         self.toolbar = QToolBar()
@@ -96,21 +110,36 @@ class MainWindow(QMainWindow):
         if self.file_handler.prev_image():
             self.image_widget.load_image(self.file_handler.current_image_path())
             self.statusbar.showMessage(f"Image: {self.file_handler.current_image_path()}")
+    
+    def toggle_auto_save(self):
+        self.auto_save = not self.auto_save
+        self.auto_save_action.setChecked(self.auto_save)
+        self.statusbar.showMessage(f"Auto save: {'on' if self.auto_save else 'off'}")
 
-    def save_annotations(self):
+    def is_auto_save(self):
+        return self.auto_save
+
+    def save_annotations(self, auto_save=False):
         if self.file_handler.current_image_path():
             file_path = self.file_handler.current_image_path().replace(".jpg", ".xml") # 假設都是 .jpg
             bboxes = self.image_widget.bboxes
             xml_content = self.file_handler.generate_voc_xml(bboxes, self.file_handler.current_image_path())
             with open(file_path, "w") as f:
                 f.write(xml_content)
-            self.statusbar.showMessage(f"Annotations saved to {file_path}")
+            if auto_save:
+                self.statusbar.showMessage(f"Annotations auto saved to {file_path}")
+            else:
+                self.statusbar.showMessage(f"Annotations saved to {file_path}")
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Right:
+        if event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_PageDown:
             self.next_image()
-        elif event.key() == Qt.Key.Key_Left:
+        elif event.key() == Qt.Key.Key_Left or event.key() == Qt.Key.Key_PageUp:
             self.prev_image()
+        elif event.key() == Qt.Key.Key_Q:
+            self.close()
+        elif event.key() == Qt.Key.Key_A:
+            self.toggle_auto_save()
 
 class ImageWidget(QWidget):
     def __init__(self):
