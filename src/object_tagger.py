@@ -227,7 +227,7 @@ class BboxListModel(QAbstractListModel):
         return len(self.bboxes)
 
     def data(self, index, role):
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             bbox = self.bboxes[index.row()]
             return f"{bbox.label} ({bbox.x}, {bbox.y}, {bbox.width}, {bbox.height})"
         return None
