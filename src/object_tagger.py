@@ -225,7 +225,7 @@ class ImageWidget(QWidget):
                 painter.fillRect(bg_rect, QColor(0, 0, 0, 127))  # 黑色半透明底色
 
                 # 繪製文字 (調整位置)
-                painter.drawText(self._scale_to_widget(QPoint(bbox.x, bbox.y)), text)
+                painter.drawText(self._scale_to_widget(QPoint(bbox.x, bbox.y - text_height)), text)
 
             if self.drawing:
                 pen = QPen(QColor(255, 0, 0), 2)  # 繪製中的 Bounding Box 用紅色
