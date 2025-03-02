@@ -180,11 +180,8 @@ class ImageWidget(QWidget):
     def paintEvent(self, event):
         if self.pixmap:
             painter = QPainter(self)
-            # 計算繪製區域，將縮放後的影像置中
+            # 計算繪製區域，將縮放後的影像置於左上
             scaled_pixmap = self.pixmap.scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio)
-            # x = (self.width() - scaled_pixmap.width()) / 2
-            # y = (self.height() - scaled_pixmap.height()) / 2
-            # painter.drawPixmap(int(x), int(y), scaled_pixmap)
             painter.drawPixmap(0, 0, scaled_pixmap)
 
             # 繪製 Bounding Box
