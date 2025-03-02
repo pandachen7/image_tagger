@@ -158,6 +158,7 @@ class ImageWidget(QWidget):
         self.start_pos = None
         self.end_pos = None
         self.drawing = False
+        self.resizing = False
         self.resizing_bbox = None
         self.resizing_corner = None
         self.original_bbox = None  # 儲存原始 bbox 資訊
@@ -307,7 +308,8 @@ class ImageWidget(QWidget):
                     self.resizing_corner = corner
                     self.original_bbox = (bbox.x, bbox.y, bbox.width, bbox.height)  # 儲存原始大小
                     self.start_pos = self._scale_to_original(event.pos()) # 紀錄原始座標
-                    bbox.label_color = "red" # 改變顏色
+                    self.resizing_bbox.label_color = "red" # 改變顏色
+                    self.resizing = True
                     break
             else:
                 self.start_pos = event.pos()
@@ -340,7 +342,7 @@ class ImageWidget(QWidget):
         if self.drawing:
             self.end_pos = event.pos()
             self.update()
-        elif self.resizing_bbox:
+        elif self.resizing:
             pos = self._scale_to_original(event.pos())
             dx = pos.x() - self.start_pos.x()
             dy = pos.y() - self.start_pos.y()
@@ -366,41 +368,49 @@ class ImageWidget(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and self.drawing:
-            self.drawing = False
-            # 取得座標 (視窗座標)
-            x1, y1 = self.start_pos.x(), self.start_pos.y()
-            x2, y2 = self.end_pos.x(), self.end_pos.y()
-
-            # x1與y1永遠都是最小
-            if x2 < x1:
-                x1, x2 = x2, x1
-            if y2 < y1:
-                y1, y2 = y2, y1
-
-            if self.resizing_bbox:
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self.resizing:
+                # x1, y1, width, height = self.resizing_bbox.x, self.resizing_bbox.y, self.resizing_bbox.width, self.resizing_bbox.height
+                # x2, y2 = x1 + width, y1 + height
+                self.resizing = False
+                self.resizing_bbox.label_color = "green"
+                
                 self.resizing_bbox = None
                 self.resizing_corner = None
                 self.original_bbox = None
-                self.start_pos = None
 
-            # 取得寬高 (視窗座標)
-            width = abs(x2 - x1)
-            height = abs(y2 - y1)
-
-            # 檢查寬高是否大於最小限制
-            if width < 5 or height < 5:
-                return
-            
-            # 取得標籤
-            label, ok = QInputDialog.getText(self, 'Input', 'Enter label name:', text="object")
-            if ok:
-                # 將視窗座標轉換為原始影像座標
-                x1_original, y1_original = self._scale_to_original(QPoint(x1, y1)).x(), self._scale_to_original(QPoint(x1, y1)).y()
-                width_original, height_original = int(width * self.pixmap.width() / self.scaled_width), int(height * self.pixmap.height() / self.scaled_height)
-                # 建立 Bbox 物件 (使用原始影像座標)
-                self.bboxes.append(Bbox(min(x1_original, x1_original + width_original), min(y1_original, y1_original+height_original), width_original, height_original, label, 1.0))
                 self.update()
+        
+            elif self.drawing:
+                self.drawing = False
+                # 取得座標 (視窗座標)
+                
+                x1, y1 = self.start_pos.x(), self.start_pos.y()
+                x2, y2 = self.end_pos.x(), self.end_pos.y()
+
+                # x1與y1永遠都是最小
+                if x2 < x1:
+                    x1, x2 = x2, x1
+                if y2 < y1:
+                    y1, y2 = y2, y1
+
+                # 取得寬高 (視窗座標)
+                width = abs(x2 - x1)
+                height = abs(y2 - y1)
+
+                # 檢查寬高是否大於最小限制
+                if width < 5 or height < 5:
+                    return
+                
+                # 取得標籤
+                label, ok = QInputDialog.getText(self, 'Input', 'Enter label name:', text="object")
+                if ok:
+                    # 將視窗座標轉換為原始影像座標
+                    x1_original, y1_original = self._scale_to_original(QPoint(x1, y1)).x(), self._scale_to_original(QPoint(x1, y1)).y()
+                    width_original, height_original = int(width * self.pixmap.width() / self.scaled_width), int(height * self.pixmap.height() / self.scaled_height)
+                    # 建立 Bbox 物件 (使用原始影像座標)
+                    self.bboxes.append(Bbox(min(x1_original, x1_original + width_original), min(y1_original, y1_original+height_original), width_original, height_original, label, 1.0))
+                    self.update()
 
 class BboxListModel(QAbstractListModel):
     def __init__(self, bboxes, parent=None):
