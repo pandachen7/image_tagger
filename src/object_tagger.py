@@ -119,22 +119,24 @@ class MainWindow(QMainWindow):
     def is_auto_save(self):
         return self.auto_save
 
-    def save_annotations(self, auto_save=False):
+    def save_annotations(self):
         if self.file_handler.current_image_path():
             file_path = self.file_handler.current_image_path().replace(".jpg", ".xml") # 假設都是 .jpg
             bboxes = self.image_widget.bboxes
             xml_content = self.file_handler.generate_voc_xml(bboxes, self.file_handler.current_image_path())
             with open(file_path, "w") as f:
                 f.write(xml_content)
-            if auto_save:
+            if self.is_auto_save():
                 self.statusbar.showMessage(f"Annotations auto saved to {file_path}")
             else:
                 self.statusbar.showMessage(f"Annotations saved to {file_path}")
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_PageDown:
+            self.save_annotations()
             self.next_image()
         elif event.key() == Qt.Key.Key_Left or event.key() == Qt.Key.Key_PageUp:
+            self.save_annotations()
             self.prev_image()
         elif event.key() == Qt.Key.Key_Q:
             self.close()
@@ -250,8 +252,6 @@ class ImageWidget(QWidget):
                     # 建立 Bbox 物件 (這裡先用左上角座標和寬高)
                     self.bboxes.append(Bbox(min(x1,x2), min(y1,y2), width, height, label, 1.0))
                     self.update()
-
-
 
 class BboxListModel(QAbstractListModel):
     def __init__(self, bboxes, parent=None):
