@@ -6,3 +6,4 @@ class Bbox:
         self.height = height
         self.label = label
         self.confidence = confidence
+        self.label_color = "green"

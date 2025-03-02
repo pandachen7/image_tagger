@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QFileDialog,
                              QMenuBar, QToolBar, QStatusBar, QVBoxLayout,
                              QListView, QMessageBox, QInputDialog, QSizePolicy)
-from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QAction, QEnterEvent
+from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QAction, QEnterEvent, QCursor
 from PyQt6.QtCore import Qt, QAbstractListModel, QTimer, QRect, QPoint
 from ultralytics import YOLO
 
@@ -158,8 +158,14 @@ class ImageWidget(QWidget):
         self.start_pos = None
         self.end_pos = None
         self.drawing = False
+        self.resizing_bbox = None
+        self.resizing_corner = None
+        self.original_bbox = None  # 儲存原始 bbox 資訊
 
         self.model: None|YOLO = None
+
+        # 角落大小
+        self.CORNER_SIZE = 10
 
         self.image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding) # 設定大小策略
 
@@ -182,6 +188,27 @@ class ImageWidget(QWidget):
             return QPoint(int(point.x() * scale_x), int(point.y() * scale_y))
         else:
             return point
+
+    def _is_in_corner(self, pos, bbox):
+        """檢查滑鼠是否在角落"""
+        # 將視窗座標轉換為原始影像座標
+        pos = self._scale_to_original(pos)
+
+        x1, y1 = bbox.x, bbox.y
+        x2, y2 = bbox.x + bbox.width, bbox.y + bbox.height
+
+        # 計算四個角落的範圍
+        corners = {
+            "top_left": QRect(x1 - self.CORNER_SIZE, y1 - self.CORNER_SIZE, self.CORNER_SIZE * 2, self.CORNER_SIZE * 2),
+            "top_right": QRect(x2 - self.CORNER_SIZE, y1 - self.CORNER_SIZE, self.CORNER_SIZE * 2, self.CORNER_SIZE * 2),
+            "bottom_left": QRect(x1 - self.CORNER_SIZE, y2 - self.CORNER_SIZE, self.CORNER_SIZE * 2, self.CORNER_SIZE * 2),
+            "bottom_right": QRect(x2 - self.CORNER_SIZE, y2 - self.CORNER_SIZE, self.CORNER_SIZE * 2, self.CORNER_SIZE * 2),
+        }
+
+        for corner, rect in corners.items():
+            if rect.contains(pos):
+                return corner
+        return None
 
     def load_image(self, image_path):
         self.image = cv2.imread(image_path)
@@ -237,9 +264,12 @@ class ImageWidget(QWidget):
             painter.drawPixmap(0, 0, scaled_pixmap)
 
             # 繪製 Bounding Box
-            pen = QPen(QColor(0, 255, 0), 2)  # 綠色，寬度 2
-            painter.setPen(pen)
             for bbox in self.bboxes:
+                if hasattr(bbox, 'label_color') and bbox.label_color == "red":
+                    pen = QPen(QColor(255, 0, 0), 2)  # 紅色
+                else:
+                    pen = QPen(QColor(0, 255, 0), 2)  # 綠色，寬度 2
+                painter.setPen(pen)
                 rect = QRect(self._scale_to_widget(QPoint(bbox.x, bbox.y)),
                              self._scale_to_widget(QPoint(bbox.x + bbox.width, bbox.y + bbox.height)))
                 painter.drawRect(rect)
@@ -270,9 +300,19 @@ class ImageWidget(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.start_pos = event.pos()
-            self.end_pos = event.pos()
-            self.drawing = True
+            for bbox in self.bboxes:
+                corner = self._is_in_corner(event.pos(), bbox)
+                if corner:
+                    self.resizing_bbox = bbox
+                    self.resizing_corner = corner
+                    self.original_bbox = (bbox.x, bbox.y, bbox.width, bbox.height)  # 儲存原始大小
+                    self.start_pos = self._scale_to_original(event.pos()) # 紀錄原始座標
+                    bbox.label_color = "red" # 改變顏色
+                    break
+            else:
+                self.start_pos = event.pos()
+                self.end_pos = event.pos()
+                self.drawing = True
 
         elif event.button() == Qt.MouseButton.RightButton: # 刪除
             pos = event.pos()
@@ -286,8 +326,43 @@ class ImageWidget(QWidget):
                     break
 
     def mouseMoveEvent(self, event):
+        # 檢查是否在角落
+        cursor_changed = False
+        for bbox in self.bboxes:
+            corner = self._is_in_corner(event.pos(), bbox)
+            if corner:
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+                cursor_changed = True
+                break
+        if not cursor_changed:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
         if self.drawing:
             self.end_pos = event.pos()
+            self.update()
+        elif self.resizing_bbox:
+            pos = self._scale_to_original(event.pos())
+            dx = pos.x() - self.start_pos.x()
+            dy = pos.y() - self.start_pos.y()
+
+            # 根據不同的角落調整大小
+            if self.resizing_corner == "top_left":
+                self.resizing_bbox.x = self.original_bbox[0] + dx
+                self.resizing_bbox.y = self.original_bbox[1] + dy
+                self.resizing_bbox.width = self.original_bbox[2] - dx
+                self.resizing_bbox.height = self.original_bbox[3] - dy
+            elif self.resizing_corner == "top_right":
+                self.resizing_bbox.y = self.original_bbox[1] + dy
+                self.resizing_bbox.width = self.original_bbox[2] + dx
+                self.resizing_bbox.height = self.original_bbox[3] - dy
+            elif self.resizing_corner == "bottom_left":
+                self.resizing_bbox.x = self.original_bbox[0] + dx
+                self.resizing_bbox.width = self.original_bbox[2] - dx
+                self.resizing_bbox.height = self.original_bbox[3] + dy
+            elif self.resizing_corner == "bottom_right":
+                self.resizing_bbox.width = self.original_bbox[2] + dx
+                self.resizing_bbox.height = self.original_bbox[3] + dy
+
             self.update()
 
     def mouseReleaseEvent(self, event):
@@ -302,6 +377,12 @@ class ImageWidget(QWidget):
                 x1, x2 = x2, x1
             if y2 < y1:
                 y1, y2 = y2, y1
+
+            if self.resizing_bbox:
+                self.resizing_bbox = None
+                self.resizing_corner = None
+                self.original_bbox = None
+                self.start_pos = None
 
             # 取得寬高 (視窗座標)
             width = abs(x2 - x1)
