@@ -160,18 +160,22 @@ class ImageWidget(QWidget):
 
         self.image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding) # 設定大小策略
 
+        # 縮放後的影像尺寸
+        self.scaled_width = None
+        self.scaled_height = None
+
     def _scale_to_original(self, point):
         if self.pixmap:
-            scale_x = self.pixmap.width() / self.width()
-            scale_y = self.pixmap.height() / self.height()
+            scale_x = self.pixmap.width() / self.scaled_width
+            scale_y = self.pixmap.height() / self.scaled_height
             return QPoint(int(point.x() * scale_x), int(point.y() * scale_y))
         else:
             return point
 
     def _scale_to_widget(self, point):
         if self.pixmap:
-            scale_x = self.width() / self.pixmap.width()
-            scale_y = self.height() / self.pixmap.height()
+            scale_x = self.scaled_width / self.pixmap.width()
+            scale_y = self.scaled_height / self.pixmap.height()
             return QPoint(int(point.x() * scale_x), int(point.y() * scale_y))
         else:
             return point
@@ -202,6 +206,8 @@ class ImageWidget(QWidget):
             painter = QPainter(self)
             # 計算繪製區域，將縮放後的影像置於左上
             scaled_pixmap = self.pixmap.scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio)
+            self.scaled_width = scaled_pixmap.width()
+            self.scaled_height = scaled_pixmap.height()
             painter.drawPixmap(0, 0, scaled_pixmap)
 
             # 繪製 Bounding Box
