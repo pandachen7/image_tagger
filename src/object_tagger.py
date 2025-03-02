@@ -17,6 +17,9 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Object Tagger")
 
+        # 設定最小尺寸
+        self.setMinimumSize(500, 500)
+
         # 自動儲存
         self.auto_save = False
 
