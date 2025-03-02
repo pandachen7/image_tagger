@@ -265,6 +265,12 @@ class ImageWidget(QWidget):
             x1, y1 = self.start_pos.x(), self.start_pos.y()
             x2, y2 = self.end_pos.x(), self.end_pos.y()
 
+            # x1與y1永遠都是最小
+            if x2 < x1:
+                x1, x2 = x2, x1
+            if y2 < y1:
+                y1, y2 = y2, y1
+
             # 取得寬高 (視窗座標)
             width = abs(x2 - x1)
             height = abs(y2 - y1)
