@@ -1,6 +1,7 @@
 import cv2
 import os
 import sys
+import xml.etree.ElementTree as ET
 
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QFileDialog,
                              QMenuBar, QToolBar, QStatusBar, QVBoxLayout,
@@ -188,6 +189,26 @@ class ImageWidget(QWidget):
         self.pixmap = QPixmap.fromImage(qImg)
         self.bboxes = []  # 清空 Bounding Box
 
+        # 嘗試讀取 XML 檔案
+        xml_path = image_path.replace(".jpg", ".xml").replace(".png", ".xml")  # 假設圖片是 .jpg 或 .png
+        if os.path.exists(xml_path):
+            try:
+                tree = ET.parse(xml_path)
+                root = tree.getroot()
+                for obj in root.findall('object'):
+                    name = obj.find('name').text
+                    bndbox = obj.find('bndbox')
+                    xmin = int(bndbox.find('xmin').text)
+                    ymin = int(bndbox.find('ymin').text)
+                    xmax = int(bndbox.find('xmax').text)
+                    ymax = int(bndbox.find('ymax').text)
+                    confidence = float(bndbox.find('confidence').text)
+                    width = xmax - xmin
+                    height = ymax - ymin
+                    self.bboxes.append(Bbox(xmin, ymin, width, height, name, confidence))
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to parse XML: {e}")
+
         # 執行物件偵測
         if hasattr(self, 'model') and self.model:
             results = self.model.predict(self.image)
@@ -199,7 +220,7 @@ class ImageWidget(QWidget):
                         conf = box.conf
                         label = self.model.names[int(c)]
                         self.bboxes.append(Bbox(int(b[0]), int(b[1]), int(b[2] - b[0]), int(b[3] - b[1]), label, float(conf)))
-        self.update() # 觸發 paintEvent
+        self.update()  # 觸發 paintEvent
 
     def paintEvent(self, event):
         if self.pixmap:
