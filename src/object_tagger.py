@@ -4,9 +4,9 @@ import sys
 
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QFileDialog,
                              QMenuBar, QToolBar, QStatusBar, QVBoxLayout,
-                             QListView, QMessageBox, QInputDialog)
+                             QListView, QMessageBox, QInputDialog, QSizePolicy)
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QAction, QEnterEvent
-from PyQt6.QtCore import Qt, QAbstractListModel, QTimer, QRect
+from PyQt6.QtCore import Qt, QAbstractListModel, QTimer, QRect, QPoint
 from ultralytics import YOLO
 
 from src.model import Bbox
@@ -155,13 +155,30 @@ class ImageWidget(QWidget):
 
         self.model: None|YOLO = None
 
+        self.image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding) # 設定大小策略
+
+    def _scale_to_original(self, point):
+        if self.pixmap:
+            scale_x = self.pixmap.width() / self.width()
+            scale_y = self.pixmap.height() / self.height()
+            return QPoint(int(point.x() * scale_x), int(point.y() * scale_y))
+        else:
+            return point
+
+    def _scale_to_widget(self, point):
+        if self.pixmap:
+            scale_x = self.width() / self.pixmap.width()
+            scale_y = self.height() / self.pixmap.height()
+            return QPoint(int(point.x() * scale_x), int(point.y() * scale_y))
+        else:
+            return point
+
     def load_image(self, image_path):
         self.image = cv2.imread(image_path)
         height, width, channel = self.image.shape
         bytesPerLine = 3 * width
         qImg = QImage(self.image.data, width, height, bytesPerLine, QImage.Format.Format_RGB888).rgbSwapped()
         self.pixmap = QPixmap.fromImage(qImg)
-        self.setMinimumSize(width, height)  # 設定最小大小
         self.bboxes = []  # 清空 Bounding Box
 
         # 執行物件偵測
@@ -188,7 +205,8 @@ class ImageWidget(QWidget):
             pen = QPen(QColor(0, 255, 0), 2)  # 綠色，寬度 2
             painter.setPen(pen)
             for bbox in self.bboxes:
-                rect = QRect(bbox.x, bbox.y, bbox.width, bbox.height)
+                rect = QRect(self._scale_to_widget(QPoint(bbox.x, bbox.y)),
+                             self._scale_to_widget(QPoint(bbox.x + bbox.width, bbox.y + bbox.height)))
                 painter.drawRect(rect)
 
                 # 計算文字大小
@@ -197,12 +215,17 @@ class ImageWidget(QWidget):
                 text_width = font_metrics.horizontalAdvance(text)
                 text_height = font_metrics.height()
 
-                # 繪製文字底色
-                bg_rect = QRect(bbox.x, bbox.y - text_height - 5, text_width, text_height)
+                # 繪製文字底色 (調整位置和大小)
+                qpt_text = QPoint(bbox.x, bbox.y - text_height)
+                bg_rect = QRect(self._scale_to_widget(qpt_text),
+                                 QPoint(self._scale_to_widget(qpt_text).x()
+                                         + int(text_width * self.width() / self.pixmap.width()),
+                                        self._scale_to_widget(qpt_text).y()
+                                         + int(text_height * self.height() / self.pixmap.height())))
                 painter.fillRect(bg_rect, QColor(0, 0, 0, 127))  # 黑色半透明底色
 
-                # 繪製文字
-                painter.drawText(bbox.x, bbox.y - 5, text)
+                # 繪製文字 (調整位置)
+                painter.drawText(self._scale_to_widget(QPoint(bbox.x, bbox.y)), text)
 
             if self.drawing:
                 pen = QPen(QColor(255, 0, 0), 2)  # 繪製中的 Bounding Box 用紅色
@@ -219,7 +242,9 @@ class ImageWidget(QWidget):
         elif event.button() == Qt.MouseButton.RightButton: # 刪除
             pos = event.pos()
             for bbox in reversed(self.bboxes): # 從後面開始找，避免 index 錯誤
-                rect = QRect(bbox.x, bbox.y, bbox.width, bbox.height)
+                # 將原始影像座標轉換為視窗座標
+                rect = QRect(self._scale_to_widget(QPoint(bbox.x, bbox.y)),
+                             self._scale_to_widget(QPoint(bbox.x + bbox.width, bbox.y + bbox.height)))
                 if rect.contains(pos):
                     self.bboxes.remove(bbox)
                     self.update()
@@ -233,11 +258,11 @@ class ImageWidget(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.drawing:
             self.drawing = False
-            # 取得座標
+            # 取得座標 (視窗座標)
             x1, y1 = self.start_pos.x(), self.start_pos.y()
             x2, y2 = self.end_pos.x(), self.end_pos.y()
 
-            # 取得寬高
+            # 取得寬高 (視窗座標)
             width = abs(x2 - x1)
             height = abs(y2 - y1)
 
@@ -246,8 +271,11 @@ class ImageWidget(QWidget):
                 # 取得標籤
                 label, ok = QInputDialog.getText(self, 'Input', 'Enter label name:', text="object")
                 if ok:
-                    # 建立 Bbox 物件 (這裡先用左上角座標和寬高)
-                    self.bboxes.append(Bbox(min(x1,x2), min(y1,y2), width, height, label, 1.0))
+                    # 將視窗座標轉換為原始影像座標
+                    x1_original, y1_original = self._scale_to_original(QPoint(x1, y1)).x(), self._scale_to_original(QPoint(x1, y1)).y()
+                    width_original, height_original = int(width * self.pixmap.width() / self.width()), int(height * self.pixmap.height() / self.height())
+                    # 建立 Bbox 物件 (使用原始影像座標)
+                    self.bboxes.append(Bbox(min(x1_original, x1_original + width_original), min(y1_original, y1_original+height_original), width_original, height_original, label, 1.0))
                     self.update()
 
 class BboxListModel(QAbstractListModel):
