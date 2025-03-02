@@ -137,10 +137,12 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_PageDown:
-            self.save_annotations()
+            if self.is_auto_save():
+                self.save_annotations()
             self.next_image()
         elif event.key() == Qt.Key.Key_Left or event.key() == Qt.Key.Key_PageUp:
-            self.save_annotations()
+            if self.is_auto_save():
+                self.save_annotations()
             self.prev_image()
         elif event.key() == Qt.Key.Key_Q:
             self.close()
