@@ -206,8 +206,11 @@ class ImageWidget(QWidget):
             painter = QPainter(self)
             # 計算繪製區域，將縮放後的影像置於左上
             scaled_pixmap = self.pixmap.scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio)
+
+            # 計算縮放後的影像尺寸, 之後都幾乎以這兩個為參考
             self.scaled_width = scaled_pixmap.width()
             self.scaled_height = scaled_pixmap.height()
+
             painter.drawPixmap(0, 0, scaled_pixmap)
 
             # 繪製 Bounding Box
@@ -228,9 +231,9 @@ class ImageWidget(QWidget):
                 qpt_text = QPoint(bbox.x, bbox.y - text_height)
                 bg_rect = QRect(self._scale_to_widget(qpt_text),
                                  QPoint(self._scale_to_widget(qpt_text).x()
-                                         + int(text_width * self.width() / self.pixmap.width()),
+                                         + int(text_width * self.scaled_width / self.pixmap.width()),
                                         self._scale_to_widget(qpt_text).y()
-                                         + int(text_height * self.height() / self.pixmap.height())))
+                                         + int(text_height * self.scaled_height / self.pixmap.height())))
                 painter.fillRect(bg_rect, QColor(0, 0, 0, 127))  # 黑色半透明底色
 
                 # 繪製文字 (調整位置)
@@ -282,16 +285,18 @@ class ImageWidget(QWidget):
             height = abs(y2 - y1)
 
             # 檢查寬高是否大於最小限制
-            if width > 5 and height > 5:  # 最小 5x5
-                # 取得標籤
-                label, ok = QInputDialog.getText(self, 'Input', 'Enter label name:', text="object")
-                if ok:
-                    # 將視窗座標轉換為原始影像座標
-                    x1_original, y1_original = self._scale_to_original(QPoint(x1, y1)).x(), self._scale_to_original(QPoint(x1, y1)).y()
-                    width_original, height_original = int(width * self.pixmap.width() / self.width()), int(height * self.pixmap.height() / self.height())
-                    # 建立 Bbox 物件 (使用原始影像座標)
-                    self.bboxes.append(Bbox(min(x1_original, x1_original + width_original), min(y1_original, y1_original+height_original), width_original, height_original, label, 1.0))
-                    self.update()
+            if width < 5 or height < 5:
+                return
+            
+            # 取得標籤
+            label, ok = QInputDialog.getText(self, 'Input', 'Enter label name:', text="object")
+            if ok:
+                # 將視窗座標轉換為原始影像座標
+                x1_original, y1_original = self._scale_to_original(QPoint(x1, y1)).x(), self._scale_to_original(QPoint(x1, y1)).y()
+                width_original, height_original = int(width * self.pixmap.width() / self.scaled_width), int(height * self.pixmap.height() / self.scaled_height)
+                # 建立 Bbox 物件 (使用原始影像座標)
+                self.bboxes.append(Bbox(min(x1_original, x1_original + width_original), min(y1_original, y1_original+height_original), width_original, height_original, label, 1.0))
+                self.update()
 
 class BboxListModel(QAbstractListModel):
     def __init__(self, bboxes, parent=None):
