@@ -173,6 +173,11 @@ class ImageWidget(QWidget):
         # 縮放後的影像尺寸
         self.scaled_width = None
         self.scaled_height = None
+        # (x, y)--->┌－－－－－－－┐ ╮
+        #           │             │ │
+        #           │<---width--->│  height
+        #           │             │ │
+        #           └－－－－－－－┘ ╯
 
     def _scale_to_original(self, point):
         if self.pixmap:
