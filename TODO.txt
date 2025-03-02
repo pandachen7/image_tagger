@@ -1,0 +1,38 @@
+// TODO
+main functions:
+1. 讀取影片檔案, 並且labeling
+ - 有進度條
+ - 可調整速度
+ - 按下滑鼠鍵會停止撥放
+ - 如果自動儲存開啟, 則按下play後也會自動儲存, 儲存的檔名將會是"[原檔名]_frame[N], 並且圖片跟xml都會抽出
+2. 按下數字鍵, 可以跑到第N個多媒體
+3. 滾輪看檔案
+4. 預設tag種類名稱, 減少輸入次數
+
+status:
+1. 顯示有多少檔案, 目前在第N個檔案
+2. 明顯顯示目前處於auto save狀態
+
+view:
+font底色範圍
+// TODO
+
+// NOTE
+以下為參考副檔名
+    ACCEPT_FILE_EXTENSION = ["*.*", ".jpg", ".png", ".bmp", ".tif",
+                             ".avi",
+                             ".wmv", ".asf", ".mkv",
+                             ".mpeg", ".mpg",
+                             ".mov", ".qt",
+                             ".rm", ".rmvb",
+                             ".mp4",
+                             ".m4v"]
+    OPEN_FILE_EXTENSION = [".jpg", ".jpg", ".png", ".bmp", ".tif",
+                         ".avi",
+                         ".wmv", ".asf", ".mkv",
+                         ".mpeg", ".mpg",
+                         ".mov", ".qt",
+                         ".rm", ".rmvb",
+                         ".mp4",
+                         ".m4v"]
+// NOTE
