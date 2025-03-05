@@ -174,3 +174,5 @@ old
 old/
 img/*
 *.pt
+tmp*
+*.webm
