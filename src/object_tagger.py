@@ -10,12 +10,12 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QFileDi
                              QSlider, QComboBox, QStyle)
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QAction, QEnterEvent, QCursor
 from PyQt6.QtCore import Qt, QAbstractListModel, QTimer, QRect, QPoint, QUrl
+# from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+# from PyQt6.QtMultimediaWidgets import QVideoWidget
 from ultralytics import YOLO
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
-from PyQt6.QtMultimediaWidgets import QVideoWidget
+import cv2
 
-
-from src.model import Bbox
+from src.model import Bbox, FileType
 
 IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tif', '.tiff')
 VIDEO_EXTS = ('.mp4', '.avi', '.mov', '.wmv', '.mkv', '.webm')
@@ -75,7 +75,6 @@ class MainWindow(QMainWindow):
 
         self.image_widget = ImageWidget(self)
         self.main_layout.addWidget(self.image_widget)
-        self.main_layout.addWidget(self.image_widget.video_widget) # 將 video_widget 加入 layout
 
         # 建立 Bounding Box 列表
         # self.bbox_list_view = QListView()
@@ -104,6 +103,7 @@ class MainWindow(QMainWindow):
         self.play_pause_action.setIcon(icon)
         self.play_pause_action.triggered.connect(self.toggle_play_pause)
         self.toolbar.addAction(self.play_pause_action)
+        self.refresh_interval = 30
 
         self.progress_bar = QSlider(Qt.Orientation.Horizontal)
         self.progress_bar.setRange(0, 100)
@@ -118,7 +118,6 @@ class MainWindow(QMainWindow):
         self.speed_control.setCurrentIndex(1)  # 預設為 1.0x
         self.speed_control.currentIndexChanged.connect(self.set_playback_speed)
         self.toolbar.addWidget(self.speed_control)
-
 
         # 檔案處理器
         self.file_handler = FileHandler()
@@ -165,12 +164,13 @@ class MainWindow(QMainWindow):
 
     def save_annotations(self):
         if self.file_handler.current_image_path():
-            if self.image_widget.is_playing:
+            if self.image_widget.file_type == FileType.VIDEO:
                 # 儲存影片當前幀和對應的 XML
-                frame = self.image_widget.video_widget.grab()
+                # frame = self.image_widget.video_widget.grab()
+                frame = self.image_widget.pixmap.toImage() # 從 pixmap 取得
                 original_filename = os.path.basename(self.file_handler.current_image_path())
                 filename_no_ext = os.path.splitext(original_filename)[0]
-                frame_number = int(self.image_widget.media_player.position() / 1000 * 30)  # 假設 30 fps
+                frame_number = int(self.image_widget.cap.get(cv2.CAP_PROP_POS_FRAMES))
                 frame_filename = f"{filename_no_ext}_frame{frame_number}.jpg"
                 frame_path = os.path.join(self.file_handler.folder_path, frame_filename)
                 frame.save(frame_path)
@@ -197,33 +197,33 @@ class MainWindow(QMainWindow):
                     self.statusbar.showMessage(f"Annotations auto saved to {file_path}")
                 else:
                     self.statusbar.showMessage(f"Annotations saved to {file_path}")
-
+        
     def toggle_play_pause(self):
+        self.image_widget.is_playing = not self.image_widget.is_playing
         if self.image_widget.is_playing:
-            self.image_widget.pause_video()
-
             pix_icon = QStyle.StandardPixmap.SP_MediaPlay
             icon = self.style().standardIcon(pix_icon)
             self.play_pause_action.setIcon(icon)
+            self.image_widget.timer.start(self.refresh_interval)
         else:
-            self.image_widget.play_video()
-            # 自動儲存
-            # if self.is_auto_save():
-            #     self.save_annotations()
-            
             pix_icon = QStyle.StandardPixmap.SP_MediaPause
             icon = self.style().standardIcon(pix_icon)
             self.play_pause_action.setIcon(icon)
+            self.image_widget.detectImage()
 
     def set_media_position(self, position):
         # 設定影片播放位置 (以毫秒為單位)
-        duration = self.image_widget.media_player.duration()
-        self.image_widget.media_player.setPosition(int(position / 100 * duration))
+        if self.image_widget.cap:
+            duration = self.image_widget.media_player.duration()
+            self.image_widget.media_player.setPosition(int(position / 100 * duration))
 
     def set_playback_speed(self, index):
         # 設定播放速度
         speed = self.speed_control.itemData(index)
-        self.image_widget.media_player.setPlaybackRate(speed)
+        self.image_widget.timer.stop()
+        self.refresh_interval = int(30 / speed)  # TODO: 將30換成fps
+        if self.image_widget.is_playing:
+            self.image_widget.timer.start(self.refresh_interval)  # 重新啟動定時器
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_PageDown:
@@ -238,7 +238,7 @@ class MainWindow(QMainWindow):
             self.close()
         elif event.key() == Qt.Key.Key_A:
             self.toggle_auto_save()
-        elif event.key() == Qt.Key.Key_Space: # 空白鍵
+        elif event.key() == Qt.Key.Key_Space:
             self.toggle_play_pause()
 
 class ImageWidget(QWidget):
@@ -260,26 +260,29 @@ class ImageWidget(QWidget):
 
         # 角落大小
         self.CORNER_SIZE = 10
-
+        self.cv_img = None
         self.image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding) # 設定大小策略
 
-        # 影片播放相關
-        self.media_player = QMediaPlayer()
-        self.video_widget = QVideoWidget()
-        self.media_player.setVideoOutput(self.video_widget)
-        # self.audio_output = QAudioOutput()
-        # self.media_player.setAudioOutput(self.audio_output)
-        self.is_playing = False  # 追蹤是否在播放影片
-        self.timer = QTimer(self) # 使用 QTimer
+        # # 影片播放相關
+        self.timer = QTimer()
         self.timer.timeout.connect(self._update_frame)
+        
+        self.is_playing = False  # 追蹤是否在播放影片
 
-        self.update_timer = QTimer(self) # 更新進度條
-        self.update_timer.timeout.connect(self.update_progress)
+        # self.media_player = QMediaPlayer()
+        # self.video_widget = QVideoWidget()
+        # self.media_player.setVideoOutput(self.video_widget)
+        # # self.audio_output = QAudioOutput()
+        # # self.media_player.setAudioOutput(self.audio_output)
+
+        # self.update_timer = QTimer(self) # 更新進度條
+        # self.update_timer.timeout.connect(self.update_progress)
 
 
         # 縮放後的影像尺寸
         self.scaled_width = None
         self.scaled_height = None
+        self.cap = None
         # (x, y)--->┌－－－－－－－┐ ╮
         #           │             │ │
         #           │<---width--->│  height
@@ -287,8 +290,17 @@ class ImageWidget(QWidget):
         #           └－－－－－－－┘ ╯
 
     def _update_frame(self):
-        self.pixmap = self.video_widget.grab()
-        self.update()
+        if self.is_playing and self.cap:
+            ret, self.cv_img = self.cap.read()
+            if not ret:
+                self.timer.stop()
+                return
+            
+            height, width, channel = self.cv_img.shape
+            bytesPerLine = 3 * width
+            qImg = QImage(self.cv_img.data, width, height, bytesPerLine, QImage.Format.Format_RGB888).rgbSwapped()
+            self.pixmap = QPixmap.fromImage(qImg)
+            self.update()
 
     def _scale_to_original(self, point):
         if self.pixmap:
@@ -327,45 +339,32 @@ class ImageWidget(QWidget):
                 return corner
         return None
 
-    def load_image(self, image_path):
-        # 判斷檔案是否為影片
-        if image_path.lower().endswith(VIDEO_EXTS):
-            self.media_player.setSource(QUrl.fromLocalFile(image_path))
-            # self.pixmap = self.video_widget.grab()
-            # self.video_widget.show()
-            self.is_playing = False
-        else:
-            self.image = cv2.imread(image_path)
-            height, width, channel = self.image.shape
-            bytesPerLine = 3 * width
-            qImg = QImage(self.image.data, width, height, bytesPerLine, QImage.Format.Format_RGB888).rgbSwapped()
-            self.pixmap = QPixmap.fromImage(qImg)
-            self.bboxes = []  # 清空 Bounding Box
-            # self.video_widget.hide()
+    def loadBboxFromXml(self, xml_path):
+        """
+        讀取xml的bbox資訊
+        """
+        if os.path.exists(xml_path):
+            try:
+                tree = ET.parse(xml_path)
+                root = tree.getroot()
+                for obj in root.findall('object'):
+                    name = obj.find('name').text
+                    bndbox = obj.find('bndbox')
+                    xmin = int(bndbox.find('xmin').text)
+                    ymin = int(bndbox.find('ymin').text)
+                    xmax = int(bndbox.find('xmax').text)
+                    ymax = int(bndbox.find('ymax').text)
+                    confidence = float(bndbox.find('confidence').text)
+                    width = xmax - xmin
+                    height = ymax - ymin
+                    self.bboxes.append(Bbox(xmin, ymin, width, height, name, confidence))
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to parse XML: {e}")
 
-            # 嘗試讀取 XML 檔案
-            xml_path = getXmlPath(image_path)
-            if os.path.exists(xml_path):
-                try:
-                    tree = ET.parse(xml_path)
-                    root = tree.getroot()
-                    for obj in root.findall('object'):
-                        name = obj.find('name').text
-                        bndbox = obj.find('bndbox')
-                        xmin = int(bndbox.find('xmin').text)
-                        ymin = int(bndbox.find('ymin').text)
-                        xmax = int(bndbox.find('xmax').text)
-                        ymax = int(bndbox.find('ymax').text)
-                        confidence = float(bndbox.find('confidence').text)
-                        width = xmax - xmin
-                        height = ymax - ymin
-                        self.bboxes.append(Bbox(xmin, ymin, width, height, name, confidence))
-                except Exception as e:
-                    QMessageBox.critical(self, "Error", f"Failed to parse XML: {e}")
-        
+    def detectImage(self):
         # 執行物件偵測
-        if hasattr(self, 'model') and self.model:
-            results = self.model.predict(self.image)
+        if self.model:
+            results = self.model.predict(self.cv_img)
             for result in results:
                 if result.boxes is not None:
                     for box in result.boxes:
@@ -374,27 +373,34 @@ class ImageWidget(QWidget):
                         conf = box.conf
                         label = self.model.names[int(c)]
                         self.bboxes.append(Bbox(int(b[0]), int(b[1]), int(b[2] - b[0]), int(b[3] - b[1]), label, float(conf)))
+
+    def load_image(self, file_path):
+        # 判斷檔案是否為影片
+        if file_path.lower().endswith(VIDEO_EXTS):
+            self.file_type = FileType.VIDEO
+            # self.media_player.setSource(QUrl.fromLocalFile(image_path))
+            # self.pixmap = self.video_widget.grab()
+            # self.video_widget.show()
+            self.is_playing = False
+            self.cap = cv2.VideoCapture(file_path)
+            ret, self.cv_img = self.cap.read()
+        else:
+            self.file_type = FileType.IMAGE
+            self.cv_img = cv2.imread(file_path)
+
+        height, width, channel = self.cv_img.shape
+        bytesPerLine = 3 * width
+        qImg = QImage(self.cv_img.data, width, height, bytesPerLine, QImage.Format.Format_RGB888).rgbSwapped()
+        self.pixmap = QPixmap.fromImage(qImg)
+        self.bboxes = []  # 清空 Bounding Box
+        # self.video_widget.hide()
+
+        # 嘗試讀取 XML 檔案
+        # TODO: 加上影片的frame number
+        xml_path = getXmlPath(file_path)
+        self.loadBboxFromXml(xml_path)
+        self.detectImage()
         self.update()  # 觸發 paintEvent
-        
-    def play_video(self):
-        if self.media_player.source().isEmpty() is False:
-            self.media_player.play()
-            self.is_playing = True
-            self.timer.start(100)  # 每 100 毫秒更新一次
-            self.pixmap = self.video_widget.grab() # 播放後抓取
-            self.image_label.setPixmap(self.pixmap) # 更新圖片
-
-    def pause_video(self):
-        if self.media_player.source().isEmpty() is False:
-            self.media_player.pause()
-            self.is_playing = False
-            self.timer.stop()
-
-    def stop_video(self):
-        if self.media_player.source().isEmpty() is False:
-            self.media_player.stop()
-            self.is_playing = False
-            self.update_timer.stop()
 
     def update_progress(self):
         if self.media_player.source().isEmpty() is False:
@@ -410,12 +416,6 @@ class ImageWidget(QWidget):
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
-        if self.is_playing:
-            # 繪製當前幀
-            # self.video_widget.update() # 重要, 強制更新畫面
-            # self.pixmap = self.video_widget.grab()
-            painter.drawPixmap(0, 0, self.pixmap)
-
         if self.pixmap:
             # 計算繪製區域，將縮放後的影像置於左上
             scaled_pixmap = self.pixmap.scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio)
@@ -463,7 +463,7 @@ class ImageWidget(QWidget):
 
     def mousePressEvent(self, event):
         if self.is_playing:
-            self.stop_video()
+            self.is_playing = False
         
         if event.button() == Qt.MouseButton.LeftButton:
             for bbox in self.bboxes:

@@ -7,3 +7,8 @@ class Bbox:
         self.label = label
         self.confidence = confidence
         self.label_color = "green"
+
+
+class FileType:
+    VIDEO = 'video'
+    IMAGE = 'image'
