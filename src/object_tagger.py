@@ -1,24 +1,36 @@
-import cv2
 import os
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QFileDialog,
-                             QMenuBar, QToolBar, QStatusBar, QVBoxLayout,
-                             QListView, QMessageBox, QInputDialog, QSizePolicy,
-                             QSlider, QComboBox, QStyle)
-from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QAction, QEnterEvent, QCursor
-from PyQt6.QtCore import Qt, QAbstractListModel, QTimer, QRect, QPoint, QUrl
+import cv2
+from PyQt6.QtCore import QAbstractListModel, QPoint, QRect, Qt, QTimer
+from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen, QPixmap
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QFileDialog,
+    QInputDialog,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QSizePolicy,
+    QSlider,
+    QStatusBar,
+    QStyle,
+    QToolBar,
+    QVBoxLayout,
+    QWidget,
+)
+
 # from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 # from PyQt6.QtMultimediaWidgets import QVideoWidget
 from ultralytics import YOLO
-import cv2
 
 from src.model import Bbox, FileType
 
-IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tif', '.tiff')
-VIDEO_EXTS = ('.mp4', '.avi', '.mov', '.wmv', '.mkv', '.webm')
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff")
+VIDEO_EXTS = (".mp4", ".avi", ".mov", ".wmv", ".mkv", ".webm")
 ALL_EXTS = IMAGE_EXTS + VIDEO_EXTS
 
 
@@ -29,7 +41,7 @@ def getXmlPath(image_path):
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        
+
         super().__init__()
 
         self.setWindowTitle("Object Tagger")
@@ -45,6 +57,8 @@ class MainWindow(QMainWindow):
         self.file_menu = self.menu.addMenu("&File")
         self.edit_menu = self.menu.addMenu("&Edit")
         self.ai_menu = self.menu.addMenu("&Ai")
+        self.video_menu = self.menu.addMenu("&Video")
+
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
 
@@ -58,7 +72,7 @@ class MainWindow(QMainWindow):
         self.auto_save_action.setCheckable(True)
         self.auto_save_action.triggered.connect(self.toggle_auto_save)
         self.edit_menu.addAction(self.auto_save_action)
-        
+
         # 工具列
         self.toolbar = QToolBar()
         self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
@@ -123,7 +137,9 @@ class MainWindow(QMainWindow):
         self.file_handler = FileHandler()
 
     def select_model(self):
-        model_path, _ = QFileDialog.getOpenFileName(self, 'Open Model File', '', "Model Files (*.pt)")
+        model_path, _ = QFileDialog.getOpenFileName(
+            self, "Open Model File", "", "Model Files (*.pt)"
+        )
         if model_path:
             self.load_model(model_path)
 
@@ -137,7 +153,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
     def open_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, "Open Folder") #PyQt6
+        folder_path = QFileDialog.getExistingDirectory(self, "Open Folder")  # PyQt6
         if folder_path:
             self.file_handler.load_folder(folder_path)
             if self.file_handler.image_files:
@@ -147,13 +163,17 @@ class MainWindow(QMainWindow):
     def next_image(self):
         if self.file_handler.next_image():
             self.image_widget.load_image(self.file_handler.current_image_path())
-            self.statusbar.showMessage(f"Image: {self.file_handler.current_image_path()}")
+            self.statusbar.showMessage(
+                f"Image: {self.file_handler.current_image_path()}"
+            )
 
     def prev_image(self):
         if self.file_handler.prev_image():
             self.image_widget.load_image(self.file_handler.current_image_path())
-            self.statusbar.showMessage(f"Image: {self.file_handler.current_image_path()}")
-    
+            self.statusbar.showMessage(
+                f"Image: {self.file_handler.current_image_path()}"
+            )
+
     def toggle_auto_save(self):
         self.auto_save = not self.auto_save
         self.auto_save_action.setChecked(self.auto_save)
@@ -166,9 +186,10 @@ class MainWindow(QMainWindow):
         if self.file_handler.current_image_path():
             if self.image_widget.file_type == FileType.VIDEO:
                 # 儲存影片當前幀和對應的 XML
-                # frame = self.image_widget.video_widget.grab()
-                frame = self.image_widget.pixmap.toImage() # 從 pixmap 取得
-                original_filename = os.path.basename(self.file_handler.current_image_path())
+                frame = self.image_widget.pixmap.toImage()  # 從 pixmap 取得
+                original_filename = os.path.basename(
+                    self.file_handler.current_image_path()
+                )
                 filename_no_ext = os.path.splitext(original_filename)[0]
                 frame_number = int(self.image_widget.cap.get(cv2.CAP_PROP_POS_FRAMES))
                 frame_filename = f"{filename_no_ext}_frame{frame_number}.jpg"
@@ -190,14 +211,16 @@ class MainWindow(QMainWindow):
                 # 儲存圖片的 XML
                 file_path = getXmlPath(self.file_handler.current_image_path())
                 bboxes = self.image_widget.bboxes
-                xml_content = self.file_handler.generate_voc_xml(bboxes, self.file_handler.current_image_path())
+                xml_content = self.file_handler.generate_voc_xml(
+                    bboxes, self.file_handler.current_image_path()
+                )
                 with open(file_path, "w") as f:
                     f.write(xml_content)
                 if self.is_auto_save():
                     self.statusbar.showMessage(f"Annotations auto saved to {file_path}")
                 else:
                     self.statusbar.showMessage(f"Annotations saved to {file_path}")
-        
+
     def toggle_play_pause(self):
         self.image_widget.is_playing = not self.image_widget.is_playing
         if self.image_widget.is_playing:
@@ -241,6 +264,7 @@ class MainWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_Space:
             self.toggle_play_pause()
 
+
 class ImageWidget(QWidget):
     def __init__(self, main_window: MainWindow):
         super().__init__()
@@ -256,28 +280,23 @@ class ImageWidget(QWidget):
         self.resizing_corner = None
         self.original_bbox = None  # 儲存原始 bbox 資訊
 
-        self.model: None|YOLO = None
+        self.model: None | YOLO = None
 
         # 角落大小
         self.CORNER_SIZE = 10
         self.cv_img = None
-        self.image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding) # 設定大小策略
+        self.image_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )  # 設定大小策略
 
         # # 影片播放相關
         self.timer = QTimer()
         self.timer.timeout.connect(self._update_frame)
-        
-        self.is_playing = False  # 追蹤是否在播放影片
 
-        # self.media_player = QMediaPlayer()
-        # self.video_widget = QVideoWidget()
-        # self.media_player.setVideoOutput(self.video_widget)
-        # # self.audio_output = QAudioOutput()
-        # # self.media_player.setAudioOutput(self.audio_output)
+        self.is_playing = False  # 追蹤是否在播放影片
 
         # self.update_timer = QTimer(self) # 更新進度條
         # self.update_timer.timeout.connect(self.update_progress)
-
 
         # 縮放後的影像尺寸
         self.scaled_width = None
@@ -295,10 +314,16 @@ class ImageWidget(QWidget):
             if not ret:
                 self.timer.stop()
                 return
-            
+
             height, width, channel = self.cv_img.shape
             bytesPerLine = 3 * width
-            qImg = QImage(self.cv_img.data, width, height, bytesPerLine, QImage.Format.Format_RGB888).rgbSwapped()
+            qImg = QImage(
+                self.cv_img.data,
+                width,
+                height,
+                bytesPerLine,
+                QImage.Format.Format_RGB888,
+            ).rgbSwapped()
             self.pixmap = QPixmap.fromImage(qImg)
             self.update()
 
@@ -328,10 +353,30 @@ class ImageWidget(QWidget):
 
         # 計算四個角落的範圍
         corners = {
-            "top_left": QRect(x1 - self.CORNER_SIZE, y1 - self.CORNER_SIZE, self.CORNER_SIZE * 2, self.CORNER_SIZE * 2),
-            "top_right": QRect(x2 - self.CORNER_SIZE, y1 - self.CORNER_SIZE, self.CORNER_SIZE * 2, self.CORNER_SIZE * 2),
-            "bottom_left": QRect(x1 - self.CORNER_SIZE, y2 - self.CORNER_SIZE, self.CORNER_SIZE * 2, self.CORNER_SIZE * 2),
-            "bottom_right": QRect(x2 - self.CORNER_SIZE, y2 - self.CORNER_SIZE, self.CORNER_SIZE * 2, self.CORNER_SIZE * 2),
+            "top_left": QRect(
+                x1 - self.CORNER_SIZE,
+                y1 - self.CORNER_SIZE,
+                self.CORNER_SIZE * 2,
+                self.CORNER_SIZE * 2,
+            ),
+            "top_right": QRect(
+                x2 - self.CORNER_SIZE,
+                y1 - self.CORNER_SIZE,
+                self.CORNER_SIZE * 2,
+                self.CORNER_SIZE * 2,
+            ),
+            "bottom_left": QRect(
+                x1 - self.CORNER_SIZE,
+                y2 - self.CORNER_SIZE,
+                self.CORNER_SIZE * 2,
+                self.CORNER_SIZE * 2,
+            ),
+            "bottom_right": QRect(
+                x2 - self.CORNER_SIZE,
+                y2 - self.CORNER_SIZE,
+                self.CORNER_SIZE * 2,
+                self.CORNER_SIZE * 2,
+            ),
         }
 
         for corner, rect in corners.items():
@@ -347,17 +392,19 @@ class ImageWidget(QWidget):
             try:
                 tree = ET.parse(xml_path)
                 root = tree.getroot()
-                for obj in root.findall('object'):
-                    name = obj.find('name').text
-                    bndbox = obj.find('bndbox')
-                    xmin = int(bndbox.find('xmin').text)
-                    ymin = int(bndbox.find('ymin').text)
-                    xmax = int(bndbox.find('xmax').text)
-                    ymax = int(bndbox.find('ymax').text)
-                    confidence = float(bndbox.find('confidence').text)
+                for obj in root.findall("object"):
+                    name = obj.find("name").text
+                    bndbox = obj.find("bndbox")
+                    xmin = int(bndbox.find("xmin").text)
+                    ymin = int(bndbox.find("ymin").text)
+                    xmax = int(bndbox.find("xmax").text)
+                    ymax = int(bndbox.find("ymax").text)
+                    confidence = float(bndbox.find("confidence").text)
                     width = xmax - xmin
                     height = ymax - ymin
-                    self.bboxes.append(Bbox(xmin, ymin, width, height, name, confidence))
+                    self.bboxes.append(
+                        Bbox(xmin, ymin, width, height, name, confidence)
+                    )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to parse XML: {e}")
 
@@ -368,19 +415,28 @@ class ImageWidget(QWidget):
             for result in results:
                 if result.boxes is not None:
                     for box in result.boxes:
-                        b = box.xyxy[0]  # get box coordinates in (top, left, bottom, right) format
+                        b = box.xyxy[
+                            0
+                        ]  # get box coordinates in (top, left, bottom, right) format
                         c = box.cls
                         conf = box.conf
                         label = self.model.names[int(c)]
-                        self.bboxes.append(Bbox(int(b[0]), int(b[1]), int(b[2] - b[0]), int(b[3] - b[1]), label, float(conf)))
+                        self.bboxes.append(
+                            Bbox(
+                                int(b[0]),
+                                int(b[1]),
+                                int(b[2] - b[0]),
+                                int(b[3] - b[1]),
+                                label,
+                                float(conf),
+                            )
+                        )
 
     def load_image(self, file_path):
         # 判斷檔案是否為影片
         if file_path.lower().endswith(VIDEO_EXTS):
             self.file_type = FileType.VIDEO
-            # self.media_player.setSource(QUrl.fromLocalFile(image_path))
-            # self.pixmap = self.video_widget.grab()
-            # self.video_widget.show()
+
             self.is_playing = False
             self.cap = cv2.VideoCapture(file_path)
             ret, self.cv_img = self.cap.read()
@@ -390,10 +446,11 @@ class ImageWidget(QWidget):
 
         height, width, channel = self.cv_img.shape
         bytesPerLine = 3 * width
-        qImg = QImage(self.cv_img.data, width, height, bytesPerLine, QImage.Format.Format_RGB888).rgbSwapped()
+        qImg = QImage(
+            self.cv_img.data, width, height, bytesPerLine, QImage.Format.Format_RGB888
+        ).rgbSwapped()
         self.pixmap = QPixmap.fromImage(qImg)
         self.bboxes = []  # 清空 Bounding Box
-        # self.video_widget.hide()
 
         # 嘗試讀取 XML 檔案
         # TODO: 加上影片的frame number
@@ -408,17 +465,16 @@ class ImageWidget(QWidget):
             progress = self.media_player.position() / self.media_player.duration() * 100
             self.main_window.progress_bar.setValue(int(progress))
 
-            # self.video_widget.update() # 重要, 強制更新畫面
-            # self.pixmap = self.video_widget.grab()
-            # self.image_label.setPixmap(self.pixmap)
             self.update()
-            
+
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
         if self.pixmap:
             # 計算繪製區域，將縮放後的影像置於左上
-            scaled_pixmap = self.pixmap.scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio)
+            scaled_pixmap = self.pixmap.scaled(
+                self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio
+            )
 
             # 計算縮放後的影像尺寸, 之後都幾乎以這兩個為參考
             self.scaled_width = scaled_pixmap.width()
@@ -428,13 +484,17 @@ class ImageWidget(QWidget):
 
             # 繪製 Bounding Box
             for bbox in self.bboxes:
-                if hasattr(bbox, 'label_color') and bbox.label_color == "red":
+                if hasattr(bbox, "label_color") and bbox.label_color == "red":
                     pen = QPen(QColor(255, 0, 0), 2)  # 紅色
                 else:
                     pen = QPen(QColor(0, 255, 0), 2)  # 綠色，寬度 2
                 painter.setPen(pen)
-                rect = QRect(self._scale_to_widget(QPoint(bbox.x, bbox.y)),
-                                self._scale_to_widget(QPoint(bbox.x + bbox.width, bbox.y + bbox.height)))
+                rect = QRect(
+                    self._scale_to_widget(QPoint(bbox.x, bbox.y)),
+                    self._scale_to_widget(
+                        QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
+                    ),
+                )
                 painter.drawRect(rect)
 
                 # 計算文字大小
@@ -445,15 +505,21 @@ class ImageWidget(QWidget):
 
                 # 繪製文字底色 (調整位置和大小)
                 qpt_text = QPoint(bbox.x, bbox.y - text_height)
-                bg_rect = QRect(self._scale_to_widget(qpt_text),
-                                    QPoint(self._scale_to_widget(qpt_text).x()
-                                            + int(text_width * self.scaled_width / self.pixmap.width()),
-                                        self._scale_to_widget(qpt_text).y()
-                                            + int(text_height * self.scaled_height / self.pixmap.height())))
+                bg_rect = QRect(
+                    self._scale_to_widget(qpt_text),
+                    QPoint(
+                        self._scale_to_widget(qpt_text).x()
+                        + int(text_width * self.scaled_width / self.pixmap.width()),
+                        self._scale_to_widget(qpt_text).y()
+                        + int(text_height * self.scaled_height / self.pixmap.height()),
+                    ),
+                )
                 painter.fillRect(bg_rect, QColor(0, 0, 0, 127))  # 黑色半透明底色
 
                 # 繪製文字 (調整位置)
-                painter.drawText(self._scale_to_widget(QPoint(bbox.x, bbox.y - text_height)), text)
+                painter.drawText(
+                    self._scale_to_widget(QPoint(bbox.x, bbox.y - text_height)), text
+                )
 
             if self.drawing:
                 pen = QPen(QColor(255, 0, 0), 2)  # 繪製中的 Bounding Box 用紅色
@@ -464,16 +530,23 @@ class ImageWidget(QWidget):
     def mousePressEvent(self, event):
         if self.is_playing:
             self.is_playing = False
-        
+
         if event.button() == Qt.MouseButton.LeftButton:
             for bbox in self.bboxes:
                 corner = self._is_in_corner(event.pos(), bbox)
                 if corner:
                     self.resizing_bbox = bbox
                     self.resizing_corner = corner
-                    self.original_bbox = (bbox.x, bbox.y, bbox.width, bbox.height)  # 儲存原始大小
-                    self.start_pos = self._scale_to_original(event.pos()) # 紀錄原始座標
-                    self.resizing_bbox.label_color = "red" # 改變顏色
+                    self.original_bbox = (
+                        bbox.x,
+                        bbox.y,
+                        bbox.width,
+                        bbox.height,
+                    )  # 儲存原始大小
+                    self.start_pos = self._scale_to_original(
+                        event.pos()
+                    )  # 紀錄原始座標
+                    self.resizing_bbox.label_color = "red"  # 改變顏色
                     self.resizing = True
                     break
             else:
@@ -481,12 +554,16 @@ class ImageWidget(QWidget):
                 self.end_pos = event.pos()
                 self.drawing = True
 
-        elif event.button() == Qt.MouseButton.RightButton: # 刪除
+        elif event.button() == Qt.MouseButton.RightButton:  # 刪除
             pos = event.pos()
-            for bbox in reversed(self.bboxes): # 從後面開始找，避免 index 錯誤
+            for bbox in reversed(self.bboxes):  # 從後面開始找，避免 index 錯誤
                 # 將原始影像座標轉換為視窗座標
-                rect = QRect(self._scale_to_widget(QPoint(bbox.x, bbox.y)),
-                                self._scale_to_widget(QPoint(bbox.x + bbox.width, bbox.y + bbox.height)))
+                rect = QRect(
+                    self._scale_to_widget(QPoint(bbox.x, bbox.y)),
+                    self._scale_to_widget(
+                        QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
+                    ),
+                )
                 if rect.contains(pos):
                     self.bboxes.remove(bbox)
                     self.update()
@@ -539,17 +616,17 @@ class ImageWidget(QWidget):
                 # x2, y2 = x1 + width, y1 + height
                 self.resizing = False
                 self.resizing_bbox.label_color = "green"
-                
+
                 self.resizing_bbox = None
                 self.resizing_corner = None
                 self.original_bbox = None
 
                 self.update()
-        
+
             elif self.drawing:
                 self.drawing = False
                 # 取得座標 (視窗座標)
-                
+
                 x1, y1 = self.start_pos.x(), self.start_pos.y()
                 x2, y2 = self.end_pos.x(), self.end_pos.y()
 
@@ -566,16 +643,39 @@ class ImageWidget(QWidget):
                 # 檢查寬高是否大於最小限制
                 if width < 5 or height < 5:
                     return
-                
+
                 # 取得標籤
-                label, ok = QInputDialog.getText(self, 'Input', 'Enter label name:', text="object")
+                label, ok = QInputDialog.getText(
+                    self, "Input", "Enter label name:", text="object"
+                )
                 if ok:
                     # 將視窗座標轉換為原始影像座標
-                    x1_original, y1_original = self._scale_to_original(QPoint(x1, y1)).x(), self._scale_to_original(QPoint(x1, y1)).y()
-                    width_original, height_original = int(width * self.pixmap.width() / self.scaled_width), int(height * self.pixmap.height() / self.scaled_height)
+                    x1_original, y1_original = (
+                        self._scale_to_original(QPoint(x1, y1)).x(),
+                        self._scale_to_original(QPoint(x1, y1)).y(),
+                    )
+                    width_original, height_original = int(
+                        width * self.pixmap.width() / self.scaled_width
+                    ), int(height * self.pixmap.height() / self.scaled_height)
                     # 建立 Bbox 物件 (使用原始影像座標)
-                    self.bboxes.append(Bbox(min(x1_original, x1_original + width_original), min(y1_original, y1_original+height_original), width_original, height_original, label, 1.0))
+                    self.bboxes.append(
+                        Bbox(
+                            min(x1_original, x1_original + width_original),
+                            min(y1_original, y1_original + height_original),
+                            width_original,
+                            height_original,
+                            label,
+                            1.0,
+                        )
+                    )
                     self.update()
+
+    def wheelEvent(self, event):
+        if event.angleDelta().y() > 0:
+            self.main_window.prev_image()
+        else:
+            self.main_window.next_image()
+
 
 class BboxListModel(QAbstractListModel):
     def __init__(self, bboxes, parent=None):
@@ -591,6 +691,7 @@ class BboxListModel(QAbstractListModel):
             return f"{bbox.label} ({bbox.x}, {bbox.y}, {bbox.width}, {bbox.height})"
         return None
 
+
 class FileHandler:
     def __init__(self):
         self.image_files = []
@@ -604,7 +705,7 @@ class FileHandler:
         for file in os.listdir(folder_path):
             if file.lower().endswith(ALL_EXTS):
                 self.image_files.append(file)
-        self.image_files.sort() # 排序
+        self.image_files.sort()  # 排序
 
     def current_image_path(self):
         if self.image_files:
@@ -654,11 +755,13 @@ class FileHandler:
         xml_str += "</annotation>\n"
         return xml_str
 
+
 def main():
     app = QApplication(sys.argv)
     main_window = MainWindow()
     main_window.show()
     sys.exit(app.exec())
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
