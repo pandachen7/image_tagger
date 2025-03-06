@@ -544,13 +544,13 @@ class ImageWidget(QWidget):
                 # 計算文字大小
                 text = f"{bbox.label} ({bbox.confidence:.2f})"
                 font_metrics = painter.fontMetrics()
-                text_width = font_metrics.horizontalAdvance(text)
+                text_width = font_metrics.horizontalAdvance(text) * 2
                 text_height = font_metrics.height()
 
                 # 繪製文字底色 (調整位置和大小)
                 qpt_text = QPoint(bbox.x, bbox.y - text_height)
                 bg_rect = QRect(
-                    self._scale_to_widget(qpt_text),
+                    self._scale_to_widget(QPoint(qpt_text.x(), qpt_text.y() - int(text_height))),
                     QPoint(
                         self._scale_to_widget(qpt_text).x()
                         + int(text_width * self.scaled_width / self.pixmap.width()),
@@ -558,7 +558,7 @@ class ImageWidget(QWidget):
                         + int(text_height * self.scaled_height / self.pixmap.height()),
                     ),
                 )
-                painter.fillRect(bg_rect, QColor(0, 0, 0, 127))  # 黑色半透明底色
+                painter.fillRect(bg_rect, QColor(0, 0, 0, 150))  # 黑色半透明底色
 
                 # 繪製文字 (調整位置)
                 painter.drawText(
