@@ -2,6 +2,7 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+import yaml
 
 import cv2
 from PyQt6.QtCore import QAbstractListModel, QPoint, QRect, Qt, QTimer
@@ -140,6 +141,23 @@ class MainWindow(QMainWindow):
         # 檔案處理器
         self.file_handler = FileHandler()
 
+        # 讀取預設標籤和上次使用的標籤
+        self.preset_labels = {}
+        self.last_used_label = "object"  # 預設值
+        try:
+            with open("config/label.yaml", "r") as f:
+                config = yaml.safe_load(f)
+                yaml_labels = config.get("labels", {})
+                if yaml_labels:
+                    self.preset_labels = {
+                        str(key): value for key, value in yaml_labels.items() if isinstance(key, (int, str))
+                    }
+                    self.last_used_label = config.get("default_label", "object")
+        except FileNotFoundError:
+            QMessageBox.warning(self, "Warning", "config/label.yaml not found.")
+        except yaml.YAMLError as e:
+            QMessageBox.warning(self, "Warning", f"Error parsing config/label.yaml: {e}")
+
     def select_model(self):
         model_path, _ = QFileDialog.getOpenFileName(
             self, "Open Model File", "", "Model Files (*.pt)"
@@ -252,6 +270,14 @@ class MainWindow(QMainWindow):
         if self.image_widget.is_playing:
             self.image_widget.timer.start(self.refresh_interval)  # 重新啟動定時器
 
+    def updateLastBbox(self):
+        """
+        更新最後使用的標籤
+        """
+        if self.image_widget.bboxes:
+            self.image_widget.bboxes[-1].label = self.last_used_label
+        self.image_widget.update()
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_PageDown:
             if self.is_auto_save():
@@ -267,6 +293,20 @@ class MainWindow(QMainWindow):
             self.toggle_auto_save()
         elif event.key() == Qt.Key.Key_Space:
             self.toggle_play_pause()
+        elif event.key() == Qt.Key.Key_L:
+            # 彈出輸入框，讓使用者輸入標籤
+            label, ok = QInputDialog.getText(
+                self, "Input", "Enter label name:", text=self.last_used_label
+            )
+            if ok and label.strip():
+                self.last_used_label = label.strip()  # 更新上次使用的標籤
+            self.updateLastBbox()
+
+        elif event.key() in [Qt.Key.Key_1, Qt.Key.Key_2, Qt.Key.Key_3, Qt.Key.Key_4, Qt.Key.Key_5, Qt.Key.Key_6, Qt.Key.Key_7, Qt.Key.Key_8, Qt.Key.Key_9, Qt.Key.Key_0]:
+            key_val = event.key() - Qt.Key.Key_1 + 1
+            self.last_used_label = self.preset_labels.get(str(key_val), self.last_used_label)
+            self.updateLastBbox()
+            self.statusBar().showMessage(f"labels: {self.preset_labels}")
 
 
 class ImageWidget(QWidget):
@@ -616,8 +656,13 @@ class ImageWidget(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             if self.resizing:
-                # x1, y1, width, height = self.resizing_bbox.x, self.resizing_bbox.y, self.resizing_bbox.width, self.resizing_bbox.height
-                # x2, y2 = x1 + width, y1 + height
+                x1, y1, width, height = (
+                    self.resizing_bbox.x,
+                    self.resizing_bbox.y,
+                    self.resizing_bbox.width,
+                    self.resizing_bbox.height,
+                )
+                x2, y2 = x1 + width, y1 + height
                 self.resizing = False
                 self.resizing_bbox.label_color = "green"
 
@@ -647,32 +692,27 @@ class ImageWidget(QWidget):
                 # 檢查寬高是否大於最小限制
                 if width < 5 or height < 5:
                     return
-
-                # 取得標籤
-                label, ok = QInputDialog.getText(
-                    self, "Input", "Enter label name:", text="object"
+                
+                # 將視窗座標轉換為原始影像座標
+                x1_original, y1_original = (
+                    self._scale_to_original(QPoint(x1, y1)).x(),
+                    self._scale_to_original(QPoint(x1, y1)).y(),
                 )
-                if ok:
-                    # 將視窗座標轉換為原始影像座標
-                    x1_original, y1_original = (
-                        self._scale_to_original(QPoint(x1, y1)).x(),
-                        self._scale_to_original(QPoint(x1, y1)).y(),
+                width_original, height_original = int(
+                    width * self.pixmap.width() / self.scaled_width
+                ), int(height * self.pixmap.height() / self.scaled_height)
+                # 建立 Bbox 物件 (使用原始影像座標)
+                self.bboxes.append(
+                    Bbox(
+                        min(x1_original, x1_original + width_original),
+                        min(y1_original, y1_original + height_original),
+                        width_original,
+                        height_original,
+                        self.main_window.last_used_label,
+                        1.0,
                     )
-                    width_original, height_original = int(
-                        width * self.pixmap.width() / self.scaled_width
-                    ), int(height * self.pixmap.height() / self.scaled_height)
-                    # 建立 Bbox 物件 (使用原始影像座標)
-                    self.bboxes.append(
-                        Bbox(
-                            min(x1_original, x1_original + width_original),
-                            min(y1_original, y1_original + height_original),
-                            width_original,
-                            height_original,
-                            label,
-                            1.0,
-                        )
-                    )
-                    self.update()
+                )
+                self.update()
 
     def wheelEvent(self, event):
         if event.angleDelta().y() > 0:

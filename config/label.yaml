@@ -1,0 +1,15 @@
+# Preset labels, you press number to change the label
+labels:
+  1: person
+  2: car
+  3: dog
+  4: cat
+  5: bicycle
+  6: motor
+  7: bus
+  8: truck
+  9: train
+  0: background
+
+# default label name, draw bbox with this label
+default_label: object
