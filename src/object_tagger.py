@@ -130,6 +130,7 @@ class MainWindow(QMainWindow):
         self.speed_control.addItem("1.5x", 1.5)
         self.speed_control.addItem("2.0x", 2.0)
         self.speed_control.setCurrentIndex(1)  # 預設為 1.0x
+        self.speed_control.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.speed_control.currentIndexChanged.connect(self.set_playback_speed)
         self.toolbar.addWidget(self.speed_control)
 
