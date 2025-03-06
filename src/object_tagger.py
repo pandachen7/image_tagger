@@ -62,11 +62,6 @@ class MainWindow(QMainWindow):
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
 
-        # 退出
-        self.quit_action = QAction("&Quit", self)
-        self.quit_action.triggered.connect(self.close)
-        self.file_menu.addAction(self.quit_action)
-
         # 自動儲存
         self.auto_save_action = QAction("&Auto Save", self)
         self.auto_save_action.setCheckable(True)
@@ -102,12 +97,11 @@ class MainWindow(QMainWindow):
         # 檔案相關動作
         self.open_folder_action = QAction("&Open Folder", self)
         self.open_folder_action.triggered.connect(self.open_folder)
-        # self.file_menu.addAction(self.open_folder_action)
+
         self.toolbar.addAction(self.open_folder_action)
 
         self.save_action = QAction("&Save", self)
         self.save_action.triggered.connect(self.save_annotations)
-        # self.file_menu.addAction(self.save_action)
         self.toolbar.addAction(self.save_action)
 
         # 播放控制
@@ -133,6 +127,15 @@ class MainWindow(QMainWindow):
         self.speed_control.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.speed_control.currentIndexChanged.connect(self.set_playback_speed)
         self.toolbar.addWidget(self.speed_control)
+
+        # 退出
+        self.quit_action = QAction("&Quit", self)
+        self.quit_action.triggered.connect(self.close)
+
+        self.file_menu.addAction(self.open_folder_action)
+        self.file_menu.addAction(self.save_action)
+        self.file_menu.addSeparator()
+        self.file_menu.addAction(self.quit_action)
 
         # 檔案處理器
         self.file_handler = FileHandler()
