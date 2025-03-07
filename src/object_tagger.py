@@ -40,6 +40,14 @@ def getXmlPath(image_path):
     return path_tmp.parent / f"{path_tmp.stem}.xml"
 
 
+class DynamicConfig:
+    """
+    有需要的話可以定義樹狀結構
+    """
+
+    dict_data = None
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
 
@@ -151,7 +159,7 @@ class MainWindow(QMainWindow):
         self.preset_labels = {}
         self.last_used_label = "object"  # 預設值
         try:
-            with open("config/label.yaml", "r") as f:
+            with open("config/static.yaml", "r") as f:
                 config = yaml.safe_load(f)
                 yaml_labels = config.get("labels", {})
                 if yaml_labels:
@@ -160,9 +168,26 @@ class MainWindow(QMainWindow):
                         for key, value in yaml_labels.items()
                         if isinstance(key, (int, str))
                     }
-                    self.last_used_label = config.get("default_label", "object")
+                self.last_used_label = config.get("default_label", "object")
+
         except FileNotFoundError:
-            QMessageBox.warning(self, "Warning", "config/label.yaml not found.")
+            QMessageBox.warning(self, "Warning", "config/static.yaml not found.")
+        except yaml.YAMLError as e:
+            QMessageBox.warning(
+                self, "Warning", f"Error parsing config/static.yaml: {e}"
+            )
+
+        try:
+            with open("config/dynamic.yaml", "r") as f:
+                DynamicConfig.dict_data = yaml.safe_load(f)
+            model_path = DynamicConfig.dict_data.get("model_path", None)
+            if model_path:
+                self.load_model(model_path)
+            folder_path = DynamicConfig.dict_data.get("folder_path", None)
+            self.choose_folder(folder_path)
+        except FileNotFoundError:
+            # QMessageBox.warning(self, "Warning", "config/dynamic.yaml not found.")
+            pass
         except yaml.YAMLError as e:
             QMessageBox.warning(
                 self, "Warning", f"Error parsing config/label.yaml: {e}"
@@ -174,6 +199,10 @@ class MainWindow(QMainWindow):
         )
         if model_path:
             self.load_model(model_path)
+            # update config
+            DynamicConfig.dict_data["model_path"] = model_path
+            with open("config/dynamic.yaml", "w") as f:
+                yaml.dump(DynamicConfig.dict_data, f)
 
     def load_model(self, model_path):
         try:
@@ -188,7 +217,20 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
     def open_folder(self):
+        """
+        用pyqt瀏覽並選定資料夾
+        """
         folder_path = QFileDialog.getExistingDirectory(self, "Open Folder")  # PyQt6
+        self.choose_folder(folder_path)
+        # update config
+        DynamicConfig.dict_data["folder_path"] = folder_path
+        with open("config/dynamic.yaml", "w") as f:
+            yaml.dump(DynamicConfig.dict_data, f)
+
+    def choose_folder(self, folder_path):
+        """
+        開啟資料夾的檔案
+        """
         if folder_path:
             self.file_handler.load_folder(folder_path)
             if self.file_handler.image_files:

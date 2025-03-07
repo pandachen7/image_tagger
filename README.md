@@ -1,11 +1,11 @@
-本專案可對影像畫框  
+本專案可對影像, 影片畫框  
 可用於object detection的影像訓練dataset  
 
-![](./asset/system_gui.png)
+![system gui](./asset/system_gui.png)
 
 功能一覽
 - 滾輪可預覽上/下一個檔案
-- 預設label種類名稱[設定檔](./config/label.yaml), 按下數字鍵可以直接切換label名稱, 或者按下小寫的`L`來設定指定名稱
+- 預設label種類名稱[設定檔](./config/static.yaml), 按下數字鍵可以直接切換label名稱, 或者按下小寫的`L`來設定指定名稱
   以減少輸入次數
 - 關於影片撥放
   - 讀取影片檔案, 並且labeling

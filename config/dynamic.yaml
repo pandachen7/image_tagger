@@ -1,0 +1,4 @@
+# ultralytics model
+model_path: C:/ws/image_tagger/epoch300.pt
+
+folder_path: C:/ws/image_tagger/img
