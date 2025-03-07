@@ -45,7 +45,7 @@ class MainWindow(QMainWindow):
 
         super().__init__()
 
-        self.setWindowTitle("Object Tagger")
+        self.setWindowTitle("Image Tagger")
 
         # 設定最小尺寸
         self.setMinimumSize(500, 500)
@@ -54,27 +54,15 @@ class MainWindow(QMainWindow):
         self.auto_save = False
         self.auto_detect = False
 
-        # 選單
-        self.menu = self.menuBar()
-        self.file_menu = self.menu.addMenu("&File")
-        self.edit_menu = self.menu.addMenu("&Edit")
-        self.ai_menu = self.menu.addMenu("&Ai")
-        self.video_menu = self.menu.addMenu("&Video")
-
-        # self.view_menu = self.menu.addMenu("&View")
-        # self.help_menu = self.menu.addMenu("&Help")
-
         # 自動儲存
         self.auto_save_action = QAction("&Auto Save", self)
         self.auto_save_action.setCheckable(True)
         self.auto_save_action.triggered.connect(self.toggle_auto_save)
-        self.edit_menu.addAction(self.auto_save_action)
 
         # 自動使用偵測 (GPU不好速度就會慢)
         self.auto_detect_action = QAction("&Auto Detect", self)
         self.auto_detect_action.setCheckable(True)
         self.auto_detect_action.triggered.connect(self.toggle_auto_detect)
-        self.ai_menu.addAction(self.auto_detect_action)
 
         # 工具列
         self.toolbar = QToolBar()
@@ -114,8 +102,7 @@ class MainWindow(QMainWindow):
 
         # 播放控制
         self.play_pause_action = QAction("", self)
-        pix_icon = QStyle.StandardPixmap.SP_MediaPause
-        icon = self.style().standardIcon(pix_icon)
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
         self.play_pause_action.setIcon(icon)
         self.play_pause_action.triggered.connect(self.toggle_play_pause)
         self.toolbar.addAction(self.play_pause_action)
@@ -123,6 +110,7 @@ class MainWindow(QMainWindow):
 
         self.progress_bar = QSlider(Qt.Orientation.Horizontal)
         self.progress_bar.setRange(0, 100)
+        self.progress_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.progress_bar.valueChanged.connect(self.set_media_position)
         self.toolbar.addWidget(self.progress_bar)
 
@@ -140,10 +128,21 @@ class MainWindow(QMainWindow):
         self.quit_action = QAction("&Quit", self)
         self.quit_action.triggered.connect(self.close)
 
+        # 主選單
+        self.menu = self.menuBar()
+        self.file_menu = self.menu.addMenu("&File")
+        # self.edit_menu = self.menu.addMenu("&Edit")
+        self.ai_menu = self.menu.addMenu("&Ai")
+        # self.view_menu = self.menu.addMenu("&View")
+        # self.help_menu = self.menu.addMenu("&Help")
+
         self.file_menu.addAction(self.open_folder_action)
         self.file_menu.addAction(self.save_action)
+        self.file_menu.addAction(self.auto_save_action)
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.quit_action)
+
+        self.ai_menu.addAction(self.auto_detect_action)
 
         # 檔案處理器
         self.file_handler = FileHandler()
@@ -183,6 +182,8 @@ class MainWindow(QMainWindow):
             self.image_widget.model = YOLO(model_path)
             self.statusbar.showMessage(f"Model loaded: {model_path}")
             self.image_widget.use_model = True
+            self.auto_detect = True
+            self.auto_detect_action.setChecked(self.auto_detect)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
@@ -230,7 +231,6 @@ class MainWindow(QMainWindow):
         """
         儲存標記, 注意就算沒有bbox也是要儲存, 表示有處理過, 也能讓trainer知道這是在訓練背景
         """
-        print("try saving annotations")
         if self.file_handler.current_image_path():
             if self.image_widget.file_type == FileType.VIDEO:
                 # 儲存影片當前幀和對應的 XML
@@ -270,33 +270,42 @@ class MainWindow(QMainWindow):
                     self.statusbar.showMessage(f"Annotations saved to {file_path}")
 
     def toggle_play_pause(self):
+        if self.image_widget.file_type != FileType.VIDEO:
+            self.image_widget.is_playing = False
+            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+            self.play_pause_action.setIcon(icon)
+            return
         self.image_widget.is_playing = not self.image_widget.is_playing
         if self.image_widget.is_playing:
-            # 播放前先把目前的bbox存起來
+            # 播放前先儲存標籤資訊
             if self.is_auto_save():
                 self.save_annotations()
 
-            pix_icon = QStyle.StandardPixmap.SP_MediaPlay
-            icon = self.style().standardIcon(pix_icon)
+            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
             self.play_pause_action.setIcon(icon)
             self.image_widget.timer.start(self.refresh_interval)
-            self.image_widget.detectImage()
         else:
-            pix_icon = QStyle.StandardPixmap.SP_MediaPause
-            icon = self.style().standardIcon(pix_icon)
+            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
             self.play_pause_action.setIcon(icon)
-            self.image_widget.detectImage()
+            # self.image_widget.detectImage()
+            self.image_widget.timer.stop()
 
     def set_media_position(self, position):
         # 設定影片播放位置 (以毫秒為單位)
         if self.image_widget.cap:
+            self.progress_bar.blockSignals(True)
             self.image_widget.cap.set(cv2.CAP_PROP_POS_MSEC, position)
+            self.progress_bar.blockSignals(False)
 
     def set_playback_speed(self, index):
         # 設定播放速度
         speed = self.speed_control.itemData(index)
         self.image_widget.timer.stop()
-        self.refresh_interval = int(30 / speed)  # TODO: 將30換成fps
+        if self.image_widget.fps:
+            fps = self.image_widget.fps
+        else:
+            fps = 30
+        self.refresh_interval = int(fps / speed)
         if self.image_widget.is_playing:
             self.image_widget.timer.start(self.refresh_interval)  # 重新啟動定時器
 
@@ -411,9 +420,12 @@ class ImageWidget(QWidget):
             ).rgbSwapped()
             self.pixmap = QPixmap.fromImage(qImg)
 
+            self.detectImage()
+
             position = self.cap.get(cv2.CAP_PROP_POS_MSEC)
-            progress = position / self.cap.get(cv2.CAP_PROP_POS_FRAMES)
-            self.main_window.progress_bar.setValue(int(progress))
+            self.main_window.progress_bar.blockSignals(True)  # 暫時阻止信號傳遞
+            self.main_window.progress_bar.setValue(int(position))
+            self.main_window.progress_bar.blockSignals(False)  # 恢復信號傳遞
 
             self.update()
 
@@ -540,6 +552,11 @@ class ImageWidget(QWidget):
                             )
                         )
 
+    def get_total_msec(self):
+        # 取得影片總毫秒數
+        total_frames = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        return int(total_frames * 1000 / self.fps)
+
     def load_image(self, file_path):
         # 判斷檔案是否為影片
         if file_path.lower().endswith(VIDEO_EXTS):
@@ -548,6 +565,13 @@ class ImageWidget(QWidget):
             self.is_playing = False
             self.cap = cv2.VideoCapture(file_path)
             ret, self.cv_img = self.cap.read()
+            self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+
+            self.main_window.progress_bar.setRange(0, self.get_total_msec())
+
+            self.main_window.progress_bar.blockSignals(True)
+            self.main_window.progress_bar.setValue(0)
+            self.main_window.progress_bar.blockSignals(False)
         else:
             self.file_type = FileType.IMAGE
             self.cv_img = cv2.imread(file_path)
@@ -774,6 +798,8 @@ class ImageWidget(QWidget):
                 self.update()
 
     def wheelEvent(self, event):
+        if self.main_window.is_auto_save():
+            self.main_window.save_annotations()
         if event.angleDelta().y() > 0:
             self.main_window.prev_image()
         else:

@@ -8,8 +8,7 @@ status:
 1. 顯示有多少檔案, 目前在第N個檔案
 2. 明顯顯示目前處於auto save狀態
 
-view:
-font底色範圍
+影像影片切換測試
 // TODO
 
 // NOTE
