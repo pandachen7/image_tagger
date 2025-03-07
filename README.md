@@ -14,6 +14,15 @@
   - 可調整速度
   - 按下滑鼠鍵會停止撥放
   - 如果自動儲存開啟, 則按下play後也會自動儲存, 儲存的檔名將會是"[原檔名]_frame[N], 並且圖片跟xml都會抽出
+- 狀態欄
+  - 顯示有多少檔案, 目前在第N個檔案
+- 快捷鍵
+  - `q`: quit
+  - `a`: toggle auto save
+  - `l`: 彈出視窗, 輸入label名
+  - `數字鍵0~9`: 切換預設的label, 只會針對最後一個label做變更
+  - `Page Up/Down` or `方向鍵左/右`: 切換檔案
+  - `space空白鍵`: play/pause video
 
 ## 安裝相關
 安裝pytorch的延伸package, 都一定要先裝pytorch的cuda版本; 不然幾乎都是先自動安裝cpu版的, 所以會跑很慢

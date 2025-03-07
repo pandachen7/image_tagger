@@ -72,9 +72,21 @@ class MainWindow(QMainWindow):
         self.auto_detect_action.setCheckable(True)
         self.auto_detect_action.triggered.connect(self.toggle_auto_detect)
 
+        # 檔案相關動作
+        self.open_folder_action = QAction("&Open Folder", self)
+        self.open_folder_action.triggered.connect(self.open_folder)
+
         # 工具列
         self.toolbar = QToolBar()
         self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
+
+        self.toolbar_auto_save = QAction("&Auto Save", self)
+        self.toolbar_auto_save.triggered.connect(self.toggle_auto_save)
+        self.toolbar.addAction(self.auto_save_action)
+
+        self.toolbar_auto_detect = QAction("&Auto Detect", self)
+        self.toolbar_auto_detect.triggered.connect(self.toggle_auto_detect)
+        self.toolbar.addAction(self.auto_detect_action)
 
         # 狀態列
         self.statusbar = QStatusBar()
@@ -94,15 +106,6 @@ class MainWindow(QMainWindow):
         # self.bbox_list_model = BboxListModel([])
         # self.bbox_list_view.setModel(self.bbox_list_model)
         # self.main_layout.addWidget(self.bbox_list_view)
-
-        self.model_select_action = QAction("&Select Model", self)
-        self.model_select_action.triggered.connect(self.select_model)
-        self.toolbar.addAction(self.model_select_action)
-        # 檔案相關動作
-        self.open_folder_action = QAction("&Open Folder", self)
-        self.open_folder_action.triggered.connect(self.open_folder)
-
-        self.toolbar.addAction(self.open_folder_action)
 
         self.save_action = QAction("&Save", self)
         self.save_action.triggered.connect(self.save_annotations)
@@ -235,13 +238,17 @@ class MainWindow(QMainWindow):
             self.file_handler.load_folder(folder_path)
             if self.file_handler.image_files:
                 self.image_widget.load_image(self.file_handler.current_image_path())
-                self.statusbar.showMessage(f"Opened folder: {folder_path}")
+                self.statusbar.showMessage(
+                    f"Opened folder: {folder_path} "
+                    f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
+                )
 
     def next_image(self):
         if self.file_handler.next_image():
             self.image_widget.load_image(self.file_handler.current_image_path())
             self.statusbar.showMessage(
                 f"Image: {self.file_handler.current_image_path()}"
+                f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
             )
 
     def prev_image(self):
@@ -249,6 +256,7 @@ class MainWindow(QMainWindow):
             self.image_widget.load_image(self.file_handler.current_image_path())
             self.statusbar.showMessage(
                 f"Image: {self.file_handler.current_image_path()}"
+                f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
             )
 
     def toggle_auto_save(self):
