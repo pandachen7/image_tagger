@@ -2,9 +2,9 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-import yaml
 
 import cv2
+import yaml
 from PyQt6.QtCore import QAbstractListModel, QPoint, QRect, Qt, QTimer
 from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
@@ -50,8 +50,9 @@ class MainWindow(QMainWindow):
         # 設定最小尺寸
         self.setMinimumSize(500, 500)
 
-        # 自動儲存
+        # 自動
         self.auto_save = False
+        self.auto_detect = False
 
         # 選單
         self.menu = self.menuBar()
@@ -68,6 +69,12 @@ class MainWindow(QMainWindow):
         self.auto_save_action.setCheckable(True)
         self.auto_save_action.triggered.connect(self.toggle_auto_save)
         self.edit_menu.addAction(self.auto_save_action)
+
+        # 自動使用偵測 (GPU不好速度就會慢)
+        self.auto_detect_action = QAction("&Auto Detect", self)
+        self.auto_detect_action.setCheckable(True)
+        self.auto_detect_action.triggered.connect(self.toggle_auto_detect)
+        self.ai_menu.addAction(self.auto_detect_action)
 
         # 工具列
         self.toolbar = QToolBar()
@@ -150,13 +157,17 @@ class MainWindow(QMainWindow):
                 yaml_labels = config.get("labels", {})
                 if yaml_labels:
                     self.preset_labels = {
-                        str(key): value for key, value in yaml_labels.items() if isinstance(key, (int, str))
+                        str(key): value
+                        for key, value in yaml_labels.items()
+                        if isinstance(key, (int, str))
                     }
                     self.last_used_label = config.get("default_label", "object")
         except FileNotFoundError:
             QMessageBox.warning(self, "Warning", "config/label.yaml not found.")
         except yaml.YAMLError as e:
-            QMessageBox.warning(self, "Warning", f"Error parsing config/label.yaml: {e}")
+            QMessageBox.warning(
+                self, "Warning", f"Error parsing config/label.yaml: {e}"
+            )
 
     def select_model(self):
         model_path, _ = QFileDialog.getOpenFileName(
@@ -171,6 +182,7 @@ class MainWindow(QMainWindow):
                 del self.image_widget.model
             self.image_widget.model = YOLO(model_path)
             self.statusbar.showMessage(f"Model loaded: {model_path}")
+            self.image_widget.use_model = True
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
@@ -201,10 +213,24 @@ class MainWindow(QMainWindow):
         self.auto_save_action.setChecked(self.auto_save)
         self.statusbar.showMessage(f"Auto save: {'on' if self.auto_save else 'off'}")
 
+    def toggle_auto_detect(self):
+        self.auto_detect = not self.auto_detect
+        self.auto_detect_action.setChecked(self.auto_detect)
+        self.statusbar.showMessage(
+            f"Auto detect: {'on' if self.auto_detect else 'off'}"
+        )
+
     def is_auto_save(self):
         return self.auto_save
 
+    def is_auto_detect(self):
+        return self.auto_detect
+
     def save_annotations(self):
+        """
+        儲存標記, 注意就算沒有bbox也是要儲存, 表示有處理過, 也能讓trainer知道這是在訓練背景
+        """
+        print("try saving annotations")
         if self.file_handler.current_image_path():
             if self.image_widget.file_type == FileType.VIDEO:
                 # 儲存影片當前幀和對應的 XML
@@ -246,10 +272,15 @@ class MainWindow(QMainWindow):
     def toggle_play_pause(self):
         self.image_widget.is_playing = not self.image_widget.is_playing
         if self.image_widget.is_playing:
+            # 播放前先把目前的bbox存起來
+            if self.is_auto_save():
+                self.save_annotations()
+
             pix_icon = QStyle.StandardPixmap.SP_MediaPlay
             icon = self.style().standardIcon(pix_icon)
             self.play_pause_action.setIcon(icon)
             self.image_widget.timer.start(self.refresh_interval)
+            self.image_widget.detectImage()
         else:
             pix_icon = QStyle.StandardPixmap.SP_MediaPause
             icon = self.style().standardIcon(pix_icon)
@@ -259,8 +290,7 @@ class MainWindow(QMainWindow):
     def set_media_position(self, position):
         # 設定影片播放位置 (以毫秒為單位)
         if self.image_widget.cap:
-            duration = self.image_widget.media_player.duration()
-            self.image_widget.media_player.setPosition(int(position / 100 * duration))
+            self.image_widget.cap.set(cv2.CAP_PROP_POS_MSEC, position)
 
     def set_playback_speed(self, index):
         # 設定播放速度
@@ -302,9 +332,22 @@ class MainWindow(QMainWindow):
                 self.last_used_label = label.strip()  # 更新上次使用的標籤
             self.updateLastBbox()
 
-        elif event.key() in [Qt.Key.Key_1, Qt.Key.Key_2, Qt.Key.Key_3, Qt.Key.Key_4, Qt.Key.Key_5, Qt.Key.Key_6, Qt.Key.Key_7, Qt.Key.Key_8, Qt.Key.Key_9, Qt.Key.Key_0]:
+        elif event.key() in [
+            Qt.Key.Key_1,
+            Qt.Key.Key_2,
+            Qt.Key.Key_3,
+            Qt.Key.Key_4,
+            Qt.Key.Key_5,
+            Qt.Key.Key_6,
+            Qt.Key.Key_7,
+            Qt.Key.Key_8,
+            Qt.Key.Key_9,
+            Qt.Key.Key_0,
+        ]:
             key_val = event.key() - Qt.Key.Key_1 + 1
-            self.last_used_label = self.preset_labels.get(str(key_val), self.last_used_label)
+            self.last_used_label = self.preset_labels.get(
+                str(key_val), self.last_used_label
+            )
             self.updateLastBbox()
             self.statusBar().showMessage(f"labels: {self.preset_labels}")
 
@@ -325,6 +368,7 @@ class ImageWidget(QWidget):
         self.original_bbox = None  # 儲存原始 bbox 資訊
 
         self.model: None | YOLO = None
+        self.use_model = False
 
         # 角落大小
         self.CORNER_SIZE = 10
@@ -338,9 +382,6 @@ class ImageWidget(QWidget):
         self.timer.timeout.connect(self._update_frame)
 
         self.is_playing = False  # 追蹤是否在播放影片
-
-        # self.update_timer = QTimer(self) # 更新進度條
-        # self.update_timer.timeout.connect(self.update_progress)
 
         # 縮放後的影像尺寸
         self.scaled_width = None
@@ -369,6 +410,11 @@ class ImageWidget(QWidget):
                 QImage.Format.Format_RGB888,
             ).rgbSwapped()
             self.pixmap = QPixmap.fromImage(qImg)
+
+            position = self.cap.get(cv2.CAP_PROP_POS_MSEC)
+            progress = position / self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+            self.main_window.progress_bar.setValue(int(progress))
+
             self.update()
 
     def _scale_to_original(self, point):
@@ -428,9 +474,15 @@ class ImageWidget(QWidget):
                 return corner
         return None
 
-    def loadBboxFromXml(self, xml_path):
+    def loadBboxFromXml(self, xml_path) -> bool:
         """
         讀取xml的bbox資訊
+
+        Args:
+            xml_path (str): xml檔案路徑
+
+        Returns:
+            bool: 是否有bbox
         """
         if os.path.exists(xml_path):
             try:
@@ -452,8 +504,20 @@ class ImageWidget(QWidget):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to parse XML: {e}")
 
+            if self.bboxes:
+                return True
+            else:
+                return False
+
     def detectImage(self):
-        # 執行物件偵測
+        """
+        執行物件偵測, 只有在model讀取且is_auto_detect==True時才會執行
+        執行前先清除bboxes, 以免搞混
+        """
+        if not self.main_window.is_auto_detect():
+            return
+
+        self.bboxes = []
         if self.model:
             results = self.model.predict(self.cv_img)
             for result in results:
@@ -499,17 +563,10 @@ class ImageWidget(QWidget):
         # 嘗試讀取 XML 檔案
         # TODO: 加上影片的frame number
         xml_path = getXmlPath(file_path)
-        self.loadBboxFromXml(xml_path)
-        self.detectImage()
+        if not self.loadBboxFromXml(xml_path):
+            # 如果 bbox (來自xml) 不存在, 才嘗試使用 YOLO 偵測
+            self.detectImage()
         self.update()  # 觸發 paintEvent
-
-    def update_progress(self):
-        if self.media_player.source().isEmpty() is False:
-            # 更新進度條
-            progress = self.media_player.position() / self.media_player.duration() * 100
-            self.main_window.progress_bar.setValue(int(progress))
-
-            self.update()
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -550,7 +607,9 @@ class ImageWidget(QWidget):
                 # 繪製文字底色 (調整位置和大小)
                 qpt_text = QPoint(bbox.x, bbox.y - text_height)
                 bg_rect = QRect(
-                    self._scale_to_widget(QPoint(qpt_text.x(), qpt_text.y() - int(text_height))),
+                    self._scale_to_widget(
+                        QPoint(qpt_text.x(), qpt_text.y() - int(text_height))
+                    ),
                     QPoint(
                         self._scale_to_widget(qpt_text).x()
                         + int(text_width * self.scaled_width / self.pixmap.width()),
@@ -692,7 +751,7 @@ class ImageWidget(QWidget):
                 # 檢查寬高是否大於最小限制
                 if width < 5 or height < 5:
                     return
-                
+
                 # 將視窗座標轉換為原始影像座標
                 x1_original, y1_original = (
                     self._scale_to_original(QPoint(x1, y1)).x(),
