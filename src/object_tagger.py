@@ -148,10 +148,14 @@ class MainWindow(QMainWindow):
         self.quit_action = QAction("&Quit", self)
         self.quit_action.triggered.connect(self.close)
 
+        # 變更標籤
+        self.edit_label_action = QAction("&Edit Label", self)
+        self.edit_label_action.triggered.connect(self.promptInputLabel)
+
         # 主選單
         self.menu = self.menuBar()
         self.file_menu = self.menu.addMenu("&File")
-        # self.edit_menu = self.menu.addMenu("&Edit")
+        self.edit_menu = self.menu.addMenu("&Edit")
         self.ai_menu = self.menu.addMenu("&Ai")
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
@@ -166,6 +170,8 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.auto_save_action)
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.quit_action)
+
+        self.edit_menu.addAction(self.edit_label_action)
 
         self.ai_menu.addAction(self.auto_detect_action)
 
@@ -406,7 +412,16 @@ class MainWindow(QMainWindow):
         """
         if self.image_widget.bboxes:
             self.image_widget.bboxes[-1].label = self.last_used_label
-        self.image_widget.update()
+            self.image_widget.update()
+
+    def promptInputLabel(self):
+        # 彈出輸入框，讓使用者輸入標籤
+        label, ok = QInputDialog.getText(
+            self, "Input", "Enter label name:", text=self.last_used_label
+        )
+        if ok and label.strip():
+            self.last_used_label = label.strip()  # 更新上次使用的標籤
+            self.updateLastBbox()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_PageDown:
@@ -424,13 +439,7 @@ class MainWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_Space:
             self.toggle_play_pause()
         elif event.key() == Qt.Key.Key_L:
-            # 彈出輸入框，讓使用者輸入標籤
-            label, ok = QInputDialog.getText(
-                self, "Input", "Enter label name:", text=self.last_used_label
-            )
-            if ok and label.strip():
-                self.last_used_label = label.strip()  # 更新上次使用的標籤
-            self.updateLastBbox()
+            self.promptInputLabel()
 
         elif event.key() in [
             Qt.Key.Key_1,
