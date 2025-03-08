@@ -40,6 +40,13 @@ def getXmlPath(image_path):
     return path_tmp.parent / f"{path_tmp.stem}.xml"
 
 
+class ShowImageCmd:
+    NEXT = "next"
+    PREV = "prev"
+    FIRST = "first"
+    LAST = "last"
+
+
 class DynamicConfig:
     """
     有需要的話可以定義樹狀結構
@@ -147,7 +154,12 @@ class MainWindow(QMainWindow):
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
 
+        self.open_file_by_index_action = QAction("&Open File by Index", self)
+        self.open_file_by_index_action.triggered.connect(self.open_file_by_index)
+
         self.file_menu.addAction(self.open_folder_action)
+        self.file_menu.addAction(self.open_file_by_index_action)
+        self.file_menu.addSeparator()
         self.file_menu.addAction(self.save_action)
         self.file_menu.addAction(self.auto_save_action)
         self.file_menu.addSeparator()
@@ -219,6 +231,33 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
+    def open_file_by_index(self):
+        if not self.file_handler.folder_path:
+            QMessageBox.warning(self, "Warning", "No folder opened.")
+            return
+
+        if not self.file_handler.image_files:
+            QMessageBox.warning(self, "Warning", "No files in the folder.")
+            return
+
+        num_files = len(self.file_handler.image_files)
+        index, ok = QInputDialog.getInt(
+            self,
+            "Open File by Index",
+            f"Enter file index (1-{num_files}):",
+            1,  # 預設值
+            1,  # 最小值
+            num_files,  # 最大值
+        )
+
+        if ok:
+            self.file_handler.current_index = index - 1
+            self.image_widget.load_image(self.file_handler.current_image_path())
+            self.statusbar.showMessage(
+                f"Image: {self.file_handler.current_image_path()} "
+                f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
+            )
+
     def open_folder(self):
         """
         用pyqt瀏覽並選定資料夾
@@ -243,16 +282,10 @@ class MainWindow(QMainWindow):
                     f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
                 )
 
-    def next_image(self):
-        if self.file_handler.next_image():
-            self.image_widget.load_image(self.file_handler.current_image_path())
-            self.statusbar.showMessage(
-                f"Image: {self.file_handler.current_image_path()}"
-                f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
-            )
-
-    def prev_image(self):
-        if self.file_handler.prev_image():
+    def show_image(self, cmd: str):
+        if self.is_auto_save():
+            self.save_annotations()
+        if self.file_handler.show_image(cmd):
             self.image_widget.load_image(self.file_handler.current_image_path())
             self.statusbar.showMessage(
                 f"Image: {self.file_handler.current_image_path()}"
@@ -369,13 +402,13 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_PageDown:
-            if self.is_auto_save():
-                self.save_annotations()
-            self.next_image()
+            self.show_image(ShowImageCmd.NEXT)
         elif event.key() == Qt.Key.Key_Left or event.key() == Qt.Key.Key_PageUp:
-            if self.is_auto_save():
-                self.save_annotations()
-            self.prev_image()
+            self.show_image(ShowImageCmd.PREV)
+        elif event.key() == Qt.Key.Key_Home:
+            self.show_image(ShowImageCmd.FIRST)
+        elif event.key() == Qt.Key.Key_Home:
+            self.show_image(ShowImageCmd.LAST)
         elif event.key() == Qt.Key.Key_Q:
             self.close()
         elif event.key() == Qt.Key.Key_A:
@@ -891,16 +924,31 @@ class FileHandler:
             return os.path.join(self.folder_path, self.image_files[self.current_index])
         return None
 
-    def next_image(self):
-        if self.current_index < len(self.image_files) - 1:
-            self.current_index += 1
-            return True
-        return False
+    def show_image(self, cmd: str):
+        """
+        show [next, prev, first, last] image
+        Args:
+            cmd: one of "next", "prev", "first", "last"
 
-    def prev_image(self):
-        if self.current_index > 0:
-            self.current_index -= 1
-            return True
+        Returns:
+            True if file is changed
+        """
+        if cmd == ShowImageCmd.NEXT:
+            if self.current_index < len(self.image_files) - 1:
+                self.current_index += 1
+                return True
+        elif cmd == ShowImageCmd.PREV:
+            if self.current_index > 0:
+                self.current_index -= 1
+                return True
+        elif cmd == ShowImageCmd.FIRST:
+            if self.current_index != 0:
+                self.current_index = 0
+                return True
+        elif cmd == ShowImageCmd.LAST:
+            if self.current_index != len(self.image_files) - 1:
+                self.current_index = len(self.image_files) - 1
+                return True
         return False
 
     def generate_voc_xml(self, bboxes, image_path):
