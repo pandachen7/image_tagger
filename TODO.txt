@@ -2,6 +2,9 @@
 # menu
 - edit彈出修改label視窗
 
+# bug
+idx_focus_bbox錯誤
+
 # test
 影像影片切換測試
 // TODO

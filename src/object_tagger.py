@@ -5,7 +5,7 @@ from pathlib import Path
 
 import cv2
 from PyQt6.QtCore import QAbstractListModel, QPoint, QRect, Qt, QTimer
-from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen, QPixmap
+from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -28,11 +28,13 @@ from ruamel.yaml import YAML
 # from PyQt6.QtMultimediaWidgets import QVideoWidget
 from ultralytics import YOLO
 
-from src.model import Bbox, FileType
+from src.model import Bbox, ColorPen, FileType
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff")
 VIDEO_EXTS = (".mp4", ".avi", ".mov", ".wmv", ".mkv", ".webm")
 ALL_EXTS = IMAGE_EXTS + VIDEO_EXTS
+# 角落選取區域大小
+CORNER_SIZE = 10
 
 yaml = YAML()
 
@@ -122,7 +124,7 @@ class MainWindow(QMainWindow):
 
         # 播放控制
         self.play_pause_action = QAction("", self)
-        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
         self.play_pause_action.setIcon(icon)
         self.play_pause_action.triggered.connect(self.toggle_play_pause)
         self.toolbar.addAction(self.play_pause_action)
@@ -152,6 +154,10 @@ class MainWindow(QMainWindow):
         self.edit_label_action = QAction("&Edit Label", self)
         self.edit_label_action.triggered.connect(self.promptInputLabel)
 
+        # 偵測
+        self.detect_action = QAction("&Detect", self)
+        self.detect_action.triggered.connect(self.image_widget.detectImage)
+
         # 主選單
         self.menu = self.menuBar()
         self.file_menu = self.menu.addMenu("&File")
@@ -173,6 +179,7 @@ class MainWindow(QMainWindow):
 
         self.edit_menu.addAction(self.edit_label_action)
 
+        self.ai_menu.addAction(self.detect_action)
         self.ai_menu.addAction(self.auto_detect_action)
 
         # 檔案處理器
@@ -406,12 +413,18 @@ class MainWindow(QMainWindow):
         if self.image_widget.is_playing:
             self.image_widget.timer.start(self.refresh_interval)  # 重新啟動定時器
 
-    def updateLastBbox(self):
+    def updateFocusOrLastBbox(self):
         """
-        更新最後使用的標籤
+        更新focus或最後使用的標籤
         """
+        idx = (
+            self.image_widget.idx_focus_bbox
+            if self.image_widget.idx_focus_bbox >= 0
+            and self.image_widget.idx_focus_bbox < len(self.image_widget.bboxes)
+            else -1
+        )
         if self.image_widget.bboxes:
-            self.image_widget.bboxes[-1].label = self.last_used_label
+            self.image_widget.bboxes[idx].label = self.last_used_label
             self.image_widget.update()
 
     def promptInputLabel(self):
@@ -421,7 +434,7 @@ class MainWindow(QMainWindow):
         )
         if ok and label.strip():
             self.last_used_label = label.strip()  # 更新上次使用的標籤
-            self.updateLastBbox()
+            self.updateFocusOrLastBbox()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_PageDown:
@@ -457,7 +470,7 @@ class MainWindow(QMainWindow):
             self.last_used_label = self.preset_labels.get(
                 str(key_val), self.last_used_label
             )
-            self.updateLastBbox()
+            self.updateFocusOrLastBbox()
             self.statusBar().showMessage(f"labels: {self.preset_labels}")
 
     def closeEvent(self, event):
@@ -479,16 +492,16 @@ class ImageWidget(QWidget):
         self.start_pos = None
         self.end_pos = None
         self.drawing = False
+
+        self.idx_focus_bbox: int = -1
         self.resizing = False
-        self.resizing_bbox = None
+        self.selected_bbox = None
         self.resizing_corner = None
         self.original_bbox = None  # 儲存原始 bbox 資訊
 
         self.model: None | YOLO = None
         self.use_model = False
 
-        # 角落大小
-        self.CORNER_SIZE = 10
         self.cv_img = None
         self.image_label.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
@@ -528,7 +541,8 @@ class ImageWidget(QWidget):
             ).rgbSwapped()
             self.pixmap = QPixmap.fromImage(qImg)
 
-            self.detectImage()
+            if self.main_window.is_auto_detect():
+                self.detectImage()
 
             position = self.cap.get(cv2.CAP_PROP_POS_MSEC)
             self.main_window.progress_bar.blockSignals(True)  # 暫時阻止信號傳遞
@@ -553,7 +567,16 @@ class ImageWidget(QWidget):
         else:
             return point
 
-    def _is_in_corner(self, pos, bbox):
+    def _isInBboxArea(self, pos, bbox: Bbox) -> bool:
+        """用於選取bbox"""
+        pos = self._scale_to_original(pos)
+
+        rect = QRect(bbox.x, bbox.y, bbox.width, bbox.height)
+        if rect.contains(pos):
+            return True
+        return False
+
+    def _isInCorner(self, pos, bbox: Bbox) -> str:
         """檢查滑鼠是否在角落"""
         # 將視窗座標轉換為原始影像座標
         pos = self._scale_to_original(pos)
@@ -564,28 +587,28 @@ class ImageWidget(QWidget):
         # 計算四個角落的範圍
         corners = {
             "top_left": QRect(
-                x1 - self.CORNER_SIZE,
-                y1 - self.CORNER_SIZE,
-                self.CORNER_SIZE * 2,
-                self.CORNER_SIZE * 2,
+                x1 - CORNER_SIZE,
+                y1 - CORNER_SIZE,
+                CORNER_SIZE * 2,
+                CORNER_SIZE * 2,
             ),
             "top_right": QRect(
-                x2 - self.CORNER_SIZE,
-                y1 - self.CORNER_SIZE,
-                self.CORNER_SIZE * 2,
-                self.CORNER_SIZE * 2,
+                x2 - CORNER_SIZE,
+                y1 - CORNER_SIZE,
+                CORNER_SIZE * 2,
+                CORNER_SIZE * 2,
             ),
             "bottom_left": QRect(
-                x1 - self.CORNER_SIZE,
-                y2 - self.CORNER_SIZE,
-                self.CORNER_SIZE * 2,
-                self.CORNER_SIZE * 2,
+                x1 - CORNER_SIZE,
+                y2 - CORNER_SIZE,
+                CORNER_SIZE * 2,
+                CORNER_SIZE * 2,
             ),
             "bottom_right": QRect(
-                x2 - self.CORNER_SIZE,
-                y2 - self.CORNER_SIZE,
-                self.CORNER_SIZE * 2,
-                self.CORNER_SIZE * 2,
+                x2 - CORNER_SIZE,
+                y2 - CORNER_SIZE,
+                CORNER_SIZE * 2,
+                CORNER_SIZE * 2,
             ),
         }
 
@@ -631,13 +654,9 @@ class ImageWidget(QWidget):
 
     def detectImage(self):
         """
-        執行物件偵測, 只有在model讀取且is_auto_detect==True時才會執行
+        執行物件偵測, 只有在model讀取時才會執行
         執行前先清除bboxes, 以免搞混
         """
-        if not self.main_window.is_auto_detect():
-            return
-
-        self.bboxes = []
         if self.model:
             results = self.model.predict(self.cv_img, verbose=False)
             for result in results:
@@ -659,6 +678,8 @@ class ImageWidget(QWidget):
                                 float(conf),
                             )
                         )
+        else:
+            QMessageBox.critical(self, "Error", "Model not loaded")
 
     def get_total_msec(self):
         # 取得影片總毫秒數
@@ -690,15 +711,21 @@ class ImageWidget(QWidget):
             self.cv_img.data, width, height, bytesPerLine, QImage.Format.Format_RGB888
         ).rgbSwapped()
         self.pixmap = QPixmap.fromImage(qImg)
-        self.bboxes = []  # 清空 Bounding Box
+        self.clearBboxes()
 
         # 嘗試讀取 XML 檔案
         # TODO: 加上影片的frame number
         xml_path = getXmlPath(file_path)
         if not self.loadBboxFromXml(xml_path):
             # 如果 bbox (來自xml) 不存在, 才嘗試使用 YOLO 偵測
-            self.detectImage()
+            if self.main_window.is_auto_detect():
+                self.detectImage()
         self.update()  # 觸發 paintEvent
+
+    def clearBboxes(self):
+        # 重置 Bounding Box 資訊
+        self.bboxes = []
+        self.idx_focus_bbox = -1
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -717,11 +744,7 @@ class ImageWidget(QWidget):
 
             # 繪製 Bounding Box
             for bbox in self.bboxes:
-                if hasattr(bbox, "label_color") and bbox.label_color == "red":
-                    pen = QPen(QColor(255, 0, 0), 2)  # 紅色
-                else:
-                    pen = QPen(QColor(0, 255, 0), 2)  # 綠色，寬度 2
-                painter.setPen(pen)
+                painter.setPen(bbox.color_pen)
                 rect = QRect(
                     self._scale_to_widget(QPoint(bbox.x, bbox.y)),
                     self._scale_to_widget(
@@ -757,8 +780,7 @@ class ImageWidget(QWidget):
                 )
 
             if self.drawing:
-                pen = QPen(QColor(255, 0, 0), 2)  # 繪製中的 Bounding Box 用紅色
-                painter.setPen(pen)
+                painter.setPen(ColorPen.RED)  # 繪製中的 Bounding Box 用紅色
                 rect = QRect(self.start_pos, self.end_pos)
                 painter.drawRect(rect)
 
@@ -767,10 +789,12 @@ class ImageWidget(QWidget):
             self.is_playing = False
 
         if event.button() == Qt.MouseButton.LeftButton:
-            for bbox in self.bboxes:
-                corner = self._is_in_corner(event.pos(), bbox)
+            for idx_focus, bbox in enumerate(self.bboxes):
+                corner = self._isInCorner(event.pos(), bbox)
                 if corner:
-                    self.resizing_bbox = bbox
+                    self.selected_bbox = bbox
+                    self.selected_bbox.color_pen = ColorPen.YELLOW
+                    self.idx_focus_bbox = idx_focus
                     self.resizing_corner = corner
                     self.original_bbox = (
                         bbox.x,
@@ -781,13 +805,21 @@ class ImageWidget(QWidget):
                     self.start_pos = self._scale_to_original(
                         event.pos()
                     )  # 紀錄原始座標
-                    self.resizing_bbox.label_color = "red"  # 改變顏色
+
                     self.resizing = True
+                    self.update()
                     break
-            else:
+            else:  # 接在forloop無break之時
                 self.start_pos = event.pos()
                 self.end_pos = event.pos()
                 self.drawing = True
+                for idx_focus, bbox in enumerate(self.bboxes):
+                    if self._isInBboxArea(event.pos(), bbox):
+                        self.selected_bbox = bbox
+                        self.selected_bbox.color_pen = ColorPen.YELLOW
+                        self.idx_focus_bbox = idx_focus
+                        self.update()
+                        break
 
         elif event.button() == Qt.MouseButton.RightButton:  # 刪除
             pos = event.pos()
@@ -804,21 +836,29 @@ class ImageWidget(QWidget):
                     self.update()
                     break
 
+                self.idx_focus_bbox = -1  # 重置
+
     def mouseMoveEvent(self, event):
         # 檢查是否在角落
         cursor_changed = False
         for bbox in self.bboxes:
-            corner = self._is_in_corner(event.pos(), bbox)
-            if corner:
-                self.setCursor(Qt.CursorShape.SizeAllCursor)
+            corner = self._isInCorner(event.pos(), bbox)
+            if corner in ["top_left", "bottom_right"]:
+                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+                cursor_changed = True
+                break
+            elif corner in ["top_right", "bottom_left"]:
+                self.setCursor(Qt.CursorShape.SizeBDiagCursor)
                 cursor_changed = True
                 break
         if not cursor_changed:
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
         if self.drawing:
+            # 繪製的話, 就讓之前有被選取的bbox先恢復原樣
+            if self.selected_bbox:
+                self.selected_bbox.color_pen = ColorPen.GREEN
             self.end_pos = event.pos()
-            self.update()
         elif self.resizing:
             pos = self._scale_to_original(event.pos())
             dx = pos.x() - self.start_pos.x()
@@ -826,42 +866,35 @@ class ImageWidget(QWidget):
 
             # 根據不同的角落調整大小
             if self.resizing_corner == "top_left":
-                self.resizing_bbox.x = self.original_bbox[0] + dx
-                self.resizing_bbox.y = self.original_bbox[1] + dy
-                self.resizing_bbox.width = self.original_bbox[2] - dx
-                self.resizing_bbox.height = self.original_bbox[3] - dy
+                self.selected_bbox.x = self.original_bbox[0] + dx
+                self.selected_bbox.y = self.original_bbox[1] + dy
+                self.selected_bbox.width = self.original_bbox[2] - dx
+                self.selected_bbox.height = self.original_bbox[3] - dy
             elif self.resizing_corner == "top_right":
-                self.resizing_bbox.y = self.original_bbox[1] + dy
-                self.resizing_bbox.width = self.original_bbox[2] + dx
-                self.resizing_bbox.height = self.original_bbox[3] - dy
+                self.selected_bbox.y = self.original_bbox[1] + dy
+                self.selected_bbox.width = self.original_bbox[2] + dx
+                self.selected_bbox.height = self.original_bbox[3] - dy
             elif self.resizing_corner == "bottom_left":
-                self.resizing_bbox.x = self.original_bbox[0] + dx
-                self.resizing_bbox.width = self.original_bbox[2] - dx
-                self.resizing_bbox.height = self.original_bbox[3] + dy
+                self.selected_bbox.x = self.original_bbox[0] + dx
+                self.selected_bbox.width = self.original_bbox[2] - dx
+                self.selected_bbox.height = self.original_bbox[3] + dy
             elif self.resizing_corner == "bottom_right":
-                self.resizing_bbox.width = self.original_bbox[2] + dx
-                self.resizing_bbox.height = self.original_bbox[3] + dy
+                self.selected_bbox.width = self.original_bbox[2] + dx
+                self.selected_bbox.height = self.original_bbox[3] + dy
+            # # 不太實用, 畢竟有可能從bbox中間再畫出一個bbox
+            # elif self.resizing_corner == "bbox_area":
+            #     self.selected_bbox.x = self.original_bbox[0] + dx
+            #     self.selected_bbox.y = self.original_bbox[1] + dy
 
-            self.update()
+        self.update()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             if self.resizing:
-                x1, y1, width, height = (
-                    self.resizing_bbox.x,
-                    self.resizing_bbox.y,
-                    self.resizing_bbox.width,
-                    self.resizing_bbox.height,
-                )
-                x2, y2 = x1 + width, y1 + height
                 self.resizing = False
-                self.resizing_bbox.label_color = "green"
-
-                self.resizing_bbox = None
+                self.selected_bbox = None
                 self.resizing_corner = None
                 self.original_bbox = None
-
-                self.update()
 
             elif self.drawing:
                 self.drawing = False
@@ -882,6 +915,8 @@ class ImageWidget(QWidget):
 
                 # 檢查寬高是否大於最小限制
                 if width < 5 or height < 5:
+                    # 範圍太小
+                    self.completeMouseAction()
                     return
 
                 # 將視窗座標轉換為原始影像座標
@@ -903,7 +938,17 @@ class ImageWidget(QWidget):
                         1.0,
                     )
                 )
-                self.update()
+
+                # 框已成形, 就讓選取index失效
+                self.idx_focus_bbox = -1
+
+            self.completeMouseAction()
+
+    def completeMouseAction(self):
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        for bbox in self.bboxes:
+            bbox.color_pen = ColorPen.GREEN
+        self.update()
 
     def wheelEvent(self, event):
         if self.main_window.is_auto_save():
