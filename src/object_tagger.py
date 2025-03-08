@@ -64,6 +64,16 @@ class Settings:
         data["folder_path"] = yaml_settings.get("folder_path", None)
         data["file_index"] = yaml_settings.get("file_index", 0)
 
+        # check validation
+        if data["model_path"] is None or Path(data["model_path"]).is_file() is False:
+            data["model_path"] = None
+
+        if data["folder_path"] is None or Path(data["folder_path"]).is_dir() is False:
+            data["folder_path"] = None
+
+        if not isinstance(data["file_index"], int) or data["file_index"] < 0:
+            data["file_index"] = 0
+
     except Exception as e:
         print(f"Error parsing config/label.yaml: {e}")
 
