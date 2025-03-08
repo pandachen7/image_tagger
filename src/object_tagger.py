@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import cv2
-from ruamel.yaml import YAML
 from PyQt6.QtCore import QAbstractListModel, QPoint, QRect, Qt, QTimer
 from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
@@ -23,6 +22,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from ruamel.yaml import YAML
 
 # from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 # from PyQt6.QtMultimediaWidgets import QVideoWidget
@@ -201,7 +201,8 @@ class MainWindow(QMainWindow):
             if model_path:
                 self.load_model(model_path)
             folder_path = DynamicConfig.dict_data.get("folder_path", None)
-            self.choose_folder(folder_path)
+            file_index = DynamicConfig.dict_data.get("file_index", 0)
+            self.choose_folder(folder_path, file_index)
         except FileNotFoundError:
             # QMessageBox.warning(self, "Warning", "config/dynamic.yaml not found.")
             pass
@@ -210,16 +211,17 @@ class MainWindow(QMainWindow):
                 self, "Warning", f"Error parsing config/label.yaml: {e}"
             )
 
+    def update_dynamic_config(self):
+        with open("config/dynamic.yaml", "w") as f:
+            yaml.dump(DynamicConfig.dict_data, f)
+
     def select_model(self):
         model_path, _ = QFileDialog.getOpenFileName(
             self, "Open Model File", "", "Model Files (*.pt)"
         )
         if model_path:
             self.load_model(model_path)
-            # update config
             DynamicConfig.dict_data["model_path"] = model_path
-            with open("config/dynamic.yaml", "w") as f:
-                yaml.dump(DynamicConfig.dict_data, f)
 
     def load_model(self, model_path):
         try:
@@ -266,23 +268,26 @@ class MainWindow(QMainWindow):
         """
         folder_path = QFileDialog.getExistingDirectory(self, "Open Folder")  # PyQt6
         self.choose_folder(folder_path)
-        # update config
         DynamicConfig.dict_data["folder_path"] = folder_path
-        with open("config/dynamic.yaml", "w") as f:
-            yaml.dump(DynamicConfig.dict_data, f)
+        DynamicConfig.dict_data["file_index"] = 0
 
-    def choose_folder(self, folder_path):
+    def choose_folder(self, folder_path: str, file_index: int = 0):
         """
         開啟資料夾的檔案
         """
         if folder_path:
             self.file_handler.load_folder(folder_path)
             if self.file_handler.image_files:
+                self.file_handler.current_index = min(
+                    file_index, len(self.file_handler.image_files) - 1
+                )
                 self.image_widget.load_image(self.file_handler.current_image_path())
                 self.statusbar.showMessage(
                     f"Opened folder: {folder_path} "
                     f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
                 )
+            else:
+                QMessageBox.information(self, "Info", "No files in the folder.")
 
     def show_image(self, cmd: str):
         if self.is_auto_save():
@@ -293,6 +298,7 @@ class MainWindow(QMainWindow):
                 f"Image: {self.file_handler.current_image_path()}"
                 f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
             )
+            DynamicConfig.dict_data["file_index"] = self.file_handler.current_index
 
     def toggle_auto_save(self):
         self.auto_save = not self.auto_save
@@ -444,6 +450,14 @@ class MainWindow(QMainWindow):
             )
             self.updateLastBbox()
             self.statusBar().showMessage(f"labels: {self.preset_labels}")
+
+    def closeEvent(self, event):
+        """
+        關閉前需要儲存最後的標籤資訊, 並更新動態設定檔
+        """
+        if self.is_auto_save():
+            self.save_annotations()
+        self.update_dynamic_config()
 
 
 class ImageWidget(QWidget):
@@ -616,7 +630,7 @@ class ImageWidget(QWidget):
 
         self.bboxes = []
         if self.model:
-            results = self.model.predict(self.cv_img)
+            results = self.model.predict(self.cv_img, verbose=False)
             for result in results:
                 if result.boxes is not None:
                     for box in result.boxes:
