@@ -1,10 +1,6 @@
 // TODO
 # menu
-- 可選擇第N個多媒體
-
-# cfg
-- 加入第N個檔案
-- 使用不會變更結構的yaml package
+- edit彈出修改label視窗
 
 # test
 影像影片切換測試

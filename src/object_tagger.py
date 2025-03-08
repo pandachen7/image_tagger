@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import cv2
-import yaml
+from ruamel.yaml import YAML
 from PyQt6.QtCore import QAbstractListModel, QPoint, QRect, Qt, QTimer
 from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
@@ -33,6 +33,8 @@ from src.model import Bbox, FileType
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff")
 VIDEO_EXTS = (".mp4", ".avi", ".mov", ".wmv", ".mkv", ".webm")
 ALL_EXTS = IMAGE_EXTS + VIDEO_EXTS
+
+yaml = YAML()
 
 
 def getXmlPath(image_path):
@@ -175,7 +177,7 @@ class MainWindow(QMainWindow):
         self.last_used_label = "object"  # 預設值
         try:
             with open("config/static.yaml", "r") as f:
-                config = yaml.safe_load(f)
+                config = yaml.load(f)
                 yaml_labels = config.get("labels", {})
                 if yaml_labels:
                     self.preset_labels = {
@@ -187,14 +189,14 @@ class MainWindow(QMainWindow):
 
         except FileNotFoundError:
             QMessageBox.warning(self, "Warning", "config/static.yaml not found.")
-        except yaml.YAMLError as e:
+        except Exception as e:
             QMessageBox.warning(
                 self, "Warning", f"Error parsing config/static.yaml: {e}"
             )
 
         try:
             with open("config/dynamic.yaml", "r") as f:
-                DynamicConfig.dict_data = yaml.safe_load(f)
+                DynamicConfig.dict_data = yaml.load(f)
             model_path = DynamicConfig.dict_data.get("model_path", None)
             if model_path:
                 self.load_model(model_path)
@@ -203,7 +205,7 @@ class MainWindow(QMainWindow):
         except FileNotFoundError:
             # QMessageBox.warning(self, "Warning", "config/dynamic.yaml not found.")
             pass
-        except yaml.YAMLError as e:
+        except Exception as e:
             QMessageBox.warning(
                 self, "Warning", f"Error parsing config/label.yaml: {e}"
             )
@@ -407,7 +409,7 @@ class MainWindow(QMainWindow):
             self.show_image(ShowImageCmd.PREV)
         elif event.key() == Qt.Key.Key_Home:
             self.show_image(ShowImageCmd.FIRST)
-        elif event.key() == Qt.Key.Key_Home:
+        elif event.key() == Qt.Key.Key_End:
             self.show_image(ShowImageCmd.LAST)
         elif event.key() == Qt.Key.Key_Q:
             self.close()
@@ -884,9 +886,9 @@ class ImageWidget(QWidget):
         if self.main_window.is_auto_save():
             self.main_window.save_annotations()
         if event.angleDelta().y() > 0:
-            self.main_window.prev_image()
+            self.main_window.show_image(ShowImageCmd.PREV)
         else:
-            self.main_window.next_image()
+            self.main_window.show_image(ShowImageCmd.NEXT)
 
 
 class BboxListModel(QAbstractListModel):
