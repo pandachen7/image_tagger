@@ -51,12 +51,21 @@ class ShowImageCmd:
     LAST = "last"
 
 
-class DynamicConfig:
+class Settings:
     """
-    有需要的話可以定義樹狀結構
+    程式正常關閉後自動儲存
     """
 
-    dict_data = None
+    data = {"model_path": None, "folder_path": None, "file_index": 0}
+    try:
+        with open("config/settings.yaml", "r", encoding="utf-8") as f:
+            yaml_settings = yaml.load(f)
+        data["model_path"] = yaml_settings.get("model_path", None)
+        data["folder_path"] = yaml_settings.get("folder_path", None)
+        data["file_index"] = yaml_settings.get("file_index", 0)
+
+    except Exception as e:
+        print(f"Error parsing config/label.yaml: {e}")
 
 
 class MainWindow(QMainWindow):
@@ -172,6 +181,9 @@ class MainWindow(QMainWindow):
         self.open_file_by_index_action = QAction("&Open File by Index", self)
         self.open_file_by_index_action.triggered.connect(self.open_file_by_index)
 
+        self.select_model_action = QAction("&Select Model", self)
+        self.select_model_action.triggered.connect(self.select_model)
+
         self.file_menu.addAction(self.open_folder_action)
         self.file_menu.addAction(self.open_file_by_index_action)
         self.file_menu.addSeparator()
@@ -182,6 +194,8 @@ class MainWindow(QMainWindow):
 
         self.edit_menu.addAction(self.edit_label_action)
 
+        self.ai_menu.addAction(self.select_model_action)
+        self.ai_menu.addSeparator()
         self.ai_menu.addAction(self.detect_action)
         self.ai_menu.addAction(self.auto_detect_action)
 
@@ -191,8 +205,13 @@ class MainWindow(QMainWindow):
         # 讀取預設標籤和上次使用的標籤
         self.preset_labels = {}
         self.last_used_label = "object"  # 預設值
+
+        if Settings.data["model_path"]:
+            self.load_model(Settings.data["model_path"])
+        self.choose_folder(Settings.data["folder_path"], Settings.data["file_index"])
+
         try:
-            with open("config/static.yaml", "r", encoding="utf-8") as f:
+            with open("config/cfg.yaml", "r", encoding="utf-8") as f:
                 config = yaml.load(f)
                 yaml_labels = config.get("labels", {})
                 if yaml_labels:
@@ -205,32 +224,13 @@ class MainWindow(QMainWindow):
                 self.auto_save_per_second = config.get("auto_save_per_second", -1)
 
         except FileNotFoundError:
-            QMessageBox.warning(self, "Warning", "config/static.yaml not found.")
+            QMessageBox.warning(self, "Warning", "config/cfg.yaml not found.")
         except Exception as e:
-            QMessageBox.warning(
-                self, "Warning", f"Error parsing config/static.yaml: {e}"
-            )
-
-        try:
-            with open("config/dynamic.yaml", "r", encoding="utf-8") as f:
-                DynamicConfig.dict_data = yaml.load(f)
-            model_path = DynamicConfig.dict_data.get("model_path", None)
-            if model_path:
-                self.load_model(model_path)
-            folder_path = DynamicConfig.dict_data.get("folder_path", None)
-            file_index = DynamicConfig.dict_data.get("file_index", 0)
-            self.choose_folder(folder_path, file_index)
-        except FileNotFoundError:
-            # QMessageBox.warning(self, "Warning", "config/dynamic.yaml not found.")
-            pass
-        except Exception as e:
-            QMessageBox.warning(
-                self, "Warning", f"Error parsing config/label.yaml: {e}"
-            )
+            QMessageBox.warning(self, "Warning", f"Error parsing config/cfg.yaml: {e}")
 
     def update_dynamic_config(self):
-        with open("config/dynamic.yaml", "w", encoding="utf-8") as f:
-            yaml.dump(DynamicConfig.dict_data, f)
+        with open("config/settings.yaml", "w", encoding="utf-8") as f:
+            yaml.dump(Settings.data, f)
 
     def select_model(self):
         model_path, _ = QFileDialog.getOpenFileName(
@@ -238,7 +238,7 @@ class MainWindow(QMainWindow):
         )
         if model_path:
             self.load_model(model_path)
-            DynamicConfig.dict_data["model_path"] = model_path
+            Settings.data["model_path"] = model_path
 
     def load_model(self, model_path):
         try:
@@ -285,8 +285,8 @@ class MainWindow(QMainWindow):
         """
         folder_path = QFileDialog.getExistingDirectory(self, "Open Folder")  # PyQt6
         self.choose_folder(folder_path)
-        DynamicConfig.dict_data["folder_path"] = folder_path
-        DynamicConfig.dict_data["file_index"] = 0
+        Settings.data["folder_path"] = folder_path
+        Settings.data["file_index"] = 0
 
     def choose_folder(self, folder_path: str, file_index: int = 0):
         """
@@ -315,7 +315,7 @@ class MainWindow(QMainWindow):
                 f"Image: {self.file_handler.current_image_path()}"
                 f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
             )
-            DynamicConfig.dict_data["file_index"] = self.file_handler.current_index
+            Settings.data["file_index"] = self.file_handler.current_index
 
     def toggle_auto_save(self):
         self.auto_save = not self.auto_save
@@ -395,7 +395,6 @@ class MainWindow(QMainWindow):
         else:
             icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
             self.play_pause_action.setIcon(icon)
-            # self.image_widget.detectImage()
             self.image_widget.timer.stop()
 
     def set_media_position(self, position):
@@ -407,6 +406,8 @@ class MainWindow(QMainWindow):
 
     def set_playback_speed(self, index):
         # 設定播放速度
+        if self.image_widget.file_type != FileType.VIDEO:
+            return
         speed = self.speed_control.itemData(index)
         self.image_widget.timer.stop()
         if self.image_widget.fps:
@@ -563,7 +564,10 @@ class ImageWidget(QWidget):
                 and self.main_window.auto_save_per_second > 0
             ):
                 self.auto_save_counter += 1
-                if self.auto_save_counter >= self.main_window.auto_save_per_second * self.fps:
+                if (
+                    self.auto_save_counter
+                    >= self.main_window.auto_save_per_second * self.fps
+                ):
                     self.main_window.save_annotations()
                     self.auto_save_counter = 0
 
@@ -673,31 +677,38 @@ class ImageWidget(QWidget):
         執行物件偵測, 只有在model讀取時才會執行
         執行前先清除bboxes, 以免搞混
         """
-        if self.model:
-            results = self.model.predict(self.cv_img, verbose=False)
-            for result in results:
-                if result.boxes is not None:
-                    for box in result.boxes:
-                        b = box.xyxy[
-                            0
-                        ]  # get box coordinates in (top, left, bottom, right) format
-                        c = box.cls
-                        conf = box.conf
-                        label = self.model.names[int(c)]
-                        self.bboxes.append(
-                            Bbox(
-                                int(b[0]),
-                                int(b[1]),
-                                int(b[2] - b[0]),
-                                int(b[3] - b[1]),
-                                label,
-                                float(conf),
-                            )
-                        )
-        else:
+        if not self.model:
             self.main_window.auto_detect = False
             self.main_window.auto_detect_action.setChecked(False)
             QMessageBox.critical(self, "Error", "Model not loaded")
+            return
+
+        if not self.main_window.file_handler.current_image_path():
+            QMessageBox.critical(self, "Error", "No image loaded")
+            return
+
+        self.bboxes = []
+        results = self.model.predict(self.cv_img, verbose=False)
+        for result in results:
+            if result.boxes is not None:
+                for box in result.boxes:
+                    b = box.xyxy[
+                        0
+                    ]  # get box coordinates in (top, left, bottom, right) format
+                    c = box.cls
+                    conf = box.conf
+                    label = self.model.names[int(c)]
+                    self.bboxes.append(
+                        Bbox(
+                            int(b[0]),
+                            int(b[1]),
+                            int(b[2] - b[0]),
+                            int(b[3] - b[1]),
+                            label,
+                            float(conf),
+                        )
+                    )
+        self.update()
 
     def get_total_msec(self):
         # 取得影片總毫秒數
