@@ -158,6 +158,11 @@ class MainWindow(QMainWindow):
         self.speed_control.currentIndexChanged.connect(self.set_playback_speed)
         self.toolbar.addWidget(self.speed_control)
 
+        self.play_pause_action.setEnabled(False)
+        self.progress_bar.setEnabled(False)
+        self.speed_control.setEnabled(False)
+        # ^播放控制
+
         # 退出
         self.quit_action = QAction("&Quit", self)
         self.quit_action.triggered.connect(self.close)
@@ -726,13 +731,21 @@ class ImageWidget(QWidget):
             self.fps = self.cap.get(cv2.CAP_PROP_FPS)
 
             self.main_window.progress_bar.setRange(0, self.get_total_msec())
-
+    
             self.main_window.progress_bar.blockSignals(True)
             self.main_window.progress_bar.setValue(0)
             self.main_window.progress_bar.blockSignals(False)
+            # 啟用與影片相關的控制項
+            self.main_window.play_pause_action.setEnabled(True)
+            self.main_window.progress_bar.setEnabled(True)
+            self.main_window.speed_control.setEnabled(True)
         else:
             self.file_type = FileType.IMAGE
             self.cv_img = cv2.imread(file_path)
+            # 禁用與影片相關的控制項
+            self.main_window.play_pause_action.setEnabled(False)
+            self.main_window.progress_bar.setEnabled(False)
+            self.main_window.speed_control.setEnabled(False)
 
         height, width, channel = self.cv_img.shape
         bytesPerLine = 3 * width
