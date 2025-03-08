@@ -192,7 +192,7 @@ class MainWindow(QMainWindow):
         self.preset_labels = {}
         self.last_used_label = "object"  # 預設值
         try:
-            with open("config/static.yaml", "r") as f:
+            with open("config/static.yaml", "r", encoding="utf-8") as f:
                 config = yaml.load(f)
                 yaml_labels = config.get("labels", {})
                 if yaml_labels:
@@ -212,7 +212,7 @@ class MainWindow(QMainWindow):
             )
 
         try:
-            with open("config/dynamic.yaml", "r") as f:
+            with open("config/dynamic.yaml", "r", encoding="utf-8") as f:
                 DynamicConfig.dict_data = yaml.load(f)
             model_path = DynamicConfig.dict_data.get("model_path", None)
             if model_path:
@@ -229,7 +229,7 @@ class MainWindow(QMainWindow):
             )
 
     def update_dynamic_config(self):
-        with open("config/dynamic.yaml", "w") as f:
+        with open("config/dynamic.yaml", "w", encoding="utf-8") as f:
             yaml.dump(DynamicConfig.dict_data, f)
 
     def select_model(self):
@@ -695,6 +695,8 @@ class ImageWidget(QWidget):
                             )
                         )
         else:
+            self.main_window.auto_detect = False
+            self.main_window.auto_detect_action.setChecked(False)
             QMessageBox.critical(self, "Error", "Model not loaded")
 
     def get_total_msec(self):
