@@ -78,6 +78,9 @@ class MainWindow(QMainWindow):
         self.auto_save_action.setCheckable(True)
         self.auto_save_action.triggered.connect(self.toggle_auto_save)
 
+        # 自動儲存間隔 (秒)
+        self.auto_save_per_second = -1
+
         # 自動使用偵測 (GPU不好速度就會慢)
         self.auto_detect_action = QAction("&Auto Detect", self)
         self.auto_detect_action.setCheckable(True)
@@ -199,6 +202,7 @@ class MainWindow(QMainWindow):
                         if isinstance(key, (int, str))
                     }
                 self.last_used_label = config.get("default_label", "object")
+                self.auto_save_per_second = config.get("auto_save_per_second", -1)
 
         except FileNotFoundError:
             QMessageBox.warning(self, "Warning", "config/static.yaml not found.")
@@ -513,6 +517,8 @@ class ImageWidget(QWidget):
 
         self.is_playing = False  # 追蹤是否在播放影片
 
+        self.auto_save_counter = 0  # 自動儲存計數器
+
         # 縮放後的影像尺寸
         self.scaled_width = None
         self.scaled_height = None
@@ -550,6 +556,16 @@ class ImageWidget(QWidget):
             self.main_window.progress_bar.blockSignals(False)  # 恢復信號傳遞
 
             self.update()
+
+            # 自動儲存邏輯
+            if (
+                self.main_window.is_auto_save()
+                and self.main_window.auto_save_per_second > 0
+            ):
+                self.auto_save_counter += 1
+                if self.auto_save_counter >= self.main_window.auto_save_per_second * self.fps:
+                    self.main_window.save_annotations()
+                    self.auto_save_counter = 0
 
     def _scale_to_original(self, point):
         if self.pixmap:

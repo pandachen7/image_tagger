@@ -22,6 +22,7 @@
   - `l`: 彈出視窗, 輸入label名
   - `數字鍵0~9`: 切換預設的label, 只會針對最後一個label做變更
   - `Page Up/Down` or `方向鍵左/右`: 切換檔案
+  - `Home/End`: 切換到最 前/後 檔案
   - `space空白鍵`: play/pause video
 
 ## 安裝相關
