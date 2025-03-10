@@ -62,7 +62,7 @@ class Settings:
             yaml_settings = yaml.load(f)
         data["model_path"] = yaml_settings.get("model_path", None)
         data["folder_path"] = yaml_settings.get("folder_path", None)
-        data["file_index"] = yaml_settings.get("file_index", 0)
+        data["file_index"] = int(yaml_settings.get("file_index", 0))
 
         # check validation
         if data["model_path"] is None or Path(data["model_path"]).is_file() is False:
