@@ -1,5 +1,6 @@
 本專案可對影像, 影片畫框  
-可用於object detection的影像訓練dataset  
+可做出object detection的影像訓練的dataset  
+標籤都是VOC格式  
 
 ![system gui](./asset/system_gui.png)
 
@@ -41,9 +42,6 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 ```bash
 pip install -r requirements.txt
 ```
-
-## 雜談
-PyQt最棒的地方在於, 畫面上可以直接打中文
 
 ### 關於video播放
 Google AI Gemini-2.0-pro 跟我都試過了, 沒有辦法把video widget的frame傳到畫布中編輯  
