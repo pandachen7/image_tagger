@@ -22,3 +22,10 @@ class Bbox:
 class FileType:
     VIDEO = "video"
     IMAGE = "image"
+
+
+class ShowImageCmd:
+    NEXT = "next"
+    PREV = "prev"
+    FIRST = "first"
+    LAST = "last"
