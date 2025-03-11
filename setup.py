@@ -7,7 +7,7 @@ from setuptools import Extension, setup
 
 DELETE_BUILD_DIR = True
 DESTINATION_FOLDER = "compiled"
-BUILD_DIR = "build/cython"
+BUILD_DIR = "build"
 
 
 def generate_extensions(source_dir="src"):
