@@ -43,8 +43,6 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 pip install -r requirements.txt
 ```
 
-## 雜談
-PyQt最棒的地方在於, 畫面上可以直接打中文
 
 ### 關於video播放
 Google AI Gemini-2.0-pro 跟我都試過了, 沒有辦法把video widget的frame傳到畫布中編輯  
