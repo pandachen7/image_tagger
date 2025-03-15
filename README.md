@@ -1,5 +1,6 @@
 本專案可對影像, 影片畫框  
-可用於object detection的影像訓練dataset  
+用於object detection的影像訓練dataset  
+可使用yolo model來自動偵測, 或是表現VOC的框的資訊
 
 ![system gui](./asset/system_gui.png)
 
