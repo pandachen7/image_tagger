@@ -1,9 +1,6 @@
 // TODO
-# menu
-
-
-# bug
-
+# build
+pyqt6似乎不能直接用於cython
 
 # test
 影像影片切換測試
