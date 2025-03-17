@@ -13,16 +13,16 @@ from PyQt6.QtWidgets import (
 )
 from ultralytics import YOLO
 
-from const import CORNER_SIZE, VIDEO_EXTS
+from src.const import CORNER_SIZE, VIDEO_EXTS
 from src.func import getXmlPath
 from src.model import Bbox, ColorPen, FileType, ShowImageCmd
 
-if TYPE_CHECKING:
-    from src.object_tagger import MainWindow
+# if TYPE_CHECKING:
+#     from src.object_tagger import MainWindow
 
 
 class ImageWidget(QWidget):
-    def __init__(self, main_window: MainWindow):
+    def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
         self.image_label = QLabel()
