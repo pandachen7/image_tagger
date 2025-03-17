@@ -1,6 +1,7 @@
 本專案可對影像, 影片畫框  
-可做出object detection的影像訓練的dataset  
-標籤都是VOC格式  
+用於object detection的影像訓練dataset  
+可使用yolo model來自動偵測, 或是表現VOC的框的資訊
+
 
 ![system gui](./asset/system_gui.png)
 
@@ -43,6 +44,10 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 pip install -r requirements.txt
 ```
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 808a5a0a53c52d732932a102ed710c6b8838ed98
 ### 關於video播放
 Google AI Gemini-2.0-pro 跟我都試過了, 沒有辦法把video widget的frame傳到畫布中編輯  
 因此用傳統的方式來把opencv frame轉成pixmap  

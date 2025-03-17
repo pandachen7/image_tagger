@@ -1,6 +1,10 @@
 // TODO
+<<<<<<< HEAD
 # build
 pyqt6似乎不能直接用於cython
+
+# func
+框加上角度
 
 # import
 互相引用的特定寫法, 並且迴避circular import錯誤
