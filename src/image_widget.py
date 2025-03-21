@@ -1,7 +1,7 @@
 import os
 import xml.etree.ElementTree as ET
-from typing import TYPE_CHECKING
 
+# from typing import TYPE_CHECKING
 import cv2
 from PyQt6.QtCore import QPoint, QRect, Qt, QTimer
 from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
@@ -327,27 +327,27 @@ class ImageWidget(QWidget):
                 # 計算文字大小
                 text = f"{bbox.label} ({bbox.confidence:.2f})"
                 font_metrics = painter.fontMetrics()
-                text_width = font_metrics.horizontalAdvance(text) * 2
+                text_width = font_metrics.horizontalAdvance(text)
                 text_height = font_metrics.height()
 
-                # 繪製文字底色 (調整位置和大小)
-                qpt_text = QPoint(bbox.x, bbox.y - text_height)
+                # 繪製文字底色
+                qpt_text = QPoint(bbox.x, bbox.y)
                 bg_rect = QRect(
-                    self._scale_to_widget(
-                        QPoint(qpt_text.x(), qpt_text.y() - int(text_height))
+                    QPoint(
+                        self._scale_to_widget(qpt_text).x(),
+                        self._scale_to_widget(qpt_text).y() - int(text_height),
                     ),
                     QPoint(
-                        self._scale_to_widget(qpt_text).x()
-                        + int(text_width * self.scaled_width / self.pixmap.width()),
-                        self._scale_to_widget(qpt_text).y()
-                        + int(text_height * self.scaled_height / self.pixmap.height()),
+                        self._scale_to_widget(qpt_text).x() + int(text_width),
+                        self._scale_to_widget(qpt_text).y(),
                     ),
                 )
                 painter.fillRect(bg_rect, QColor(0, 0, 0, 150))  # 黑色半透明底色
 
-                # 繪製文字 (調整位置)
+                # 繪製文字
                 painter.drawText(
-                    self._scale_to_widget(QPoint(bbox.x, bbox.y - text_height)), text
+                    self._scale_to_widget(qpt_text),
+                    text,
                 )
 
             if self.drawing:

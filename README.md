@@ -1,5 +1,5 @@
 本專案可對影像, 影片畫框  
-用於object detection的影像訓練dataset  
+用於作出object detection的影像訓練dataset  
 可使用yolo model來自動偵測, 或是表現VOC的框的資訊
 
 
@@ -7,7 +7,7 @@
 
 功能一覽
 - 滾輪可預覽上/下一個檔案
-- 預設label種類名稱[設定檔](./config/static.yaml), 按下數字鍵可以直接切換label名稱, 或者按下小寫的`L`來設定指定名稱
+- 預設label種類名稱[設定檔](./config/settings.yaml), 按下數字鍵可以直接切換label名稱, 或者按下小寫的`L`來設定指定名稱
   以減少輸入次數
 - 關於影片撥放
   - 讀取影片檔案, 並且labeling
