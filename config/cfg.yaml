@@ -9,7 +9,7 @@ labels:
   7: bus
   8: truck
   9: train
-  0: background
+  0: unknown
 
 # default label name, draw bbox with this label
 default_label: object

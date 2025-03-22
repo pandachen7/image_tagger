@@ -2,23 +2,41 @@
 用於作出object detection的影像訓練dataset  
 可使用yolo model來自動偵測, 或是表現VOC的框的資訊
 
-
 ![system gui](./asset/system_gui.png)
 
-功能一覽
+# 功能一覽
+## 畫框
+- 讀取.pt model, 可偵測影像並畫框
+  - Menu: Ai -> Select Model 可選擇.pt model
+  - Menu: Ai -> Detect 可偵測影像並畫框
+  - Menu: Ai -> Auto Detect 自動偵測並畫框. 下方有快捷鍵
+- 如果圖檔旁有同名的VOC標籤檔, **則優先作為框的資訊**
+- 如果沒有上述兩種方法, 則需要手動按左鍵畫框, 信心值為100%
+- 按右鍵可以刪除框, 框重疊時, 後來畫的框會先被刪
+- 畫完框, 框角可以調整大小, 每次focus的框都會暫時變黃色
+- 按下小寫的`L`來設定框的名稱, 只對之前focus的框做更改
+  - Menu: Edit -> Edit Label 也能改框名
+- 預設label種類名稱[設定檔](./config/settings.yaml), 按下數字鍵可以直接切換label名稱, 只對之前focus的框做更改
+
+## 瀏覽檔案相關
+- 開啟資料夾來瀏覽影像或影片
+  - Menu: File -> Open Folder
+  - Menu: File -> Open File By Index   可選取該資料夾的第N個影像或影片
+- 儲存相關
+  - Menu: File -> Save  儲存框的資訊. 下方有快捷鍵
+  - Menu: File -> Auto Save  會在瀏覽下一個檔案前將畫框資訊儲存, 注意沒有框也會存, 這是為了因應背景的訓練. 下方有快捷鍵
 - 滾輪可預覽上/下一個檔案
-- 預設label種類名稱[設定檔](./config/settings.yaml), 按下數字鍵可以直接切換label名稱, 或者按下小寫的`L`來設定指定名稱
-  以減少輸入次數
 - 關於影片撥放
-  - 讀取影片檔案, 並且labeling
+  - 讀取影片檔案, 並且可對每個frame畫框, 可用Ai偵測畫框, 但沒有對應VOC標籤檔的功能
   - 使用空白鍵play/pause
   - 有影片播放進度條
   - 可調整速度
   - 按下滑鼠鍵會停止撥放
   - 如果自動儲存開啟, 則按下play後也會自動儲存, 儲存的檔名將會是"[原檔名]_frame[N], 並且圖片跟xml都會抽出
-  - 每N秒儲存一筆
+  - 在設定檔cfg.yaml中, 可設定每N秒儲存一筆, 設-1則關閉此功能
 - 狀態欄
   - 顯示有多少檔案, 目前在第N個檔案
+  - 按下數字鍵後, 會顯示數字對應的label名
 - 快捷鍵
   - `q`: quit
   - `a`: toggle auto save
@@ -28,7 +46,7 @@
   - `Home/End`: 切換到最 前/後 檔案
   - `space空白鍵`: play/pause video
 
-## 安裝相關
+# 安裝相關
 安裝pytorch的延伸package, 都一定要先裝pytorch的cuda版本; 不然幾乎都是先自動安裝cpu版的, 所以會跑很慢
 
 windows可使用pip來安裝pytorch CUDA版, 詳細可看  
@@ -44,10 +62,8 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 pip install -r requirements.txt
 ```
 
-<<<<<<< HEAD
 =======
 
->>>>>>> 808a5a0a53c52d732932a102ed710c6b8838ed98
-### 關於video播放
+### 關於pyqt6的video播放
 Google AI Gemini-2.0-pro 跟我都試過了, 沒有辦法把video widget的frame傳到畫布中編輯  
 因此用傳統的方式來把opencv frame轉成pixmap  
