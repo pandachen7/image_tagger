@@ -165,8 +165,13 @@ class MainWindow(QMainWindow):
         self.file_menu = self.menu.addMenu("&File")
         self.edit_menu = self.menu.addMenu("&Edit")
         self.ai_menu = self.menu.addMenu("&Ai")
+        self.convert_menu = self.menu.addMenu("&Convert")
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
+
+        self.convert_voc_yolo_action = QAction("&VOC to YOLO", self)
+        self.convert_voc_yolo_action.triggered.connect(self.convert_voc_to_yolo)
+        self.convert_menu.addAction(self.convert_voc_yolo_action)
 
         self.open_file_by_index_action = QAction("Open File by &Index", self)
         self.open_file_by_index_action.triggered.connect(self.open_file_by_index)
@@ -490,6 +495,24 @@ class MainWindow(QMainWindow):
             self.save_annotations()
         self.update_dynamic_config()
 
+    def convert_voc_to_yolo(self):
+        """
+        將 VOC XML 格式的標註檔案轉換為 YOLO TXT 標籤檔
+        """
+        folder_path = QFileDialog.getExistingDirectory(
+            self, "Select Folder to Convert VOC XML to YOLO TXT"
+        )
+        if folder_path:
+            # 在這裡呼叫 FileHandler 的方法來處理轉換邏輯
+            # 轉換完成後可以顯示一個訊息框
+            self.file_handler.convert_voc_xml_to_yolo_txt(folder_path)
+            QMessageBox.information(
+                self,
+                "Info",
+                f"VOC to YOLO conversion started for folder: {folder_path}",
+            )
+            
+
 
 class BboxListModel(QAbstractListModel):
     def __init__(self, bboxes, parent=None):
@@ -583,6 +606,14 @@ class FileHandler:
 
         xml_str += "</annotation>\n"
         return xml_str
+
+    def convert_voc_xml_to_yolo_txt(self, xml_path):
+        """
+        將 VOC XML 檔案轉換為 YOLO TXT 標籤檔
+        """
+        # 在這裡實作 XML 解析和 YOLO 格式轉換邏輯
+        # 返回 YOLO TXT 標籤檔的內容
+        return ""  # 暫時返回空字串
 
 
 def main():
