@@ -177,4 +177,4 @@ img/*
 tmp*
 *.webm
 .vscode
-
+*.model

@@ -7,7 +7,7 @@
 # 功能一覽
 ## 畫框
 - 讀取.pt model, 可偵測影像並畫框
-  - Menu: Ai -> Select Model 可選擇.pt model
+  - Menu: Ai -> Select Model 可選擇.pt model, 必須是`Ultralytics` lib能夠使用的model
   - Menu: Ai -> Detect 可偵測影像並畫框
   - Menu: Ai -> Auto Detect 自動偵測並畫框. 下方有快捷鍵
 - 如果圖檔旁有同名的VOC標籤檔, **則優先作為框的資訊**
