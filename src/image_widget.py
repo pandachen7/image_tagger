@@ -252,6 +252,8 @@ class ImageWidget(QWidget):
     def load_image(self, file_path):
         # 判斷檔案是否為影片
         if file_path.lower().endswith(VIDEO_EXTS):
+            # Google AI Gemini-2.0-pro 跟我都試過了, 沒有辦法把video widget的frame傳到畫布中編輯
+            # 因此用傳統的方式來把opencv frame轉成pixmap
             self.file_type = FileType.VIDEO
 
             self.is_playing = False

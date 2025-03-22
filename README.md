@@ -61,9 +61,3 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 ```bash
 pip install -r requirements.txt
 ```
-
-=======
-
-### 關於pyqt6的video播放
-Google AI Gemini-2.0-pro 跟我都試過了, 沒有辦法把video widget的frame傳到畫布中編輯  
-因此用傳統的方式來把opencv frame轉成pixmap  
