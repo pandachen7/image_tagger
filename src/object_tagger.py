@@ -349,7 +349,7 @@ class MainWindow(QMainWindow):
                 xml_path = getXmlPath(frame_path)
                 bboxes = self.image_widget.bboxes
                 xml_content = self.file_handler.generate_voc_xml(bboxes, frame_path)
-                with open(xml_path, "w") as f:
+                with open(xml_path, "w", encoding="utf-8") as f:
                     f.write(xml_content)
 
                 if self.is_auto_save():
@@ -364,7 +364,7 @@ class MainWindow(QMainWindow):
                 xml_content = self.file_handler.generate_voc_xml(
                     bboxes, self.file_handler.current_image_path()
                 )
-                with open(file_path, "w") as f:
+                with open(file_path, "w", encoding="utf-8") as f:
                     f.write(xml_content)
                 if self.is_auto_save():
                     self.statusbar.showMessage(f"Annotations auto saved to {file_path}")
