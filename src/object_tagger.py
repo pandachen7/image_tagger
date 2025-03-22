@@ -156,10 +156,6 @@ class MainWindow(QMainWindow):
         self.quit_action = QAction("&Quit", self)
         self.quit_action.triggered.connect(self.close)
 
-        # 變更標籤
-        self.edit_label_action = QAction("&Edit Label", self)
-        self.edit_label_action.triggered.connect(self.promptInputLabel)
-
         # 偵測
         self.detect_action = QAction("&Detect", self)
         self.detect_action.triggered.connect(self.image_widget.detectImage)
@@ -172,11 +168,8 @@ class MainWindow(QMainWindow):
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
 
-        self.open_file_by_index_action = QAction("&Open File by Index", self)
+        self.open_file_by_index_action = QAction("Open File by &Index", self)
         self.open_file_by_index_action.triggered.connect(self.open_file_by_index)
-
-        self.select_model_action = QAction("&Select Model", self)
-        self.select_model_action.triggered.connect(self.select_model)
 
         self.file_menu.addAction(self.open_folder_action)
         self.file_menu.addAction(self.open_file_by_index_action)
@@ -186,8 +179,19 @@ class MainWindow(QMainWindow):
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.quit_action)
 
+        # 變更標籤
+        self.edit_label_action = QAction("&Edit Label", self)
+        self.edit_label_action.triggered.connect(self.promptInputLabel)
+
         self.edit_menu.addAction(self.edit_label_action)
 
+        self.select_model_action = QAction("&Select Model", self)
+        self.select_model_action.triggered.connect(self.select_model)
+
+        self.use_default_model_action = QAction("&Use default Model", self)
+        self.use_default_model_action.triggered.connect(self.use_default_model)
+
+        self.ai_menu.addAction(self.use_default_model_action)
         self.ai_menu.addAction(self.select_model_action)
         self.ai_menu.addSeparator()
         self.ai_menu.addAction(self.detect_action)
@@ -226,9 +230,12 @@ class MainWindow(QMainWindow):
         with open("config/settings.yaml", "w", encoding="utf-8") as f:
             yaml.dump(Settings.data, f)
 
+    def use_default_model(self):
+        self.load_model("yolov8n.pt")
+
     def select_model(self):
         model_path, _ = QFileDialog.getOpenFileName(
-            self, "Open Ultralytics Model File", "", "Model Files (*.pt, *.model)"
+            self, "Open Ultralytics Model File", "", "Model Files (*.pt)"
         )
         if model_path:
             self.load_model(model_path)
@@ -243,6 +250,7 @@ class MainWindow(QMainWindow):
             self.image_widget.use_model = True
             self.auto_detect = True
             self.auto_detect_action.setChecked(self.auto_detect)
+            self.image_widget.detectImage()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
@@ -322,6 +330,8 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(
             f"Auto detect: {'on' if self.auto_detect else 'off'}"
         )
+        if self.auto_detect:
+            self.image_widget.detectImage()
 
     def is_auto_save(self):
         return self.auto_save
