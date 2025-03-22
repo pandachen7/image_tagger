@@ -228,7 +228,7 @@ class MainWindow(QMainWindow):
 
     def select_model(self):
         model_path, _ = QFileDialog.getOpenFileName(
-            self, "Open Model File", "", "Model Files (*.pt)"
+            self, "Open Ultralytics Model File", "", "Model Files (*.pt, *.model)"
         )
         if model_path:
             self.load_model(model_path)
