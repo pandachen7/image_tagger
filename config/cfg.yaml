@@ -14,5 +14,5 @@ labels:
 # default label name, draw bbox with this label
 default_label: object
 
-# Auto save interval in seconds. -1 means disabled.
-auto_save_per_second: -1
+# Auto save interval in seconds. -1 means disabled. 我是中文
+auto_save_per_second: 5
