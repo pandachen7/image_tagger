@@ -4,9 +4,17 @@
 
 ![system gui](./asset/system_gui.png)
 
+# 簡易Use Case
+1. Menu: File -> Open Folder, 開啟一個需要圖片畫框的資料夾
+2. Menu: Ai -> Use default model, 下載預設model並偵測影像, 應可偵測人物, 貓, 車等物體
+3. Save: 將框調整過後即可存成VOC格式的,xml檔案
+4. Menu: Convert -> VOC to YOLO  將xml檔案轉成yolo可訓練的標籤檔(但對應的編號需先設定)
+5. 即可透過顯卡或雲端服務來訓練yolo模型
+
 # 功能一覽
 ## 畫框
 - 讀取.pt model, 可偵測影像並畫框
+  - Menu: Ai -> Use default model 自動從網路上下載yolov8n.pt並使用, 可快速體驗影像偵測功能
   - Menu: Ai -> Select Model 可選擇.pt model, 必須是`Ultralytics` lib能夠使用的model
   - Menu: Ai -> Detect 可偵測影像並畫框
   - Menu: Ai -> Auto Detect 自動偵測並畫框. 下方有快捷鍵
@@ -18,13 +26,15 @@
   - Menu: Edit -> Edit Label 也能改框名
 - 預設label種類名稱[設定檔](./config/settings.yaml), 按下數字鍵可以直接切換label名稱, 只對之前focus的框做更改
 
-## 瀏覽檔案相關
+## FileSystem相關
 - 開啟資料夾來瀏覽影像或影片
   - Menu: File -> Open Folder
   - Menu: File -> Open File By Index   可選取該資料夾的第N個影像或影片
 - 儲存相關
   - Menu: File -> Save  儲存框的資訊. 下方有快捷鍵
   - Menu: File -> Auto Save  會在瀏覽下一個檔案前將畫框資訊儲存, 注意沒有框也會存, 這是為了因應背景的訓練. 下方有快捷鍵
+- 轉換相關
+  - Menu: Convert -> VOC to YOLO  將xml檔案轉成yolo可訓練的標籤檔(但對應的編號需先設定)
 - 滾輪可預覽上/下一個檔案
 - 關於影片撥放
   - 讀取影片檔案, 並且可對每個frame畫框, 可用Ai偵測畫框, 但沒有對應VOC標籤檔的功能
@@ -37,7 +47,8 @@
 - 狀態欄
   - 顯示有多少檔案, 目前在第N個檔案
   - 按下數字鍵後, 會顯示數字對應的label名
-- 快捷鍵
+
+## 快捷鍵
   - `q`: quit
   - `a`: toggle auto save
   - `l`: 彈出視窗, 輸入label名
