@@ -505,13 +505,11 @@ class MainWindow(QMainWindow):
         if folder_path:
             # 在這裡呼叫 FileHandler 的方法來處理轉換邏輯
             # 轉換完成後可以顯示一個訊息框
-            self.file_handler.convert_voc_xml_to_yolo_txt(folder_path)
-            QMessageBox.information(
-                self,
-                "Info",
-                f"VOC to YOLO conversion started for folder: {folder_path}",
+            self.file_handler.convertVocInFolder(folder_path)
+            self.statusbar.showMessage(
+                "VOC to YOLO conversion completed in folder: "
+                + Path(folder_path, "labels").as_posix()
             )
-            
 
 
 class BboxListModel(QAbstractListModel):
@@ -607,13 +605,51 @@ class FileHandler:
         xml_str += "</annotation>\n"
         return xml_str
 
+    def convertVocInFolder(self, folder_path):
+        Path(folder_path, "labels").mkdir(parents=True, exist_ok=True)
+        for file in Path(folder_path).iterdir():
+            if file.is_file() and file.suffix.lower() == ".xml":
+                xml_path = Path(folder_path, file)
+                txt = self.convert_voc_xml_to_yolo_txt(xml_path)
+                txt_path = Path(folder_path, "labels", file.name).with_suffix(".txt")
+                with open(txt_path, "w", encoding="utf-8") as f:
+                    f.write(txt)
+
     def convert_voc_xml_to_yolo_txt(self, xml_path):
         """
         將 VOC XML 檔案轉換為 YOLO TXT 標籤檔
         """
-        # 在這裡實作 XML 解析和 YOLO 格式轉換邏輯
-        # 返回 YOLO TXT 標籤檔的內容
-        return ""  # 暫時返回空字串
+        import xml.etree.ElementTree as ET
+
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+
+        size = root.find("size")
+        image_width = int(size.find("width").text)
+        image_height = int(size.find("height").text)
+
+        yolo_txt_content = ""
+        for obj in root.findall("object"):
+            # class_name = obj.find("name").text
+            bbox = obj.find("bndbox")
+            xmin = int(bbox.find("xmin").text)
+            ymin = int(bbox.find("ymin").text)
+            xmax = int(bbox.find("xmax").text)
+            ymax = int(bbox.find("ymax").text)
+
+            # 類別索引，這裡假設類別名稱就是索引，需要根據實際情況修改
+            class_index = 0  # 默認為 0，需要根據實際類別映射修改
+
+            x_center = (xmin + xmax) / 2 / image_width
+            y_center = (ymin + ymax) / 2 / image_height
+            width = (xmax - xmin) / image_width
+            height = (ymax - ymin) / image_height
+
+            yolo_txt_content += (
+                f"{class_index} {x_center} {y_center} {width} {height}\n"
+            )
+
+        return yolo_txt_content
 
 
 def main():
