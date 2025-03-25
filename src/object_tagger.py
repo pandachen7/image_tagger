@@ -1,6 +1,8 @@
 import os
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Optional
 
 import cv2
 from PyQt6.QtCore import QAbstractListModel, Qt
@@ -8,13 +10,18 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
     QFileDialog,
+    QHeaderView,
     QInputDialog,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QSlider,
     QStatusBar,
     QStyle,
+    QTableWidget,
+    QTableWidgetItem,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -29,19 +36,22 @@ from src.model import FileType, ShowImageCmd
 
 yaml = YAML()
 
+YOLO_LABELS_FOLDER = "yolo_labels"
+
 
 class Settings:
     """
     程式正常關閉後自動儲存
     """
 
-    data = {"model_path": None, "folder_path": None, "file_index": 0}
+    data = {"model_path": None, "folder_path": None, "file_index": 0, "categories": {}}
     try:
         with open("config/settings.yaml", "r", encoding="utf-8") as f:
             yaml_settings = yaml.load(f)
         data["model_path"] = yaml_settings.get("model_path", None)
         data["folder_path"] = yaml_settings.get("folder_path", None)
         data["file_index"] = int(yaml_settings.get("file_index", 0))
+        data["categories"] = yaml_settings.get("categories", {})
 
         # check validation
         if data["model_path"] is None or Path(data["model_path"]).is_file() is False:
@@ -55,6 +65,76 @@ class Settings:
 
     except Exception as e:
         print(f"Error parsing config/label.yaml: {e}")
+
+
+class CategorySettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Categories")
+        self.categories = Settings.data["categories"]
+
+        self.table_widget = QTableWidget()
+        self.table_widget.setColumnCount(2)
+        self.table_widget.setHorizontalHeaderLabels(["Category Name", "Index"])
+        self.table_widget.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+
+        self.add_button = QPushButton("Add")
+        self.add_button.clicked.connect(self.add_category)
+        self.delete_button = QPushButton("Delete")
+        self.delete_button.clicked.connect(self.delete_category)
+        self.save_button = QPushButton("Save")
+        self.save_button.clicked.connect(self.save_categories)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+
+        button_layout = QVBoxLayout()
+        button_layout.addWidget(self.add_button)
+        button_layout.addWidget(self.delete_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.save_button)
+        button_layout.addWidget(self.cancel_button)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.addWidget(self.table_widget)
+        main_layout.addLayout(button_layout)
+
+        self.load_categories()
+
+    def load_categories(self):
+        self.table_widget.setRowCount(0)
+        for name, index in self.categories.items():
+            self.add_row(name, str(index))
+
+    def add_row(self, name="", index=""):
+        row_count = self.table_widget.rowCount()
+        self.table_widget.insertRow(row_count)
+        name_item = QTableWidgetItem(name)
+        index_item = QTableWidgetItem(index)
+        self.table_widget.setItem(row_count, 0, name_item)
+        self.table_widget.setItem(row_count, 1, index_item)
+
+    def add_category(self):
+        self.add_row()
+
+    def delete_category(self):
+        selected_row = self.table_widget.currentRow()
+        if selected_row >= 0:
+            self.table_widget.removeRow(selected_row)
+
+    def save_categories(self):
+        categories = {}
+        for row in range(self.table_widget.rowCount()):
+            name_item = self.table_widget.item(row, 0)
+            index_item = self.table_widget.item(row, 1)
+            if name_item and index_item:
+                name = name_item.text()
+                index_str = index_item.text()
+                if name and index_str.isdigit():
+                    categories[name] = int(index_str)
+        Settings.data["categories"] = categories
+        self.accept()
 
 
 class MainWindow(QMainWindow):
@@ -169,8 +249,13 @@ class MainWindow(QMainWindow):
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
 
+        self.edit_categories_action = QAction("&Edit Categories", self)
+        self.edit_categories_action.triggered.connect(self.edit_categories)
+
         self.convert_voc_yolo_action = QAction("&VOC to YOLO", self)
         self.convert_voc_yolo_action.triggered.connect(self.convert_voc_to_yolo)
+
+        self.convert_menu.addAction(self.edit_categories_action)
         self.convert_menu.addAction(self.convert_voc_yolo_action)
 
         self.open_file_by_index_action = QAction("Open File by &Index", self)
@@ -500,16 +585,23 @@ class MainWindow(QMainWindow):
         將 VOC XML 格式的標註檔案轉換為 YOLO TXT 標籤檔
         """
         folder_path = QFileDialog.getExistingDirectory(
-            self, "Select Folder to Convert VOC XML to YOLO TXT"
+            self, "Select folder containing VOC XML files"
         )
         if folder_path:
-            # 在這裡呼叫 FileHandler 的方法來處理轉換邏輯
-            # 轉換完成後可以顯示一個訊息框
-            self.file_handler.convertVocInFolder(folder_path)
+            output_folder = Path(
+                folder_path, YOLO_LABELS_FOLDER
+            )  # 在同資料夾下建立 yolo labels 資料夾
+            output_folder.mkdir(parents=True, exist_ok=True)
+            self.file_handler.convertVocInFolder(folder_path, output_folder)
             self.statusbar.showMessage(
-                "VOC to YOLO conversion completed in folder: "
-                + Path(folder_path, "labels").as_posix()
+                f"VOC to YOLO conversion completed in folder: {output_folder}"
             )
+
+    def edit_categories(self):
+        dialog = CategorySettingsDialog(self)
+        if dialog.exec():
+            self.statusbar.showMessage("Categories設定已儲存")
+            self.update_dynamic_config()
 
 
 class BboxListModel(QAbstractListModel):
@@ -529,9 +621,9 @@ class BboxListModel(QAbstractListModel):
 
 class FileHandler:
     def __init__(self):
+        self.folder_path = None
         self.image_files = []
         self.current_index = 0
-        self.folder_path = ""
 
     def load_folder(self, folder_path):
         self.folder_path = folder_path
@@ -543,9 +635,9 @@ class FileHandler:
         self.image_files.sort()  # 排序
 
     def current_image_path(self):
-        if self.image_files:
-            return os.path.join(self.folder_path, self.image_files[self.current_index])
-        return None
+        if not self.image_files:
+            return None
+        return os.path.join(self.folder_path, self.image_files[self.current_index])
 
     def show_image(self, cmd: str):
         """
@@ -575,6 +667,9 @@ class FileHandler:
         return False
 
     def generate_voc_xml(self, bboxes, image_path):
+        """
+        基於現有的bbox 產生符合voc格式的xml檔案
+        """
         image_filename = os.path.basename(image_path)
         folder_name = os.path.basename(os.path.dirname(image_path))
 
@@ -605,51 +700,66 @@ class FileHandler:
         xml_str += "</annotation>\n"
         return xml_str
 
-    def convertVocInFolder(self, folder_path):
-        Path(folder_path, "labels").mkdir(parents=True, exist_ok=True)
-        for file in Path(folder_path).iterdir():
-            if file.is_file() and file.suffix.lower() == ".xml":
-                xml_path = Path(folder_path, file)
-                txt = self.convert_voc_xml_to_yolo_txt(xml_path)
-                txt_path = Path(folder_path, "labels", file.name).with_suffix(".txt")
-                with open(txt_path, "w", encoding="utf-8") as f:
-                    f.write(txt)
-
-    def convert_voc_xml_to_yolo_txt(self, xml_path):
+    def convertVocInFolder(self, folder_path, output_folder: Optional[Path] = None):
         """
-        將 VOC XML 檔案轉換為 YOLO TXT 標籤檔
+        將指定資料夾下的所有 VOC XML 檔案轉換為 YOLO 格式
         """
-        import xml.etree.ElementTree as ET
+        if output_folder is None:
+            output_folder = folder_path  # 預設輸出到同一個資料夾
 
+        for xml_file in Path(folder_path).glob("*.xml"):
+            self.convert_voc_xml_to_yolo_txt(xml_file, output_folder)
+
+    def convert_voc_xml_to_yolo_txt(self, xml_path, output_folder):
+        """
+        轉換單個 VOC XML 檔案到 YOLO 格式
+        """
+
+        # root = ET.parse(Path(xml_path).as_posix())
         tree = ET.parse(xml_path)
         root = tree.getroot()
+        size_element = root.find("size")
+        if size_element is None:
+            print(f"Warning: No size element found in {xml_path}, skipping")
+            return
+        width = int(size_element.find("width").text)
+        height = int(size_element.find("height").text)
+        yolo_lines = []
 
-        size = root.find("size")
-        image_width = int(size.find("width").text)
-        image_height = int(size.find("height").text)
+        for object_element in root.findall("object"):
+            label_name = object_element.find("name").text
+            if label_name not in Settings.data["categories"]:
+                print(f"Warning: Label '{label_name}' not in categories,")
+                continue  # Skip to the next object if label is not in categories
 
-        yolo_txt_content = ""
-        for obj in root.findall("object"):
-            # class_name = obj.find("name").text
-            bbox = obj.find("bndbox")
-            xmin = int(bbox.find("xmin").text)
-            ymin = int(bbox.find("ymin").text)
-            xmax = int(bbox.find("xmax").text)
-            ymax = int(bbox.find("ymax").text)
+            category_id = Settings.data["categories"].get(label_name)
+            if category_id is None or not isinstance(category_id, int):
+                print(
+                    f"Warning: Category ID not found for label '{label_name}', skipping"
+                )
+                continue
 
-            # 類別索引，這裡假設類別名稱就是索引，需要根據實際情況修改
-            class_index = 0  # 默認為 0，需要根據實際類別映射修改
+            bndbox_element = object_element.find("bndbox")
+            xmin = int(bndbox_element.find("xmin").text)
+            ymin = int(bndbox_element.find("ymin").text)
+            xmax = int(bndbox_element.find("xmax").text)
+            ymax = int(bndbox_element.find("ymax").text)
 
-            x_center = (xmin + xmax) / 2 / image_width
-            y_center = (ymin + ymax) / 2 / image_height
-            width = (xmax - xmin) / image_width
-            height = (ymax - ymin) / image_height
+            # Convert VOC bbox to YOLO normalized coordinates
+            x_center = (xmin + xmax) / 2 / width
+            y_center = (ymin + ymax) / 2 / height
+            w = (xmax - xmin) / width
+            h = (ymax - ymin) / height
 
-            yolo_txt_content += (
-                f"{class_index} {x_center} {y_center} {width} {height}\n"
-            )
+            yolo_line = f"{category_id} {x_center:.6f} {y_center:.6f} {w:.6f} {h:.6f}"
+            yolo_lines.append(yolo_line)
 
-        return yolo_txt_content
+        # Save YOLO txt file
+        output_file = output_folder / Path(xml_path).with_suffix(".txt").name
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(yolo_lines))
+
+        print(f"Converted {xml_path} to {output_file}")
 
 
 def main():

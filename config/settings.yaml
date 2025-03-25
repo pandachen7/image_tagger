@@ -1,3 +1,6 @@
 model_path:
 folder_path:
 file_index: 0
+categories:
+  person: 0
+  cat: 1
