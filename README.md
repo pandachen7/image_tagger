@@ -15,12 +15,22 @@
 ```
 train: ../train/images
 val: ../train/images
+# test: ../test/images
 
 nc: 3
 names: 
   0: person
   1: cat
   2: dog
+```
+ultralytics一定要有train跟val, 如果懶得分也可以全塞在同一個資料夾, test則是可用於測試效果  
+以上的路徑的樹狀結構會像是  
+```
+./
+└─train
+    ├─images (全部要訓練的jpg都在這)
+    └─labels (一定要跟jpg配對的.txt標籤檔都在這)
+data.yaml
 ```
 
 # 功能一覽

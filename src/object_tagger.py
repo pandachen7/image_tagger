@@ -36,7 +36,7 @@ from src.model import FileType, ShowImageCmd
 
 yaml = YAML()
 
-YOLO_LABELS_FOLDER = "yolo_labels"
+YOLO_LABELS_FOLDER = "labels"
 
 
 class Settings:
