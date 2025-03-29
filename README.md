@@ -1,17 +1,27 @@
 本專案可對影像, 影片畫框  
 用於作出object detection的影像訓練dataset  
-可使用yolo model來自動偵測, 或是表現VOC的框的資訊
+可使用ultralytics版的yolo model來自動偵測, 或是表現VOC的框的資訊
 
 ![system gui](./asset/system_gui.png)
 
-# 簡易Use Case
+# 簡易Use Case [2025.3.29]
 1. Menu: File -> Open Folder, 開啟一個需要圖片畫框的資料夾
 2. Menu: Ai -> Use default model, 下載預設model並偵測影像, 應可偵測人物, 貓, 車等物體
-3. Save: 將框調整過後即可存成VOC格式的.xml檔案
+3. Save: 將框調整過後即可存成VOC格式的.xml檔案, 或使用`Auto Save`來自動儲存(注意原先的xml檔案會被覆蓋)
 4. Menu: Convert -> Edit Categories  編輯映射的分類, 可自行設定編號, 讓VOC的物件名稱轉成yolo的數字編號, 如下
-![categories](./asset/categories.png)
-5. Menu: Convert -> VOC to YOLO  將xml檔案轉成yolo可訓練的標籤檔(但對應的yolo數字編號需先設定)
-6. 即可透過顯卡或雲端服務來訓練yolo模型
+![categories](./asset/categories.png)  
+5. Menu: Convert -> VOC to YOLO  將xml檔案轉成yolo可訓練的標籤檔(但對應的yolo數字編號需先設定, 請看第4項)
+6. 即可透過顯卡或雲端服務來訓練yolo模型, 如果是想用ultralytics來訓練, 可以參考以下設定檔
+```
+train: ../train/images
+val: ../train/images
+
+nc: 3
+names: 
+  0: person
+  1: cat
+  2: dog
+```
 
 # 功能一覽
 ## 畫框
