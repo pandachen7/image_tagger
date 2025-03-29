@@ -11,7 +11,7 @@
 4. Menu: Convert -> Edit Categories  編輯映射的分類, 可自行設定編號, 讓VOC的物件名稱轉成yolo的數字編號, 如下
 ![categories](./asset/categories.png)  
 5. Menu: Convert -> VOC to YOLO  將xml檔案轉成yolo可訓練的標籤檔(但對應的yolo數字編號需先設定, 請看第4項)
-6. 即可透過顯卡或雲端服務來訓練yolo模型. 如果是想用ultralytics來訓練, 可以參考以下設定檔
+6. 即可透過顯卡或雲端服務來訓練yolo模型. 如果是想用ultralytics來訓練, 可以參考以下設定檔 `data.yaml`
 ```
 train: ../train/images
 val: ../train/images
@@ -32,6 +32,8 @@ ultralytics一定要有train跟val, 如果懶得分也可以全塞在同一個�
     └─labels (一定要跟jpg配對的.txt標籤檔都在這)
 data.yaml
 ```
+ultralytics的官網也有提供範例, 有興趣就到官網看看  
+會許又出了新版的yolo也說不定  
 
 # 功能一覽
 ## 畫框
