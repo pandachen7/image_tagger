@@ -17,6 +17,9 @@ from src.const import CORNER_SIZE, VIDEO_EXTS
 from src.func import getXmlPath
 from src.model import Bbox, ColorPen, FileType, ShowImageCmd
 
+from src.loglo import getUniqueLogger
+
+log = getUniqueLogger(__file__)
 # if TYPE_CHECKING:
 #     from src.object_tagger import MainWindow
 
@@ -259,7 +262,8 @@ class ImageWidget(QWidget):
             self.is_playing = False
             self.cap = cv2.VideoCapture(file_path)
             ret, self.cv_img = self.cap.read()
-            self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+            self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30
+            log.info(f"Video FPS: {self.fps}")
 
             self.main_window.progress_bar.setRange(0, self.get_total_msec())
 

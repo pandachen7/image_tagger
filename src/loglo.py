@@ -18,8 +18,8 @@ from dotenv import dotenv_values
 
 # usage e.g.
 """
-from lib.loglo import init_log
-log = init_log(__file__)
+from lib.loglo import getUniqueLogger
+log = getUniqueLogger(__file__)
 log.d("I'm log.", "sth else", 123)
 # will print `I'm log. sth else 123`
 """
