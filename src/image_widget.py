@@ -6,6 +6,7 @@ import cv2
 from PyQt6.QtCore import QPoint, QRect, Qt, QTimer
 from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
+    QStyle,
     QLabel,
     QMessageBox,
     QSizePolicy,
@@ -19,10 +20,10 @@ from src.model import Bbox, ColorPen, FileType, ShowImageCmd
 
 from src.loglo import getUniqueLogger
 
-log = getUniqueLogger(__file__)
 # if TYPE_CHECKING:
 #     from src.object_tagger import MainWindow
 
+log = getUniqueLogger(__file__)
 
 class ImageWidget(QWidget):
     def __init__(self, main_window):
@@ -53,7 +54,7 @@ class ImageWidget(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self._update_frame)
 
-        self.is_playing = False  # 追蹤是否在播放影片
+        self.is_playing = False  # 是否在播放影片
 
         self.auto_save_counter = 0  # 自動儲存計數器
 
@@ -72,6 +73,11 @@ class ImageWidget(QWidget):
             ret, self.cv_img = self.cap.read()
             if not ret:
                 self.timer.stop()
+                self.is_playing = False
+                icon = self.main_window.style().standardIcon(
+                    QStyle.StandardPixmap.SP_MediaPlay
+                )
+                self.main_window.play_pause_action.setIcon(icon)
                 return
 
             height, width, channel = self.cv_img.shape
@@ -221,7 +227,7 @@ class ImageWidget(QWidget):
             return
 
         if not self.main_window.file_handler.current_image_path():
-            QMessageBox.critical(self, "Error", "No image loaded")
+            # QMessageBox.critical(self, "Error", "No image loaded")
             return
 
         self.bboxes = []
@@ -254,12 +260,14 @@ class ImageWidget(QWidget):
 
     def load_image(self, file_path):
         # 判斷檔案是否為影片
+        self.is_playing = False
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+        self.main_window.play_pause_action.setIcon(icon)
         if file_path.lower().endswith(VIDEO_EXTS):
             # Google AI Gemini-2.0-pro 跟我都試過了, 沒有辦法把video widget的frame傳到畫布中編輯
             # 因此用傳統的方式來把opencv frame轉成pixmap
             self.file_type = FileType.VIDEO
 
-            self.is_playing = False
             self.cap = cv2.VideoCapture(file_path)
             ret, self.cv_img = self.cap.read()
             self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30
@@ -269,6 +277,7 @@ class ImageWidget(QWidget):
 
             self.main_window.progress_bar.blockSignals(True)
             self.main_window.progress_bar.setValue(0)
+            self.cap.set(cv2.CAP_PROP_POS_MSEC, 0)
             self.main_window.progress_bar.blockSignals(False)
             # 啟用與影片相關的控制項
             self.main_window.play_pause_action.setEnabled(True)
@@ -277,6 +286,10 @@ class ImageWidget(QWidget):
         else:
             self.file_type = FileType.IMAGE
             self.cv_img = cv2.imread(file_path)
+
+            self.main_window.progress_bar.blockSignals(True)
+            self.main_window.progress_bar.setValue(0)
+            self.main_window.progress_bar.blockSignals(False)
             # 禁用與影片相關的控制項
             self.main_window.play_pause_action.setEnabled(False)
             self.main_window.progress_bar.setEnabled(False)

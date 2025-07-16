@@ -33,7 +33,9 @@ from src.const import ALL_EXTS
 from src.func import getXmlPath
 from src.image_widget import ImageWidget
 from src.model import FileType, ShowImageCmd
+from src.loglo import getUniqueLogger
 
+log = getUniqueLogger(__file__)
 yaml = YAML()
 
 YOLO_LABELS_FOLDER = "labels"
