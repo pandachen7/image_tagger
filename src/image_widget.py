@@ -6,24 +6,24 @@ import cv2
 from PyQt6.QtCore import QPoint, QRect, Qt, QTimer
 from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
-    QStyle,
     QLabel,
     QMessageBox,
     QSizePolicy,
+    QStyle,
     QWidget,
 )
 from ultralytics import YOLO
 
 from src.const import CORNER_SIZE, VIDEO_EXTS
 from src.func import getXmlPath
-from src.model import Bbox, ColorPen, FileType, ShowImageCmd
-
 from src.loglo import getUniqueLogger
+from src.model import Bbox, ColorPen, FileType, ShowImageCmd
 
 # if TYPE_CHECKING:
 #     from src.object_tagger import MainWindow
 
 log = getUniqueLogger(__file__)
+
 
 class ImageWidget(QWidget):
     def __init__(self, main_window):

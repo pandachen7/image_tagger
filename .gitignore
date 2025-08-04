@@ -176,6 +176,5 @@ img/*
 *.pt
 tmp*
 *.webm
-.vscode
 *.model
 config/settings.yaml

@@ -1,0 +1,131 @@
+{
+    // NOTE 以下參數如果是灰色, 通常是已過期, 請找新的參數名稱
+
+    // 基本
+    "editor.insertSpaces": true,
+    "files.eol": "\n",
+    // 由於yaml通常是空兩個空白, 因此不加下面這行, 需要的可以自己加
+    // "editor.tabSize": 4,
+
+    // 加載lib路徑, 以進行索引
+    "python.analysis.extraPaths": [
+        "./st_lit",
+        "./web_api"
+    ],
+    
+    // 自動修正格式
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        // "editor.defaultFormatter": "charliermarsh.ruff"  // 另一選擇
+        "editor.formatOnSave": true,
+
+        // 自動修正
+        "editor.codeActionsOnSave": {
+            // "explicit"表示手動save才會啟動
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+        },
+    },
+    // 格式規則改寫
+    "flake8.args": [
+        // E402 module level import not at top of file
+        /*
+            其他的
+            F841: Local variable is assigned to but never used
+            E501: line too long
+            F401: Module imported but unused
+            E302: Expected 2 blank lines, found 0
+            E305: Expected 2 blank lines after class or function definition, found 1
+        */
+        "--ignore=E402",  // 針對靜態初始化很慢的class
+        "--max-line-length=180"  // 每行最大長度, 設定後就不要忽略 E501
+    ],
+
+    "code-runner.executorMap": {
+        "python": "../venv/llm310/bin/python -u",
+    },
+
+    // > commnet上色
+    "better-comments.tags": [
+        {
+            "tag": "!",
+            "color": "#d9444a",
+            "strikethrough": false,
+            "underline": false,
+            "backgroundColor": "transparent",
+            "bold": true,
+            "italic": false
+        },
+        {
+            "tag": "?",
+            "color": "#f5c018",
+            "strikethrough": false,
+            "underline": false,
+            "backgroundColor": "transparent",
+            "bold": false,
+            "italic": false
+        },
+        {
+            "tag": ">",
+            "color": "#fff",
+            "strikethrough": false,
+            "backgroundColor": "transparent"
+        },
+        {
+            "tag": "-",
+            "color": "#6D8CB4",
+            "strikethrough": false,
+            "backgroundColor": "transparent"
+        },
+        {
+            "tag": "//",
+            "color": "#474747",
+            "strikethrough": true,
+            "underline": false,
+            "backgroundColor": "transparent",
+            "bold": false,
+            "italic": false
+        }
+    ],
+
+    // TODO相關文字上色
+    "todo-tree.highlights.customHighlight": {
+        "TODO": {
+            //待作清單
+            "foreground": "#FFEB38",
+            "type": "line"
+        },
+        "BUG": {
+            "icon": "bug",
+            "foreground": "#F56C6C",
+            "type": "line"
+        },
+        "TEST": {
+            "icon": "versions",
+            "foreground": "#E040FB",
+            "type": "line"
+        },
+        "FIXME": {
+            "icon": "flame",
+            "foreground": "#E91E63",
+            "type": "line"
+        },
+        "NOTE": {
+            // 標籤快速搜尋
+            "icon": "tag",
+            "foreground": "#00ff4c",
+            "type": "line"
+        },
+        "!": {
+            "background": "#222",
+            "foreground": "#d9444a",
+            "iconColour": "#d9444a",
+            "icon": "check",
+            "type": "text-and-comment",
+            "hideFromTree": true
+        },
+    },
+    "todo-tree.highlights.defaultHighlight": {},
+    "todo-tree.general.tags": ["BUG", "TEST", "FIXME", "TODO", "NOTE", "/!"],
+    "todo-tree.general.tagGroups": {}
+}

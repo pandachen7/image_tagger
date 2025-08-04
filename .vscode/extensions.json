@@ -1,0 +1,23 @@
+{
+  "recommendations": [
+    "ms-python.python",  // python標準開發套件, 包含pylance與python debugger
+    "ms-python.vscode-pylance",  // python上色
+    "ms-python.debugpy",
+    "ms-python.flake8",  // flake 8 風格檢查
+    "ms-python.black-formatter",  // 會自動安裝`pip install black`
+    
+    "ms-vscode-remote.remote-ssh",  // ssh功能
+    
+    "codeium.codeium",  // 建議code與documents
+    "charliermarsh.ruff", // 修復與轉換工具, 可搭配editor.codeActionsOnSave
+
+    // 上色與註解相關
+    "gruntfuggly.todo-tree",
+    "aaron-bond.better-comments",
+    "mechatroner.rainbow-csv",
+
+    // 自動化編程
+    "saoudrizwan.claude-dev",
+    "RooVeterinaryInc.roo-cline",    
+  ]
+}
