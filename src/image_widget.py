@@ -65,6 +65,7 @@ class ImageWidget(QWidget):
         self.selected_bbox = None
         self.resizing_corner = None
         self.original_bbox = None  # 儲存原始 bbox 資訊
+        self.current_mouse_pos = None  # 儲存滑鼠當前位置
 
         # Mask drawing properties
         self.drawing_mode = DrawingMode.BBOX
@@ -427,6 +428,48 @@ class ImageWidget(QWidget):
                 rect = QRect(self.start_pos, self.end_pos)
                 painter.drawRect(rect)
 
+                # 顯示繪製中的 bbox 解析度
+                if self.start_pos and self.end_pos:
+                    orig_start = self._scale_to_original(self.start_pos)
+                    orig_end = self._scale_to_original(self.end_pos)
+                    w = abs(orig_end.x() - orig_start.x())
+                    h = abs(orig_end.y() - orig_start.y())
+                    text = f"{w}x{h}={w * h}"
+                    font_metrics = painter.fontMetrics()
+                    text_width = font_metrics.horizontalAdvance(text)
+                    text_height = font_metrics.height()
+                    text_pos = self.end_pos + QPoint(15, 15)
+                    bg_rect = QRect(
+                        text_pos,
+                        QPoint(
+                            text_pos.x() + text_width + 4, text_pos.y() + text_height
+                        ),
+                    )
+                    painter.fillRect(bg_rect, QColor(0, 0, 0, 150))
+                    painter.setPen(QColor(255, 255, 255))
+                    painter.drawText(
+                        text_pos + QPoint(2, text_height - font_metrics.descent()), text
+                    )
+
+            # 如果正在調整大小, 也顯示解析度
+            if self.resizing and self.selected_bbox and self.current_mouse_pos:
+                text = f"{self.selected_bbox.width}x{self.selected_bbox.height}={self.selected_bbox.width * self.selected_bbox.height}"
+                font_metrics = painter.fontMetrics()
+                text_width = font_metrics.horizontalAdvance(text)
+                text_height = font_metrics.height()
+                text_pos = self.current_mouse_pos + QPoint(15, 15)
+                bg_rect = QRect(
+                    text_pos,
+                    QPoint(
+                        text_pos.x() + text_width + 4, text_pos.y() + text_height
+                    ),
+                )
+                painter.fillRect(bg_rect, QColor(0, 0, 0, 150))
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(
+                    text_pos + QPoint(2, text_height - font_metrics.descent()), text
+                )
+
     def draw_on_mask(self, pos: QPoint):
         if self.last_pos is None:
             self.last_pos = pos
@@ -570,6 +613,7 @@ class ImageWidget(QWidget):
                     self.idx_focus_bbox = -1  # 重置
 
     def mouseMoveEvent(self, event):
+        self.current_mouse_pos = event.pos()
         if self.drawing_mode in [DrawingMode.MASK_DRAW, DrawingMode.MASK_ERASE]:
             if self.drawing:
                 scaled_pos = self._scale_to_original(event.pos())
