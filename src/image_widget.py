@@ -465,33 +465,42 @@ class ImageWidget(QWidget):
             return
 
         q_img = self.mask_pixmap.toImage()
-        cv_img = qimage_to_cv_mat(q_img)
-        bgr_img = cv_img[:, :, :3].copy()
-        alpha = cv_img[:, :, 3].copy()
+        # 確保是 ARGB 格式
+        if q_img.format() != QImage.Format.Format_ARGB32:
+            q_img = q_img.convertToFormat(QImage.Format.Format_ARGB32)
+
+        cv_img = qimage_to_cv_mat(q_img)  # 得到 BGRA 格式的 ndarray
+
+        bgr_img = cv_img[:, :, :3]
+        alpha = cv_img[:, :, 3]
 
         scaled_pos = self._scale_to_original(pos)
         x, y = scaled_pos.x(), scaled_pos.y()
 
-        h, w, channel = cv_img.shape
+        h, w = alpha.shape
         if not (0 <= x < w and 0 <= y < h):
             return
 
+        # floodFill 會原地修改影像，所以我們複製 alpha channel
+        alpha_to_fill = alpha.copy()
+
         mask = np.zeros((h + 2, w + 2), np.uint8)
-        fill_color = (0, 0, 0)  # BGR 黑色
 
-        # Invert mask for floodfill: fill area if it's currently transparent
-        # We check the alpha channel (index 3)
+        # 檢查點擊處的透明度
         if alpha[y, x] == 0:
-            cv2.floodFill(bgr_img, mask, (x, y), fill_color)
-            alpha[y, x] = 255  # 可自訂透明度回復方式
+            # 如果是透明的，填充為不透明 (255)
+            fill_value = 255
         else:
-            # If the area is already filled, erase it (make it transparent)
-            cv2.floodFill(bgr_img, mask, (x, y), (0, 0, 0))
-            alpha[mask[1:-1, 1:-1] == 1] = 0  # 擴散區塊變透明
+            # 如果是不透明的，填充為透明 (0)
+            fill_value = 0
 
-        cv_img = np.dstack((bgr_img, alpha))
+        # 在 alpha channel 上執行 flood fill
+        cv2.floodFill(alpha_to_fill, mask, (x, y), fill_value)
 
-        result_q_img = cv_mat_to_qimage(cv_img)
+        # 將原始 BGR 和修改後的 alpha channel 合併
+        new_cv_img = np.dstack((bgr_img, alpha_to_fill))
+
+        result_q_img = cv_mat_to_qimage(new_cv_img)
         self.mask_pixmap = QPixmap.fromImage(result_q_img)
         self.update()
 
