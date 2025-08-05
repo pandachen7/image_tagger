@@ -24,3 +24,8 @@ def find_pairs(file_path):
 def getXmlPath(image_path):
     path_tmp = Path(image_path)
     return path_tmp.parent / f"{path_tmp.stem}.xml"
+
+
+def getMaskPath(image_path):
+    path_tmp = Path(image_path)
+    return path_tmp.parent / f"{path_tmp.stem}_mask.png"

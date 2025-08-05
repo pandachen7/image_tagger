@@ -8,10 +8,11 @@
     // "editor.tabSize": 4,
 
     // 加載lib路徑, 以進行索引
-    "python.analysis.extraPaths": [
-        "./st_lit",
-        "./web_api"
-    ],
+    // "python.analysis.extraPaths": [
+    //     "./st_lit",
+    //     "./web_api"
+    // ],
+    // "python.analysis.extraPaths": ["./src"],
     
     // 自動修正格式
     "[python]": {

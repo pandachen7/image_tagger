@@ -1,10 +1,11 @@
 import os
 import xml.etree.ElementTree as ET
+from enum import Enum
 
-# from typing import TYPE_CHECKING
 import cv2
+import numpy as np
 from PyQt6.QtCore import QPoint, QRect, Qt, QTimer
-from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
+from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QLabel,
     QMessageBox,
@@ -19,10 +20,33 @@ from src.func import getXmlPath
 from src.loglo import getUniqueLogger
 from src.model import Bbox, ColorPen, FileType, ShowImageCmd
 
-# if TYPE_CHECKING:
-#     from src.object_tagger import MainWindow
-
 log = getUniqueLogger(__file__)
+
+
+class DrawingMode(Enum):
+    BBOX = 0
+    MASK_DRAW = 1
+    MASK_ERASE = 2
+    MASK_FILL = 3
+
+
+def qimage_to_cv_mat(qimage: QImage) -> np.ndarray:
+    """Converts a QImage to an OpenCV Mat."""
+    qimage = qimage.convertToFormat(QImage.Format.Format_ARGB32)
+    width = qimage.width()
+    height = qimage.height()
+
+    ptr = qimage.bits()
+    ptr.setsize(height * width * 4)
+    arr = np.array(ptr).reshape(height, width, 4)  # Copies the data
+    return arr
+
+
+def cv_mat_to_qimage(cv_mat: np.ndarray) -> QImage:
+    """Converts an OpenCV Mat to a QImage."""
+    height, width, channel = cv_mat.shape
+    bytes_per_line = 4 * width
+    return QImage(cv_mat.data, width, height, bytes_per_line, QImage.Format.Format_ARGB32)
 
 
 class ImageWidget(QWidget):
@@ -41,6 +65,12 @@ class ImageWidget(QWidget):
         self.selected_bbox = None
         self.resizing_corner = None
         self.original_bbox = None  # 儲存原始 bbox 資訊
+
+        # Mask drawing properties
+        self.drawing_mode = DrawingMode.BBOX
+        self.mask_pixmap: QPixmap | None = None
+        self.brush_size = 20
+        self.last_pos = None
 
         self.model: None | YOLO = None
         self.use_model = False
@@ -258,6 +288,13 @@ class ImageWidget(QWidget):
         total_frames = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
         return int(total_frames * 1000 / self.fps)
 
+    def set_drawing_mode(self, mode: DrawingMode):
+        self.drawing_mode = mode
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def set_brush_size(self, size: int):
+        self.brush_size = size
+
     def load_image(self, file_path):
         # 判斷檔案是否為影片
         self.is_playing = False
@@ -303,6 +340,10 @@ class ImageWidget(QWidget):
         self.pixmap = QPixmap.fromImage(qImg)
         self.clearBboxes()
 
+        # Initialize the mask pixmap
+        self.mask_pixmap = QPixmap(self.pixmap.size())
+        self.mask_pixmap.fill(Qt.GlobalColor.transparent)
+
         # 嘗試讀取 XML 檔案
         # TODO: 加上影片的frame number
         xml_path = getXmlPath(file_path)
@@ -331,6 +372,18 @@ class ImageWidget(QWidget):
             self.scaled_height = scaled_pixmap.height()
 
             painter.drawPixmap(0, 0, scaled_pixmap)
+
+            # Draw mask
+            if self.mask_pixmap:
+                painter.drawPixmap(
+                    0,
+                    0,
+                    self.mask_pixmap.scaled(
+                        self.scaled_width,
+                        self.scaled_height,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                    ),
+                )
 
             # 繪製 Bounding Box
             for bbox in self.bboxes:
@@ -369,82 +422,168 @@ class ImageWidget(QWidget):
                     text,
                 )
 
-            if self.drawing:
+            if self.drawing and self.drawing_mode == DrawingMode.BBOX:
                 painter.setPen(ColorPen.RED)  # 繪製中的 Bounding Box 用紅色
                 rect = QRect(self.start_pos, self.end_pos)
                 painter.drawRect(rect)
+
+    def draw_on_mask(self, pos: QPoint):
+        if self.last_pos is None:
+            self.last_pos = pos
+            return
+
+        painter = QPainter(self.mask_pixmap)
+
+        if self.drawing_mode == DrawingMode.MASK_DRAW:
+            pen = QPen(
+                QColor(0, 0, 0, 255),
+                self.brush_size,
+                Qt.PenStyle.SolidLine,
+                Qt.PenCapStyle.RoundCap,
+                Qt.PenJoinStyle.RoundJoin,
+            )
+        elif self.drawing_mode == DrawingMode.MASK_ERASE:
+            pen = QPen(
+                Qt.GlobalColor.transparent,
+                self.brush_size,
+                Qt.PenStyle.SolidLine,
+                Qt.PenCapStyle.RoundCap,
+                Qt.PenJoinStyle.RoundJoin,
+            )
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+        else:
+            return
+
+        painter.setPen(pen)
+        painter.drawLine(self.last_pos, pos)
+        self.last_pos = pos
+        painter.end()
+        self.update()
+
+    def fill_mask(self, pos: QPoint):
+        if not self.mask_pixmap:
+            return
+
+        q_img = self.mask_pixmap.toImage()
+        cv_img = qimage_to_cv_mat(q_img)
+        bgr_img = cv_img[:, :, :3].copy()
+        alpha = cv_img[:, :, 3].copy()
+
+        scaled_pos = self._scale_to_original(pos)
+        x, y = scaled_pos.x(), scaled_pos.y()
+
+        h, w, channel = cv_img.shape
+        if not (0 <= x < w and 0 <= y < h):
+            return
+
+        mask = np.zeros((h + 2, w + 2), np.uint8)
+        fill_color = (0, 0, 0)  # BGR 黑色
+
+        # Invert mask for floodfill: fill area if it's currently transparent
+        # We check the alpha channel (index 3)
+        if alpha[y, x] == 0:
+            cv2.floodFill(bgr_img, mask, (x, y), fill_color)
+            alpha[y, x] = 255  # 可自訂透明度回復方式
+        else:
+            # If the area is already filled, erase it (make it transparent)
+            cv2.floodFill(bgr_img, mask, (x, y), (0, 0, 0))
+            alpha[mask[1:-1, 1:-1] == 1] = 0  # 擴散區塊變透明
+
+        cv_img = np.dstack((bgr_img, alpha))
+
+        result_q_img = cv_mat_to_qimage(cv_img)
+        self.mask_pixmap = QPixmap.fromImage(result_q_img)
+        self.update()
 
     def mousePressEvent(self, event):
         if self.is_playing:
             self.is_playing = False
 
         if event.button() == Qt.MouseButton.LeftButton:
-            for idx_focus, bbox in enumerate(self.bboxes):
-                corner = self._isInCorner(event.pos(), bbox)
-                if corner:
-                    self.selected_bbox = bbox
-                    self.selected_bbox.color_pen = ColorPen.YELLOW
-                    self.idx_focus_bbox = idx_focus
-                    self.resizing_corner = corner
-                    self.original_bbox = (
-                        bbox.x,
-                        bbox.y,
-                        bbox.width,
-                        bbox.height,
-                    )  # 儲存原始大小
-                    self.start_pos = self._scale_to_original(
-                        event.pos()
-                    )  # 紀錄原始座標
-
-                    self.resizing = True
-                    self.update()
-                    break
-            else:  # 接在forloop無break之時
+            if self.drawing_mode in [DrawingMode.MASK_DRAW, DrawingMode.MASK_ERASE]:
                 self.start_pos = event.pos()
                 self.end_pos = event.pos()
                 self.drawing = True
+                scaled_pos = self._scale_to_original(event.pos())
+                self.last_pos = scaled_pos
+                self.draw_on_mask(scaled_pos)
+            elif self.drawing_mode == DrawingMode.MASK_FILL:
+                self.fill_mask(event.pos())
+            elif self.drawing_mode == DrawingMode.BBOX:
                 for idx_focus, bbox in enumerate(self.bboxes):
-                    if self._isInBboxArea(event.pos(), bbox):
+                    corner = self._isInCorner(event.pos(), bbox)
+                    if corner:
                         self.selected_bbox = bbox
                         self.selected_bbox.color_pen = ColorPen.YELLOW
                         self.idx_focus_bbox = idx_focus
+                        self.resizing_corner = corner
+                        self.original_bbox = (
+                            bbox.x,
+                            bbox.y,
+                            bbox.width,
+                            bbox.height,
+                        )  # 儲存原始大小
+                        self.start_pos = self._scale_to_original(
+                            event.pos()
+                        )  # 紀錄原始座標
+
+                        self.resizing = True
+                        self.update()
+                        break
+                else:  # 接在forloop無break之時
+                    self.start_pos = event.pos()
+                    self.end_pos = event.pos()
+                    self.drawing = True
+                    for idx_focus, bbox in enumerate(self.bboxes):
+                        if self._isInBboxArea(event.pos(), bbox):
+                            self.selected_bbox = bbox
+                            self.selected_bbox.color_pen = ColorPen.YELLOW
+                            self.idx_focus_bbox = idx_focus
+                            self.update()
+                            break
+
+        elif event.button() == Qt.MouseButton.RightButton:  # 刪除
+            if self.drawing_mode == DrawingMode.BBOX:
+                pos = event.pos()
+                for bbox in reversed(self.bboxes):  # 從後面開始找，避免 index 錯誤
+                    # 將原始影像座標轉換為視窗座標
+                    rect = QRect(
+                        self._scale_to_widget(QPoint(bbox.x, bbox.y)),
+                        self._scale_to_widget(
+                            QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
+                        ),
+                    )
+                    if rect.contains(pos):
+                        self.bboxes.remove(bbox)
                         self.update()
                         break
 
-        elif event.button() == Qt.MouseButton.RightButton:  # 刪除
-            pos = event.pos()
-            for bbox in reversed(self.bboxes):  # 從後面開始找，避免 index 錯誤
-                # 將原始影像座標轉換為視窗座標
-                rect = QRect(
-                    self._scale_to_widget(QPoint(bbox.x, bbox.y)),
-                    self._scale_to_widget(
-                        QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
-                    ),
-                )
-                if rect.contains(pos):
-                    self.bboxes.remove(bbox)
-                    self.update()
-                    break
-
-                self.idx_focus_bbox = -1  # 重置
+                    self.idx_focus_bbox = -1  # 重置
 
     def mouseMoveEvent(self, event):
-        # 檢查是否在角落
+        if self.drawing_mode in [DrawingMode.MASK_DRAW, DrawingMode.MASK_ERASE]:
+            if self.drawing:
+                scaled_pos = self._scale_to_original(event.pos())
+                self.draw_on_mask(scaled_pos)
+            return
+
+        # BBOX mode logic
         cursor_changed = False
-        for bbox in self.bboxes:
-            corner = self._isInCorner(event.pos(), bbox)
-            if corner in ["top_left", "bottom_right"]:
-                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-                cursor_changed = True
-                break
-            elif corner in ["top_right", "bottom_left"]:
-                self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-                cursor_changed = True
-                break
-        if not cursor_changed:
+        if not self.resizing and not self.drawing:
+            for bbox in self.bboxes:
+                corner = self._isInCorner(event.pos(), bbox)
+                if corner in ["top_left", "bottom_right"]:
+                    self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+                    cursor_changed = True
+                    break
+                elif corner in ["top_right", "bottom_left"]:
+                    self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+                    cursor_changed = True
+                    break
+        if not cursor_changed and not self.resizing:
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
-        if self.drawing:
+        if self.drawing:  # BBOX drawing
             # 繪製的話, 就讓之前有被選取的bbox先恢復原樣
             if self.selected_bbox:
                 self.selected_bbox.color_pen = ColorPen.GREEN

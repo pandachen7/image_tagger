@@ -6,7 +6,7 @@ from typing import Optional
 
 import cv2
 from PyQt6.QtCore import QAbstractListModel, Qt
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHeaderView,
     QInputDialog,
+    QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -30,10 +31,10 @@ from ruamel.yaml import YAML
 from ultralytics import YOLO
 
 from src.const import ALL_EXTS
-from src.func import getXmlPath
-from src.image_widget import ImageWidget
-from src.model import FileType, ShowImageCmd
+from src.func import getXmlPath, getMaskPath
+from src.image_widget import DrawingMode, ImageWidget
 from src.loglo import getUniqueLogger
+from src.model import FileType, ShowImageCmd
 
 log = getUniqueLogger(__file__)
 yaml = YAML()
@@ -153,10 +154,16 @@ class MainWindow(QMainWindow):
         self.auto_save = False
         self.auto_detect = False
 
-        # 自動儲存
+        # 儲存
+        self.save_action = QAction("&Save", self)
+        self.save_action.triggered.connect(self.save_annotations)
+
         self.auto_save_action = QAction("&Auto Save", self)
         self.auto_save_action.setCheckable(True)
         self.auto_save_action.triggered.connect(self.toggle_auto_save)
+
+        self.save_mask_action = QAction("Save &Mask", self)
+        self.save_mask_action.triggered.connect(self.saveMask)
 
         # 自動儲存間隔 (秒)
         self.auto_save_per_second = -1
@@ -169,18 +176,6 @@ class MainWindow(QMainWindow):
         # 檔案相關動作
         self.open_folder_action = QAction("&Open Folder", self)
         self.open_folder_action.triggered.connect(self.open_folder)
-
-        # 工具列
-        self.toolbar = QToolBar()
-        self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
-
-        self.toolbar_auto_save = QAction("&Auto Save", self)
-        self.toolbar_auto_save.triggered.connect(self.toggle_auto_save)
-        self.toolbar.addAction(self.auto_save_action)
-
-        self.toolbar_auto_detect = QAction("&Auto Detect", self)
-        self.toolbar_auto_detect.triggered.connect(self.toggle_auto_detect)
-        self.toolbar.addAction(self.auto_detect_action)
 
         # 狀態列
         self.statusbar = QStatusBar()
@@ -201,8 +196,66 @@ class MainWindow(QMainWindow):
         # self.bbox_list_view.setModel(self.bbox_list_model)
         # self.main_layout.addWidget(self.bbox_list_view)
 
-        self.save_action = QAction("&Save", self)
-        self.save_action.triggered.connect(self.save_annotations)
+        # Drawing Mode Toolbar
+        self.drawing_toolbar = QToolBar("Drawing Tools")
+        self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, self.drawing_toolbar)
+        self.drawing_mode_group = QActionGroup(self)
+        self.drawing_mode_group.setExclusive(True)
+
+        self.bbox_mode_action = QAction("BBox", self)
+        self.bbox_mode_action.setCheckable(True)
+        self.bbox_mode_action.setChecked(True)
+        self.bbox_mode_action.triggered.connect(
+            lambda: self.image_widget.set_drawing_mode(DrawingMode.BBOX)
+        )
+        self.drawing_toolbar.addAction(self.bbox_mode_action)
+        self.drawing_mode_group.addAction(self.bbox_mode_action)
+
+        self.draw_mode_action = QAction("Draw", self)
+        self.draw_mode_action.setCheckable(True)
+        self.draw_mode_action.triggered.connect(
+            lambda: self.image_widget.set_drawing_mode(DrawingMode.MASK_DRAW)
+        )
+        self.drawing_toolbar.addAction(self.draw_mode_action)
+        self.drawing_mode_group.addAction(self.draw_mode_action)
+
+        self.erase_mode_action = QAction("Erase", self)
+        self.erase_mode_action.setCheckable(True)
+        self.erase_mode_action.triggered.connect(
+            lambda: self.image_widget.set_drawing_mode(DrawingMode.MASK_ERASE)
+        )
+        self.drawing_toolbar.addAction(self.erase_mode_action)
+        self.drawing_mode_group.addAction(self.erase_mode_action)
+
+        self.fill_mode_action = QAction("Fill", self)
+        self.fill_mode_action.setCheckable(True)
+        self.fill_mode_action.triggered.connect(
+            lambda: self.image_widget.set_drawing_mode(DrawingMode.MASK_FILL)
+        )
+        self.drawing_toolbar.addAction(self.fill_mode_action)
+        self.drawing_mode_group.addAction(self.fill_mode_action)
+
+        self.drawing_toolbar.addSeparator()
+
+        self.brush_size_slider = QSlider(Qt.Orientation.Vertical)
+        self.brush_size_slider.setRange(1, 100)
+        self.brush_size_slider.setValue(20)
+        self.brush_size_slider.valueChanged.connect(self.image_widget.set_brush_size)
+        self.drawing_toolbar.addWidget(QLabel("Brush Size"))
+        self.drawing_toolbar.addWidget(self.brush_size_slider)
+        
+        # 工具列
+        self.toolbar = QToolBar()
+        self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
+
+        self.toolbar_auto_save = QAction("&Auto Save", self)
+        self.toolbar_auto_save.triggered.connect(self.toggle_auto_save)
+        self.toolbar.addAction(self.auto_save_action)
+
+        self.toolbar_auto_detect = QAction("&Auto Detect", self)
+        self.toolbar_auto_detect.triggered.connect(self.toggle_auto_detect)
+        self.toolbar.addAction(self.auto_detect_action)
+        
         self.toolbar.addAction(self.save_action)
 
         # 播放控制
@@ -268,6 +321,7 @@ class MainWindow(QMainWindow):
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.save_action)
         self.file_menu.addAction(self.auto_save_action)
+        self.file_menu.addAction(self.save_mask_action)
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.quit_action)
 
@@ -435,43 +489,50 @@ class MainWindow(QMainWindow):
         """
         儲存標記, 注意就算沒有bbox也是要儲存, 表示有處理過, 也能讓trainer知道這是在訓練背景
         """
-        if self.file_handler.current_image_path():
-            if self.image_widget.file_type == FileType.VIDEO:
-                # 儲存影片當前幀和對應的 XML
-                frame = self.image_widget.pixmap.toImage()  # 從 pixmap 取得
-                original_filename = os.path.basename(
-                    self.file_handler.current_image_path()
-                )
-                filename_no_ext = os.path.splitext(original_filename)[0]
-                frame_number = int(self.image_widget.cap.get(cv2.CAP_PROP_POS_FRAMES))
-                frame_filename = f"{filename_no_ext}_frame{frame_number}.jpg"
-                frame_path = os.path.join(self.file_handler.folder_path, frame_filename)
-                frame.save(frame_path)
+        current_path = self.file_handler.current_image_path()
+        if not current_path:
+            return
 
-                xml_path = getXmlPath(frame_path)
-                bboxes = self.image_widget.bboxes
-                xml_content = self.file_handler.generate_voc_xml(bboxes, frame_path)
-                with open(xml_path, "w", encoding="utf-8") as f:
-                    f.write(xml_content)
+        # Save BBox annotations (XML)
+        if self.image_widget.file_type == FileType.VIDEO:
+            # 儲存影片當前幀和對應的 XML
+            frame = self.image_widget.pixmap.toImage()  # 從 pixmap 取得
+            original_filename = os.path.basename(current_path)
+            filename_no_ext = os.path.splitext(original_filename)[0]
+            frame_number = int(self.image_widget.cap.get(cv2.CAP_PROP_POS_FRAMES))
+            frame_filename = f"{filename_no_ext}_frame{frame_number}.jpg"
+            frame_path = os.path.join(self.file_handler.folder_path, frame_filename)
+            frame.save(frame_path)
 
-                if self.is_auto_save():
-                    self.statusbar.showMessage(f"Annotations auto saved to {xml_path}")
-                else:
-                    self.statusbar.showMessage(f"Annotations saved to {xml_path}")
+            xml_path = getXmlPath(frame_path)
+            bboxes = self.image_widget.bboxes
+            xml_content = self.file_handler.generate_voc_xml(bboxes, frame_path)
+            with open(xml_path, "w", encoding="utf-8") as f:
+                f.write(xml_content)
+            status_message = f"Annotations saved to {xml_path}"
 
-            else:
-                # 儲存圖片的 XML
-                file_path = getXmlPath(self.file_handler.current_image_path())
-                bboxes = self.image_widget.bboxes
-                xml_content = self.file_handler.generate_voc_xml(
-                    bboxes, self.file_handler.current_image_path()
-                )
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(xml_content)
-                if self.is_auto_save():
-                    self.statusbar.showMessage(f"Annotations auto saved to {file_path}")
-                else:
-                    self.statusbar.showMessage(f"Annotations saved to {file_path}")
+        else:
+            # 儲存圖片的 XML
+            xml_path = getXmlPath(current_path)
+            bboxes = self.image_widget.bboxes
+            xml_content = self.file_handler.generate_voc_xml(bboxes, current_path)
+            with open(xml_path, "w", encoding="utf-8") as f:
+                f.write(xml_content)
+            status_message = f"Annotations saved to {xml_path}"
+
+        if self.is_auto_save():
+            self.statusbar.showMessage(f"Auto saved: {status_message}")
+        else:
+            self.statusbar.showMessage(status_message)
+
+    def saveMask(self):
+        current_path = self.file_handler.current_image_path()
+        if not current_path:
+            return
+
+        if self.image_widget.mask_pixmap:
+            mask_path = getMaskPath(current_path).as_posix()
+            self.image_widget.mask_pixmap.save(mask_path, "PNG")
 
     def toggle_play_pause(self):
         if self.image_widget.file_type != FileType.VIDEO:
