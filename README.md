@@ -96,3 +96,8 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 ```bash
 pip install -r requirements.txt
 ```
+
+如果PyQt6出現相關錯誤, 可試試
+```
+sudo apt-get install -y libxcb-cursor-dev
+```
