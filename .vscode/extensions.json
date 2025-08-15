@@ -8,7 +8,6 @@
     
     "ms-vscode-remote.remote-ssh",  // ssh功能
     
-    "codeium.codeium",  // 建議code與documents
     "charliermarsh.ruff", // 修復與轉換工具, 可搭配editor.codeActionsOnSave
 
     // 上色與註解相關
@@ -17,6 +16,7 @@
     "mechatroner.rainbow-csv",
 
     // 自動化編程
+    // "codeium.codeium",  // 別名windsurf, 建議code與documents
     "saoudrizwan.claude-dev",
     "RooVeterinaryInc.roo-cline",    
   ]
