@@ -213,8 +213,9 @@ class MainWindow(QMainWindow):
 
         # 播放控制
         self.play_pause_action = QAction("", self)
-        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
-        self.play_pause_action.setIcon(icon)
+        self.play_pause_action.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+        )
         self.play_pause_action.triggered.connect(self.toggle_play_pause)
         self.toolbar.addAction(self.play_pause_action)
         self.refresh_interval = 30
@@ -284,6 +285,7 @@ class MainWindow(QMainWindow):
         self.brush_size_slider = QSlider(Qt.Orientation.Vertical)
         self.brush_size_slider.setRange(1, 100)
         self.brush_size_slider.setValue(20)
+        self.brush_size_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.brush_size_slider.valueChanged.connect(self.image_widget.set_brush_size)
         self.drawing_toolbar.addWidget(QLabel("Brush Size"))
         self.drawing_toolbar.addWidget(self.brush_size_slider)
