@@ -96,3 +96,10 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 ```bash
 pip install -r requirements.txt
 ```
+
+### 有時候電腦好端端的就突然不能平行加速
+如果有GPU的情況下1秒只有1~2張, 那肯定是沒用到GPU, 可從`nvidia-smi`這個指令來查看是否將model讀入到VRAM中 e.g.  
+![alt text](asset/nvidia-smi.png)  
+yolo至少要幾百MB, 而不會是0  
+這樣才能使用GPU加速, 如果不行的話可能升級就nvidia drive, 以上pkg都重灌一遍, 然後重開機在祈禱能正常  
+如果怎樣都無法用, 連小精靈都不幫忙...那就嘗試用conda的方式安裝吧  
