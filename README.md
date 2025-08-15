@@ -97,6 +97,11 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 pip install -r requirements.txt
 ```
 
+如果PyQt6出現相關錯誤, 可試試
+```
+sudo apt-get install -y libxcb-cursor-dev
+```
+
 ### 有時候電腦好端端的就突然不能平行加速
 如果有GPU的情況下1秒只有1~2張, 那肯定是沒用到GPU, 可從`nvidia-smi`這個指令來查看是否將model讀入到VRAM中 e.g.  
 ![alt text](asset/nvidia-smi.png)  
