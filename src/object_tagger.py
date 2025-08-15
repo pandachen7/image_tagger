@@ -31,7 +31,7 @@ from ruamel.yaml import YAML
 from ultralytics import YOLO
 
 from src.const import ALL_EXTS
-from src.func import getXmlPath, getMaskPath
+from src.func import getMaskPath, getXmlPath
 from src.image_widget import DrawingMode, ImageWidget
 from src.loglo import getUniqueLogger
 from src.model import FileType, ShowImageCmd
@@ -167,6 +167,7 @@ class MainWindow(QMainWindow):
 
         # 自動儲存間隔 (秒)
         self.auto_save_per_second = -1
+        self.show_fps = False
 
         # 自動使用偵測 (GPU不好速度就會慢)
         self.auto_detect_action = QAction("&Auto Detect", self)
@@ -195,6 +196,49 @@ class MainWindow(QMainWindow):
         # self.bbox_list_model = BboxListModel([])
         # self.bbox_list_view.setModel(self.bbox_list_model)
         # self.main_layout.addWidget(self.bbox_list_view)
+
+        # 工具列
+        self.toolbar = QToolBar()
+        self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
+
+        self.toolbar_auto_save = QAction("&Auto Save", self)
+        self.toolbar_auto_save.triggered.connect(self.toggle_auto_save)
+        self.toolbar.addAction(self.auto_save_action)
+
+        self.toolbar_auto_detect = QAction("&Auto Detect", self)
+        self.toolbar_auto_detect.triggered.connect(self.toggle_auto_detect)
+        self.toolbar.addAction(self.auto_detect_action)
+
+        self.toolbar.addAction(self.save_action)
+
+        # 播放控制
+        self.play_pause_action = QAction("", self)
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+        self.play_pause_action.setIcon(icon)
+        self.play_pause_action.triggered.connect(self.toggle_play_pause)
+        self.toolbar.addAction(self.play_pause_action)
+        self.refresh_interval = 30
+
+        self.progress_bar = QSlider(Qt.Orientation.Horizontal)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.progress_bar.valueChanged.connect(self.set_media_position)
+        self.toolbar.addWidget(self.progress_bar)
+
+        self.speed_control = QComboBox()
+        self.speed_control.addItem("0.5x", 0.5)
+        self.speed_control.addItem("1.0x", 1.0)
+        self.speed_control.addItem("1.5x", 1.5)
+        self.speed_control.addItem("2.0x", 2.0)
+        self.speed_control.setCurrentIndex(1)  # 預設為 1.0x
+        self.speed_control.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.speed_control.currentIndexChanged.connect(self.set_playback_speed)
+        self.toolbar.addWidget(self.speed_control)
+
+        self.play_pause_action.setEnabled(False)
+        self.progress_bar.setEnabled(False)
+        self.speed_control.setEnabled(False)
+        # ^播放控制
 
         # Drawing Mode Toolbar
         self.drawing_toolbar = QToolBar("Drawing Tools")
@@ -243,49 +287,7 @@ class MainWindow(QMainWindow):
         self.brush_size_slider.valueChanged.connect(self.image_widget.set_brush_size)
         self.drawing_toolbar.addWidget(QLabel("Brush Size"))
         self.drawing_toolbar.addWidget(self.brush_size_slider)
-        
-        # 工具列
-        self.toolbar = QToolBar()
-        self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
-
-        self.toolbar_auto_save = QAction("&Auto Save", self)
-        self.toolbar_auto_save.triggered.connect(self.toggle_auto_save)
-        self.toolbar.addAction(self.auto_save_action)
-
-        self.toolbar_auto_detect = QAction("&Auto Detect", self)
-        self.toolbar_auto_detect.triggered.connect(self.toggle_auto_detect)
-        self.toolbar.addAction(self.auto_detect_action)
-        
-        self.toolbar.addAction(self.save_action)
-
-        # 播放控制
-        self.play_pause_action = QAction("", self)
-        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
-        self.play_pause_action.setIcon(icon)
-        self.play_pause_action.triggered.connect(self.toggle_play_pause)
-        self.toolbar.addAction(self.play_pause_action)
-        self.refresh_interval = 30
-
-        self.progress_bar = QSlider(Qt.Orientation.Horizontal)
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.progress_bar.valueChanged.connect(self.set_media_position)
-        self.toolbar.addWidget(self.progress_bar)
-
-        self.speed_control = QComboBox()
-        self.speed_control.addItem("0.5x", 0.5)
-        self.speed_control.addItem("1.0x", 1.0)
-        self.speed_control.addItem("1.5x", 1.5)
-        self.speed_control.addItem("2.0x", 2.0)
-        self.speed_control.setCurrentIndex(1)  # 預設為 1.0x
-        self.speed_control.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.speed_control.currentIndexChanged.connect(self.set_playback_speed)
-        self.toolbar.addWidget(self.speed_control)
-
-        self.play_pause_action.setEnabled(False)
-        self.progress_bar.setEnabled(False)
-        self.speed_control.setEnabled(False)
-        # ^播放控制
+        # ^Drawing Mode Toolbar
 
         # 退出
         self.quit_action = QAction("&Quit", self)
@@ -357,15 +359,16 @@ class MainWindow(QMainWindow):
         try:
             with open("config/cfg.yaml", "r", encoding="utf-8") as f:
                 config = yaml.load(f)
-                yaml_labels = config.get("labels", {})
-                if yaml_labels:
-                    self.preset_labels = {
-                        str(key): value
-                        for key, value in yaml_labels.items()
-                        if isinstance(key, (int, str))
-                    }
-                self.last_used_label = config.get("default_label", "object")
-                self.auto_save_per_second = config.get("auto_save_per_second", -1)
+            yaml_labels = config.get("labels", {})
+            if yaml_labels:
+                self.preset_labels = {
+                    str(key): value
+                    for key, value in yaml_labels.items()
+                    if isinstance(key, (int, str))
+                }
+            self.last_used_label = config.get("default_label", "object")
+            self.auto_save_per_second = config.get("auto_save_per_second", -1)
+            self.show_fps = config.get("show_fps", False)
 
         except FileNotFoundError:
             QMessageBox.warning(self, "Warning", "config/cfg.yaml not found.")
@@ -392,6 +395,7 @@ class MainWindow(QMainWindow):
             if self.image_widget.model:
                 del self.image_widget.model
             self.image_widget.model = YOLO(model_path)
+            # self.image_widget.model.to("cuda")
             self.statusbar.showMessage(f"Model loaded: {model_path}")
             self.image_widget.use_model = True
             self.auto_detect = True

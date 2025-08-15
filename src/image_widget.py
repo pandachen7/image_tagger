@@ -1,4 +1,5 @@
 import os
+import time
 import xml.etree.ElementTree as ET
 from enum import Enum
 
@@ -46,7 +47,9 @@ def cv_mat_to_qimage(cv_mat: np.ndarray) -> QImage:
     """Converts an OpenCV Mat to a QImage."""
     height, width, channel = cv_mat.shape
     bytes_per_line = 4 * width
-    return QImage(cv_mat.data, width, height, bytes_per_line, QImage.Format.Format_ARGB32)
+    return QImage(
+        cv_mat.data, width, height, bytes_per_line, QImage.Format.Format_ARGB32
+    )
 
 
 class ImageWidget(QWidget):
@@ -75,6 +78,7 @@ class ImageWidget(QWidget):
 
         self.model: None | YOLO = None
         self.use_model = False
+        self.list_fps = []
 
         self.cv_img = None
         self.image_label.setSizePolicy(
@@ -261,6 +265,8 @@ class ImageWidget(QWidget):
             # QMessageBox.critical(self, "Error", "No image loaded")
             return
 
+        if self.main_window.show_fps:
+            t1 = time.time()
         self.bboxes = []
         results = self.model.predict(self.cv_img, verbose=False)
         for result in results:
@@ -282,6 +288,11 @@ class ImageWidget(QWidget):
                             float(conf),
                         )
                     )
+        if self.main_window.show_fps:
+            self.list_fps.append(1 / (time.time() - t1))
+            if len(self.list_fps) > 10:
+                self.list_fps.pop(0)
+            log.i(f"Detection avg fps: {sum(self.list_fps) / len(self.list_fps):.0f}")
         self.update()
 
     def get_total_msec(self):
@@ -309,7 +320,7 @@ class ImageWidget(QWidget):
             self.cap = cv2.VideoCapture(file_path)
             ret, self.cv_img = self.cap.read()
             self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30
-            log.info(f"Video FPS: {self.fps}")
+            # log.info(f"Video FPS: {self.fps}")
 
             self.main_window.progress_bar.setRange(0, self.get_total_msec())
 
@@ -332,6 +343,13 @@ class ImageWidget(QWidget):
             self.main_window.play_pause_action.setEnabled(False)
             self.main_window.progress_bar.setEnabled(False)
             self.main_window.speed_control.setEnabled(False)
+
+        if self.cv_img is None:
+            log.w(f"load {file_path} failed")
+            QMessageBox.critical(self, "Error", f"Failed to load file `{file_path}`")
+            self.pixmap = None
+            self.update()
+            return
 
         height, width, channel = self.cv_img.shape
         bytesPerLine = 3 * width
@@ -460,9 +478,7 @@ class ImageWidget(QWidget):
                 text_pos = self.current_mouse_pos + QPoint(15, 15)
                 bg_rect = QRect(
                     text_pos,
-                    QPoint(
-                        text_pos.x() + text_width + 4, text_pos.y() + text_height
-                    ),
+                    QPoint(text_pos.x() + text_width + 4, text_pos.y() + text_height),
                 )
                 painter.fillRect(bg_rect, QColor(0, 0, 0, 150))
                 painter.setPen(QColor(255, 255, 255))
