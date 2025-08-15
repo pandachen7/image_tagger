@@ -310,8 +310,6 @@ class ImageWidget(QWidget):
     def load_image(self, file_path):
         # 判斷檔案是否為影片
         self.is_playing = False
-        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
-        self.main_window.play_pause_action.setIcon(icon)
         if file_path.lower().endswith(VIDEO_EXTS):
             # Google AI Gemini-2.0-pro 跟我都試過了, 沒有辦法把video widget的frame傳到畫布中編輯
             # 因此用傳統的方式來把opencv frame轉成pixmap
@@ -332,6 +330,7 @@ class ImageWidget(QWidget):
             self.main_window.play_pause_action.setEnabled(True)
             self.main_window.progress_bar.setEnabled(True)
             self.main_window.speed_control.setEnabled(True)
+            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
         else:
             self.file_type = FileType.IMAGE
             self.cv_img = cv2.imread(file_path)
@@ -343,7 +342,9 @@ class ImageWidget(QWidget):
             self.main_window.play_pause_action.setEnabled(False)
             self.main_window.progress_bar.setEnabled(False)
             self.main_window.speed_control.setEnabled(False)
+            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton)
 
+        self.main_window.play_pause_action.setIcon(icon)
         if self.cv_img is None:
             log.w(f"load {file_path} failed")
             QMessageBox.critical(self, "Error", f"Failed to load file `{file_path}`")

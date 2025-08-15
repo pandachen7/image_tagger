@@ -429,8 +429,8 @@ class MainWindow(QMainWindow):
             self.file_handler.current_index = index - 1
             self.image_widget.load_image(self.file_handler.current_image_path())
             self.statusbar.showMessage(
-                f"Image: {self.file_handler.current_image_path()} "
-                f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
+                f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}] "
+                f"Image: {self.file_handler.current_image_path()}"
             )
 
     def open_folder(self):
@@ -454,8 +454,8 @@ class MainWindow(QMainWindow):
                 )
                 self.image_widget.load_image(self.file_handler.current_image_path())
                 self.statusbar.showMessage(
+                    f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}] "
                     f"Opened folder: {folder_path} "
-                    f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
                 )
             else:
                 QMessageBox.information(self, "Info", "No files in the folder.")
@@ -466,8 +466,8 @@ class MainWindow(QMainWindow):
         if self.file_handler.show_image(cmd):
             self.image_widget.load_image(self.file_handler.current_image_path())
             self.statusbar.showMessage(
+                f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}] "
                 f"Image: {self.file_handler.current_image_path()}"
-                f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}]"
             )
             Settings.data["file_index"] = self.file_handler.current_index
 
@@ -543,7 +543,9 @@ class MainWindow(QMainWindow):
     def toggle_play_pause(self):
         if self.image_widget.file_type != FileType.VIDEO:
             self.image_widget.is_playing = False
-            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+            icon = self.style().standardIcon(
+                QStyle.StandardPixmap.SP_TitleBarCloseButton
+            )
             self.play_pause_action.setIcon(icon)
             return
         self.image_widget.is_playing = not self.image_widget.is_playing
