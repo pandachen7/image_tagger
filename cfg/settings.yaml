@@ -1,0 +1,7 @@
+model_path: D:/ws/models/train_12classes/weights/epoch300.pt
+folder_path: 
+  C:/Users/marcy/Downloads/drive-download-20250714T120222Z-1-001/1140328
+file_index: 39
+categories:
+  person: 0
+  cat: 1

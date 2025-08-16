@@ -9,7 +9,7 @@ log = getUniqueLogger(__file__)
 
 
 def update_dynamic_config():
-    with open("config/settings.yaml", "w", encoding="utf-8") as f:
+    with open("cfg/settings.yaml", "w", encoding="utf-8") as f:
         yaml.dump(Settings.data, f)
 
 

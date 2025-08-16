@@ -332,7 +332,7 @@ class MainWindow(QMainWindow):
         self.choose_folder(Settings.data["folder_path"], Settings.data["file_index"])
 
         try:
-            with open("config/cfg.yaml", "r", encoding="utf-8") as f:
+            with open("cfg/system.yaml", "r", encoding="utf-8") as f:
                 config = yaml.load(f)
             yaml_labels = config.get("labels", {})
             if yaml_labels:
