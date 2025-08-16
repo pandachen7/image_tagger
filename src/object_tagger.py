@@ -35,39 +35,12 @@ from src.func import getMaskPath, getXmlPath
 from src.image_widget import DrawingMode, ImageWidget
 from src.loglo import getUniqueLogger
 from src.model import FileType, ShowImageCmd
+from src.settings import Settings, update_dynamic_config
 
 log = getUniqueLogger(__file__)
 yaml = YAML()
 
 YOLO_LABELS_FOLDER = "labels"
-
-
-class Settings:
-    """
-    程式正常關閉後自動儲存
-    """
-
-    data = {"model_path": None, "folder_path": None, "file_index": 0, "categories": {}}
-    try:
-        with open("config/settings.yaml", "r", encoding="utf-8") as f:
-            yaml_settings = yaml.load(f)
-        data["model_path"] = yaml_settings.get("model_path", None)
-        data["folder_path"] = yaml_settings.get("folder_path", None)
-        data["file_index"] = int(yaml_settings.get("file_index", 0))
-        data["categories"] = yaml_settings.get("categories", {})
-
-        # check validation
-        if data["model_path"] is None or Path(data["model_path"]).is_file() is False:
-            data["model_path"] = None
-
-        if data["folder_path"] is None or Path(data["folder_path"]).is_dir() is False:
-            data["folder_path"] = None
-
-        if not isinstance(data["file_index"], int) or data["file_index"] < 0:
-            data["file_index"] = 0
-
-    except Exception as e:
-        print(f"Error parsing config/label.yaml: {e}")
 
 
 class CategorySettingsDialog(QDialog):
@@ -377,10 +350,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Error parsing config/cfg.yaml: {e}")
 
-    def update_dynamic_config(self):
-        with open("config/settings.yaml", "w", encoding="utf-8") as f:
-            yaml.dump(Settings.data, f)
-
     def use_default_model(self):
         self.load_model("yolov8n.pt")
 
@@ -649,7 +618,7 @@ class MainWindow(QMainWindow):
         """
         if self.is_auto_save():
             self.save_annotations()
-        self.update_dynamic_config()
+        update_dynamic_config()
 
     def convert_voc_to_yolo(self):
         """
@@ -672,7 +641,7 @@ class MainWindow(QMainWindow):
         dialog = CategorySettingsDialog(self)
         if dialog.exec():
             self.statusbar.showMessage("Categories設定已儲存")
-            self.update_dynamic_config()
+            update_dynamic_config()
 
 
 class BboxListModel(QAbstractListModel):
