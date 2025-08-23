@@ -177,4 +177,4 @@ img/*
 tmp*
 *.webm
 *.model
-config/settings.yaml
+cfg/settings.yaml

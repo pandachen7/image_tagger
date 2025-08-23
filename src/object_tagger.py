@@ -143,7 +143,7 @@ class MainWindow(QMainWindow):
         self.show_fps = False
 
         # 自動使用偵測 (GPU不好速度就會慢)
-        self.auto_detect_action = QAction("&Auto Detect", self)
+        self.auto_detect_action = QAction("Auto Detect", self)
         self.auto_detect_action.setCheckable(True)
         self.auto_detect_action.triggered.connect(self.toggle_auto_detect)
 
@@ -588,6 +588,8 @@ class MainWindow(QMainWindow):
             self.close()
         elif event.key() == Qt.Key.Key_A:
             self.toggle_auto_save()
+        elif event.key() == Qt.Key.Key_D:
+            self.toggle_auto_detect()
         elif event.key() == Qt.Key.Key_Space:
             self.toggle_play_pause()
         elif event.key() == Qt.Key.Key_L:

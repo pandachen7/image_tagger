@@ -41,7 +41,7 @@ ultralytics的官網也有提供範例, 有興趣就到官網看看
   - Menu: Ai -> Use default model 自動從網路上下載yolov8n.pt並使用, 可快速體驗影像偵測功能
   - Menu: Ai -> Select Model 可選擇.pt model, 必須是`Ultralytics` lib能夠使用的model
   - Menu: Ai -> Detect 可偵測影像並畫框
-  - Menu: Ai -> Auto Detect 自動偵測並畫框. 下方有快捷鍵
+  - Menu: Ai -> Auto Detect 自動偵測並畫框, 下方有快捷鍵. 注意如果圖片有讀取到同名的.xml且有bbox, 就不會偵測並覆蓋,xml的bbox
 - 如果圖檔旁有同名的VOC標籤檔, **則優先作為框的資訊**
 - 如果沒有上述兩種方法, 則需要手動按左鍵畫框, 信心值為100%
 - 按右鍵可以刪除框, 框重疊時, 後來畫的框會先被刪
@@ -75,6 +75,7 @@ ultralytics的官網也有提供範例, 有興趣就到官網看看
 ## 快捷鍵
   - `q`: quit
   - `a`: toggle auto save
+  - `d`: toggle auto detect
   - `l`: 彈出視窗, 輸入label名
   - `數字鍵0~9`: 切換預設的label, 只會針對最後一個label做變更
   - `Page Up/Down` or `方向鍵左/右`: 切換檔案
@@ -108,3 +109,6 @@ sudo apt-get install -y libxcb-cursor-dev
 yolo至少要幾百MB, 而不會是0  
 這樣才能使用GPU加速, 如果不行的話可能升級就nvidia drive, 以上pkg都重灌一遍, 然後重開機在祈禱能正常  
 如果怎樣都無法用, 連小精靈都不幫忙...那就嘗試用conda的方式安裝吧  
+
+### TODO
+- 顯示目前多少bbox
