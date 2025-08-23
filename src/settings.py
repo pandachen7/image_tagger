@@ -20,7 +20,7 @@ class Settings:
 
     data = {"model_path": None, "folder_path": None, "file_index": 0, "categories": {}}
     try:
-        with open("config/settings.yaml", "r", encoding="utf-8") as f:
+        with open("cfg/settings.yaml", "r", encoding="utf-8") as f:
             yaml_settings = yaml.load(f)
         data["model_path"] = yaml_settings.get("model_path", None)
         data["folder_path"] = yaml_settings.get("folder_path", None)
@@ -38,4 +38,4 @@ class Settings:
             data["file_index"] = 0
 
     except Exception as e:
-        log.e(f"Load config/settings.yaml failed: {e}")
+        log.e(f"Load cfg/settings.yaml failed: {e}")
