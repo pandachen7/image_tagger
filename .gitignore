@@ -178,3 +178,4 @@ tmp*
 *.webm
 *.model
 cfg/settings.yaml
+runs/
