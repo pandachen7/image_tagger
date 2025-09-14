@@ -31,11 +31,12 @@ from src.model import FileType, PlayState, ShowImageCmd
 from src.utils.dialogs import CategorySettingsDialog
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
-
+from src.utils.global_param import global_param
 log = getUniqueLogger(__file__)
 yaml = YAML()
 
 YOLO_LABELS_FOLDER = "labels"
+DEFAULT_DETECT_MODEL = "yolov8n.pt"
 
 
 class MainWindow(QMainWindow):
@@ -271,10 +272,13 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", f"Error parsing config/cfg.yaml: {e}")
 
     def resetStates(self):
+        global_param.auto_save_counter = 0
         self.play_state = PlayState.STOP
+        self.image_widget.clearBboxes()
 
     def use_default_model(self):
-        self.load_model("yolov8n.pt")
+        self.load_model(DEFAULT_DETECT_MODEL)
+        settings.model_path = DEFAULT_DETECT_MODEL
 
     def select_model(self):
         model_path, _ = QFileDialog.getOpenFileName(
@@ -290,11 +294,11 @@ class MainWindow(QMainWindow):
                 del self.image_widget.model
             self.image_widget.model = YOLO(model_path)
             # self.image_widget.model.to("cuda")
-            self.statusbar.showMessage(f"Model loaded: {model_path}")
             self.image_widget.use_model = True
             self.auto_detect = True
             self.auto_detect_action.setChecked(self.auto_detect)
             self.image_widget.detectImage()
+            self.statusbar.showMessage(f"Model loaded: {model_path}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
@@ -397,6 +401,7 @@ class MainWindow(QMainWindow):
                 self.play_pause_action.setIcon(icon)
                 return
 
+            self.image_widget.clearBboxes()
             height, width, channel = self.cv_img.shape
             bytesPerLine = 3 * width
             qImg = QImage(
@@ -420,10 +425,10 @@ class MainWindow(QMainWindow):
 
             # 自動儲存邏輯
             if self.is_auto_save() and cfg.auto_save_per_second > 0:
-                self.auto_save_counter += 1
-                if self.auto_save_counter >= cfg.auto_save_per_second * self.fps:
+                global_param.auto_save_counter += 1
+                if global_param.auto_save_counter >= cfg.auto_save_per_second * self.image_widget.fps:
                     self.save_img_and_labels()
-                    self.auto_save_counter = 0
+                    global_param.auto_save_counter = 0
 
     def save_img_and_labels(self):
         """
@@ -542,14 +547,16 @@ class MainWindow(QMainWindow):
             self.last_used_label = label.strip()  # 更新上次使用的標籤
             self.updateFocusOrLastBbox()
 
-    def delete_img_and_xml(self):
+    def deletePairOfImgXml(self):
+        """
+        只有在擁有圖片跟有同名.xml的情況下, 才能一起刪除
+        """
         current_path = file_h.current_image_path()
-        if not current_path:
-            QMessageBox.warning(self, "Warning", "No img selected.")
-            log.w("no img selected")
+        xml_path = getXmlPath(current_path)
+        if not current_path or not Path(xml_path).is_file():
+            QMessageBox.warning(self, "Warning", "No img or no .xml")
             return
 
-        xml_path = getXmlPath(current_path)
         Path(xml_path).unlink(missing_ok=True)
         Path(current_path).unlink(missing_ok=True)
 
@@ -575,7 +582,7 @@ class MainWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_D:
             self.toggle_auto_detect()
         elif event.key() == Qt.Key.Key_Delete:
-            self.delete_img_and_xml()
+            self.deletePairOfImgXml()
         elif event.key() == Qt.Key.Key_Space:
             self.toggle_play_pause()
         elif event.key() == Qt.Key.Key_L:

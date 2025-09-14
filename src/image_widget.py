@@ -1,7 +1,7 @@
-import os
 import time
 import xml.etree.ElementTree as ET
 from enum import Enum
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -85,8 +85,6 @@ class ImageWidget(QWidget):
         self.image_label.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )  # 設定大小策略
-
-        self.auto_save_counter = 0  # 自動儲存計數器
 
         # 縮放後的影像尺寸
         self.scaled_width = None
@@ -174,7 +172,7 @@ class ImageWidget(QWidget):
         Returns:
             bool: 是否有bbox
         """
-        if os.path.exists(xml_path):
+        if Path(xml_path).is_file():
             try:
                 tree = ET.parse(xml_path)
                 root = tree.getroot()
@@ -321,7 +319,6 @@ class ImageWidget(QWidget):
         self.mask_pixmap.fill(Qt.GlobalColor.transparent)
 
         # 嘗試讀取 XML 檔案
-        # TODO: 加上影片的frame number
         xml_path = getXmlPath(file_path)
         if not self.loadBboxFromXml(xml_path):
             # 如果 bbox (來自xml) 不存在, 才嘗試使用 YOLO 偵測
