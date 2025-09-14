@@ -5,7 +5,7 @@ from enum import Enum
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import QPoint, QRect, Qt, QTimer
+from PyQt6.QtCore import QPoint, QRect, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QLabel,
@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
 )
 from ultralytics import YOLO
 
-from src.config import cfg
 from src.const import CORNER_SIZE, VIDEO_EXTS
 from src.func import getXmlPath
 from src.loglo import getUniqueLogger
@@ -87,12 +86,6 @@ class ImageWidget(QWidget):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )  # 設定大小策略
 
-        # 影片播放相關
-        self.timer = QTimer()
-        self.timer.timeout.connect(self._update_frame)
-
-        self.is_playing = False  # 是否在播放影片
-
         self.auto_save_counter = 0  # 自動儲存計數器
 
         # 縮放後的影像尺寸
@@ -104,47 +97,6 @@ class ImageWidget(QWidget):
         #           │<---width--->│  height
         #           │             │ │
         #           └－－－－－－－┘ ╯
-
-    def _update_frame(self):
-        if self.is_playing and self.cap:
-            ret, self.cv_img = self.cap.read()
-            self.clearBboxes()
-            if not ret:
-                self.timer.stop()
-                self.is_playing = False
-                icon = self.main_window.style().standardIcon(
-                    QStyle.StandardPixmap.SP_MediaPlay
-                )
-                self.main_window.play_pause_action.setIcon(icon)
-                return
-
-            height, width, channel = self.cv_img.shape
-            bytesPerLine = 3 * width
-            qImg = QImage(
-                self.cv_img.data,
-                width,
-                height,
-                bytesPerLine,
-                QImage.Format.Format_RGB888,
-            ).rgbSwapped()
-            self.pixmap = QPixmap.fromImage(qImg)
-
-            if self.main_window.is_auto_detect():
-                self.detectImage()
-
-            position = self.cap.get(cv2.CAP_PROP_POS_MSEC)
-            self.main_window.progress_bar.blockSignals(True)  # 暫時阻止信號傳遞
-            self.main_window.progress_bar.setValue(int(position))
-            self.main_window.progress_bar.blockSignals(False)  # 恢復信號傳遞
-
-            self.update()
-
-            # 自動儲存邏輯
-            if self.main_window.is_auto_save() and cfg.auto_save_per_second > 0:
-                self.auto_save_counter += 1
-                if self.auto_save_counter >= cfg.auto_save_per_second * self.fps:
-                    self.main_window.save_img_and_labels()
-                    self.auto_save_counter = 0
 
     def _scale_to_original(self, point):
         if self.pixmap:
@@ -312,7 +264,6 @@ class ImageWidget(QWidget):
             return
 
         # 判斷檔案是否為影片
-        self.is_playing = False
         if file_path.lower().endswith(VIDEO_EXTS):
             # Google AI Gemini-2.0-pro 跟我都試過了, 沒有辦法把video widget的frame傳到畫布中編輯
             # 因此用傳統的方式來把opencv frame轉成pixmap
@@ -570,8 +521,7 @@ class ImageWidget(QWidget):
         self.update()
 
     def mousePressEvent(self, event):
-        if self.is_playing:
-            self.is_playing = False
+        self.main_window.cbMousePress(event)
 
         if event.button() == Qt.MouseButton.LeftButton:
             if self.drawing_mode in [DrawingMode.MASK_DRAW, DrawingMode.MASK_ERASE]:

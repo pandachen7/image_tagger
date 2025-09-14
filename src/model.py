@@ -31,3 +31,9 @@ class ShowImageCmd:
     LAST = "last"
 
     SAME_INDEX = "same_index"
+
+
+class PlayState:
+    PLAY = "play"
+    PAUSE = "pause"
+    STOP = "stop"

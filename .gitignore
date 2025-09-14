@@ -179,3 +179,4 @@ tmp*
 *.model
 cfg/settings.yaml
 runs/
+depricated/

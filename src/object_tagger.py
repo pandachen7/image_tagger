@@ -3,24 +3,19 @@ import sys
 from pathlib import Path
 
 import cv2
-from PyQt6.QtCore import QAbstractListModel, Qt
-from PyQt6.QtGui import QAction, QActionGroup
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QAction, QActionGroup, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
-    QDialog,
     QFileDialog,
-    QHeaderView,
     QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
-    QPushButton,
     QSlider,
     QStatusBar,
     QStyle,
-    QTableWidget,
-    QTableWidgetItem,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -32,84 +27,15 @@ from src.config import cfg
 from src.func import getMaskPath, getXmlPath
 from src.image_widget import DrawingMode, ImageWidget
 from src.loglo import getUniqueLogger
-from src.model import FileType, ShowImageCmd
+from src.model import FileType, PlayState, ShowImageCmd
 from src.settings import Settings, update_dynamic_config
+from src.utils.dialogs import CategorySettingsDialog
 from src.utils.file_handler import file_h
 
 log = getUniqueLogger(__file__)
 yaml = YAML()
 
 YOLO_LABELS_FOLDER = "labels"
-
-
-class CategorySettingsDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Edit Categories")
-        self.categories = Settings.data["categories"]
-
-        self.table_widget = QTableWidget()
-        self.table_widget.setColumnCount(2)
-        self.table_widget.setHorizontalHeaderLabels(["Category Name", "Index"])
-        self.table_widget.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
-
-        self.add_button = QPushButton("Add")
-        self.add_button.clicked.connect(self.add_category)
-        self.delete_button = QPushButton("Delete")
-        self.delete_button.clicked.connect(self.delete_category)
-        self.save_button = QPushButton("Save")
-        self.save_button.clicked.connect(self.save_categories)
-        self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.reject)
-
-        button_layout = QVBoxLayout()
-        button_layout.addWidget(self.add_button)
-        button_layout.addWidget(self.delete_button)
-        button_layout.addStretch()
-        button_layout.addWidget(self.save_button)
-        button_layout.addWidget(self.cancel_button)
-
-        main_layout = QVBoxLayout(self)
-        main_layout.addWidget(self.table_widget)
-        main_layout.addLayout(button_layout)
-
-        self.load_categories()
-
-    def load_categories(self):
-        self.table_widget.setRowCount(0)
-        for name, index in self.categories.items():
-            self.add_row(name, str(index))
-
-    def add_row(self, name="", index=""):
-        row_count = self.table_widget.rowCount()
-        self.table_widget.insertRow(row_count)
-        name_item = QTableWidgetItem(name)
-        index_item = QTableWidgetItem(index)
-        self.table_widget.setItem(row_count, 0, name_item)
-        self.table_widget.setItem(row_count, 1, index_item)
-
-    def add_category(self):
-        self.add_row()
-
-    def delete_category(self):
-        selected_row = self.table_widget.currentRow()
-        if selected_row >= 0:
-            self.table_widget.removeRow(selected_row)
-
-    def save_categories(self):
-        categories = {}
-        for row in range(self.table_widget.rowCount()):
-            name_item = self.table_widget.item(row, 0)
-            index_item = self.table_widget.item(row, 1)
-            if name_item and index_item:
-                name = name_item.text()
-                index_str = index_item.text()
-                if name and index_str.isdigit():
-                    categories[name] = int(index_str)
-        Settings.data["categories"] = categories
-        self.accept()
 
 
 class MainWindow(QMainWindow):
@@ -164,12 +90,6 @@ class MainWindow(QMainWindow):
         self.image_widget = ImageWidget(self)
         self.main_layout.addWidget(self.image_widget)
 
-        # 建立 Bounding Box 列表
-        # self.bbox_list_view = QListView()
-        # self.bbox_list_model = BboxListModel([])
-        # self.bbox_list_view.setModel(self.bbox_list_model)
-        # self.main_layout.addWidget(self.bbox_list_view)
-
         # 工具列
         self.toolbar = QToolBar()
         self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
@@ -185,6 +105,10 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(self.save_action)
 
         # 播放控制
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_frame)
+        self.play_state = PlayState.STOP
+
         self.play_pause_action = QAction("", self)
         self.play_pause_action.setIcon(
             self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
@@ -346,6 +270,9 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Error parsing config/cfg.yaml: {e}")
 
+    def resetStates(self):
+        self.play_state = PlayState.STOP
+
     def use_default_model(self):
         self.load_model("yolov8n.pt")
 
@@ -372,6 +299,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
     def open_file_by_index(self):
+        self.resetStates()
         if not file_h.folder_path:
             QMessageBox.warning(self, "Warning", "No folder opened.")
             return
@@ -429,6 +357,7 @@ class MainWindow(QMainWindow):
         """show下一個影校或影片, 如有自動記錄則要先儲存之前的labels"""
         if self.is_auto_save():
             self.save_img_and_labels()
+        self.resetStates()
         if file_h.show_image(cmd):
             self.image_widget.load_image(file_h.current_image_path())
             self.statusbar.showMessage(
@@ -456,6 +385,45 @@ class MainWindow(QMainWindow):
 
     def is_auto_detect(self):
         return self.auto_detect
+
+    def update_frame(self):
+        if self.play_state == PlayState.PLAY and self.image_widget.cap:
+            ret, self.cv_img = self.image_widget.cap.read()
+            self.image_widget.clearBboxes()
+            if not ret:
+                self.timer.stop()
+                self.play_state = PlayState.STOP
+                icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+                self.play_pause_action.setIcon(icon)
+                return
+
+            height, width, channel = self.cv_img.shape
+            bytesPerLine = 3 * width
+            qImg = QImage(
+                self.cv_img.data,
+                width,
+                height,
+                bytesPerLine,
+                QImage.Format.Format_RGB888,
+            ).rgbSwapped()
+            self.image_widget.pixmap = QPixmap.fromImage(qImg)
+
+            if self.is_auto_detect():
+                self.image_widget.detectImage()
+
+            position = self.image_widget.cap.get(cv2.CAP_PROP_POS_MSEC)
+            self.progress_bar.blockSignals(True)  # 暫時阻止信號傳遞
+            self.progress_bar.setValue(int(position))
+            self.progress_bar.blockSignals(False)  # 恢復信號傳遞
+
+            self.image_widget.update()
+
+            # 自動儲存邏輯
+            if self.is_auto_save() and cfg.auto_save_per_second > 0:
+                self.auto_save_counter += 1
+                if self.auto_save_counter >= cfg.auto_save_per_second * self.fps:
+                    self.save_img_and_labels()
+                    self.auto_save_counter = 0
 
     def save_img_and_labels(self):
         """
@@ -506,25 +474,29 @@ class MainWindow(QMainWindow):
 
     def toggle_play_pause(self):
         if self.image_widget.file_type != FileType.VIDEO:
-            self.image_widget.is_playing = False
+            self.play_state = PlayState.STOP
             icon = self.style().standardIcon(
                 QStyle.StandardPixmap.SP_TitleBarCloseButton
             )
             self.play_pause_action.setIcon(icon)
             return
-        self.image_widget.is_playing = not self.image_widget.is_playing
-        if self.image_widget.is_playing:
+
+        if self.play_state == PlayState.STOP:
+            self.progress_bar.setValue(0)
+
+        if self.play_state in [PlayState.STOP, PlayState.PAUSE]:
             # 播放前先儲存標籤資訊
             if self.is_auto_save():
                 self.save_img_and_labels()
-
             icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
             self.play_pause_action.setIcon(icon)
-            self.image_widget.timer.start(self.refresh_interval)
+            self.timer.start(self.refresh_interval)
+            self.play_state = PlayState.PLAY
         else:
             icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
             self.play_pause_action.setIcon(icon)
-            self.image_widget.timer.stop()
+            self.timer.stop()
+            self.play_state = PlayState.PAUSE
 
     def set_media_position(self, position):
         # 設定影片播放位置 (以毫秒為單位)
@@ -538,14 +510,14 @@ class MainWindow(QMainWindow):
         if self.image_widget.file_type != FileType.VIDEO:
             return
         speed = self.speed_control.itemData(index)
-        self.image_widget.timer.stop()
+        self.timer.stop()
         if self.image_widget.fps:
             fps = self.image_widget.fps
         else:
             fps = 30
         self.refresh_interval = int(fps / speed)
-        if self.image_widget.is_playing:
-            self.image_widget.timer.start(self.refresh_interval)  # 重新啟動定時器
+        if self.play_state == PlayState.PLAY:
+            self.timer.start(self.refresh_interval)  # 重新啟動定時器
 
     def updateFocusOrLastBbox(self):
         """
@@ -667,20 +639,9 @@ class MainWindow(QMainWindow):
         else:
             self.show_image(ShowImageCmd.NEXT)
 
-
-class BboxListModel(QAbstractListModel):
-    def __init__(self, bboxes, parent=None):
-        super().__init__(parent)
-        self.bboxes = bboxes
-
-    def rowCount(self, parent=None):
-        return len(self.bboxes)
-
-    def data(self, index, role):
-        if role == Qt.ItemDataRole.DisplayRole:
-            bbox = self.bboxes[index.row()]
-            return f"{bbox.label} ({bbox.x}, {bbox.y}, {bbox.width}, {bbox.height})"
-        return None
+    def cbMousePress(self, event):
+        if self.play_state == PlayState.PLAY:
+            self.play_state = PlayState.PAUSE
 
 
 def main():
