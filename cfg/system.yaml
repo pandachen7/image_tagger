@@ -2,12 +2,12 @@
 labels:
   1: person
   2: car
-  3: dog
-  4: cat
-  5: bicycle
-  6: motor
+  3: motor
+  4: truck
+  5: cat
+  6: dog
   7: bus
-  8: truck
+  8: bicycle
   9: train
   0: unknown
 
@@ -15,7 +15,11 @@ labels:
 default_label: object
 
 # Auto save interval in seconds. -1 means disabled.
+# N秒自動儲存, 以免重複性太高. 但有些問題, 就是要存的有時候會被跳過, 目前不建議使用
 auto_save_per_second: 5
 
-# show fps when detecting using model
+# show fps to console when detecting using model
 show_fps: false
+
+# save img and labels to this folder (relative path of original img)
+save_folder: ./output
