@@ -1,8 +1,6 @@
-import os
+import shutil
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional
 
 import cv2
 from PyQt6.QtCore import QAbstractListModel, Qt
@@ -30,12 +28,13 @@ from PyQt6.QtWidgets import (
 from ruamel.yaml import YAML
 from ultralytics import YOLO
 
-from src.const import ALL_EXTS
+from src.config import cfg
 from src.func import getMaskPath, getXmlPath
 from src.image_widget import DrawingMode, ImageWidget
 from src.loglo import getUniqueLogger
 from src.model import FileType, ShowImageCmd
 from src.settings import Settings, update_dynamic_config
+from src.utils.file_handler import file_h
 
 log = getUniqueLogger(__file__)
 yaml = YAML()
@@ -129,7 +128,7 @@ class MainWindow(QMainWindow):
 
         # 儲存
         self.save_action = QAction("Save", self)
-        self.save_action.triggered.connect(self.save_annotations)
+        self.save_action.triggered.connect(self.save_img_and_labels)
 
         self.auto_save_action = QAction("Auto Save", self)
         self.auto_save_action.setCheckable(True)
@@ -138,9 +137,10 @@ class MainWindow(QMainWindow):
         self.save_mask_action = QAction("Save &Mask", self)
         self.save_mask_action.triggered.connect(self.saveMask)
 
-        # 自動儲存間隔 (秒)
-        self.auto_save_per_second = -1
         self.show_fps = False
+
+        # 如果user label了, 就必定要儲存
+        self.user_labeling = False
 
         # 自動使用偵測 (GPU不好速度就會慢)
         self.auto_detect_action = QAction("Auto Detect", self)
@@ -174,11 +174,11 @@ class MainWindow(QMainWindow):
         self.toolbar = QToolBar()
         self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
 
-        self.toolbar_auto_save = QAction("&Auto Save", self)
+        self.toolbar_auto_save = QAction("Auto Save", self)
         self.toolbar_auto_save.triggered.connect(self.toggle_auto_save)
         self.toolbar.addAction(self.auto_save_action)
 
-        self.toolbar_auto_detect = QAction("&Auto Detect", self)
+        self.toolbar_auto_detect = QAction("Auto Detect", self)
         self.toolbar_auto_detect.triggered.connect(self.toggle_auto_detect)
         self.toolbar.addAction(self.auto_detect_action)
 
@@ -274,9 +274,9 @@ class MainWindow(QMainWindow):
 
         # 主選單
         self.menu = self.menuBar()
-        self.file_menu = self.menu.addMenu("&File")
-        self.edit_menu = self.menu.addMenu("&Edit")
-        self.ai_menu = self.menu.addMenu("&Ai")
+        self.file_menu = self.menu.addMenu("File")
+        self.edit_menu = self.menu.addMenu("Edit")
+        self.ai_menu = self.menu.addMenu("Ai")
         self.convert_menu = self.menu.addMenu("&Convert")
         # self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
@@ -320,9 +320,6 @@ class MainWindow(QMainWindow):
         self.ai_menu.addAction(self.detect_action)
         self.ai_menu.addAction(self.auto_detect_action)
 
-        # 檔案處理器
-        self.file_handler = FileHandler()
-
         # 讀取預設標籤和上次使用的標籤
         self.preset_labels = {}
         self.last_used_label = "object"  # 預設值
@@ -342,7 +339,6 @@ class MainWindow(QMainWindow):
                     if isinstance(key, (int, str))
                 }
             self.last_used_label = config.get("default_label", "object")
-            self.auto_save_per_second = config.get("auto_save_per_second", -1)
             self.show_fps = config.get("show_fps", False)
 
         except FileNotFoundError:
@@ -376,15 +372,16 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
     def open_file_by_index(self):
-        if not self.file_handler.folder_path:
+        if not file_h.folder_path:
             QMessageBox.warning(self, "Warning", "No folder opened.")
             return
 
-        if not self.file_handler.image_files:
-            QMessageBox.warning(self, "Warning", "No files in the folder.")
+        if not file_h.image_files:
+            # QMessageBox.warning(self, "Warning", "No files in the folder.")
+            self.statusbar.showMessage("No files in the folder")
             return
 
-        num_files = len(self.file_handler.image_files)
+        num_files = len(file_h.image_files)
         index, ok = QInputDialog.getInt(
             self,
             "Open File by Index",
@@ -395,11 +392,11 @@ class MainWindow(QMainWindow):
         )
 
         if ok:
-            self.file_handler.current_index = index - 1
-            self.image_widget.load_image(self.file_handler.current_image_path())
+            file_h.current_index = index - 1
+            self.image_widget.load_image(file_h.current_image_path())
             self.statusbar.showMessage(
-                f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}] "
-                f"Image: {self.file_handler.current_image_path()}"
+                f"[{file_h.current_index + 1} / {len(file_h.image_files)}] "
+                f"Image: {file_h.current_image_path()}"
             )
 
     def open_folder(self):
@@ -416,29 +413,29 @@ class MainWindow(QMainWindow):
         開啟資料夾的檔案
         """
         if folder_path:
-            self.file_handler.load_folder(folder_path)
-            if self.file_handler.image_files:
-                self.file_handler.current_index = min(
-                    file_index, len(self.file_handler.image_files) - 1
-                )
-                self.image_widget.load_image(self.file_handler.current_image_path())
+            file_h.load_folder(folder_path)
+            if file_h.image_files:
+                file_h.current_index = min(file_index, len(file_h.image_files) - 1)
+                self.image_widget.load_image(file_h.current_image_path())
                 self.statusbar.showMessage(
-                    f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}] "
+                    f"[{file_h.current_index + 1} / {len(file_h.image_files)}] "
                     f"Opened folder: {folder_path} "
                 )
             else:
-                QMessageBox.information(self, "Info", "No files in the folder.")
+                # QMessageBox.information(self, "Info", "No files in the folder.")
+                self.statusbar.showMessage("No files in the folder")
 
     def show_image(self, cmd: str):
+        """show下一個影校或影片, 如有自動記錄則要先儲存之前的labels"""
         if self.is_auto_save():
-            self.save_annotations()
-        if self.file_handler.show_image(cmd):
-            self.image_widget.load_image(self.file_handler.current_image_path())
+            self.save_img_and_labels()
+        if file_h.show_image(cmd):
+            self.image_widget.load_image(file_h.current_image_path())
             self.statusbar.showMessage(
-                f"[{self.file_handler.current_index + 1} / {len(self.file_handler.image_files)}] "
-                f"Image: {self.file_handler.current_image_path()}"
+                f"[{file_h.current_index + 1} / {len(file_h.image_files)}] "
+                f"Image: {file_h.current_image_path()}"
             )
-            Settings.data["file_index"] = self.file_handler.current_index
+            Settings.data["file_index"] = file_h.current_index
 
     def toggle_auto_save(self):
         self.auto_save = not self.auto_save
@@ -460,40 +457,38 @@ class MainWindow(QMainWindow):
     def is_auto_detect(self):
         return self.auto_detect
 
-    def save_annotations(self):
+    def save_img_and_labels(self):
         """
         儲存標記, 注意就算沒有bbox也是要儲存, 表示有處理過, 也能讓trainer知道這是在訓練背景
         """
-        current_path = self.file_handler.current_image_path()
+        current_path = file_h.current_image_path()
         if not current_path:
             return
-
+        Path(file_h.folder_path, cfg.save_folder).mkdir(parents=True, exist_ok=True)
         # Save BBox annotations (XML)
         if self.image_widget.file_type == FileType.VIDEO:
-            # 儲存影片當前幀和對應的 XML
+            # 儲存影片當前幀
             frame = self.image_widget.pixmap.toImage()  # 從 pixmap 取得
-            original_filename = os.path.basename(current_path)
-            filename_no_ext = os.path.splitext(original_filename)[0]
+            pure_name = Path(current_path).stem
             frame_number = int(self.image_widget.cap.get(cv2.CAP_PROP_POS_FRAMES))
-            frame_filename = f"{filename_no_ext}_frame{frame_number}.jpg"
-            frame_path = os.path.join(self.file_handler.folder_path, frame_filename)
-            frame.save(frame_path)
-
-            xml_path = getXmlPath(frame_path)
-            bboxes = self.image_widget.bboxes
-            xml_content = self.file_handler.generate_voc_xml(bboxes, frame_path)
-            with open(xml_path, "w", encoding="utf-8") as f:
-                f.write(xml_content)
-            status_message = f"Annotations saved to {xml_path}"
-
+            frame_filename = f"{pure_name}_frame{frame_number}.jpg"
+            save_path = Path(
+                file_h.folder_path, cfg.save_folder, frame_filename
+            ).as_posix()
+            frame.save(save_path)
         else:
-            # 儲存圖片的 XML
-            xml_path = getXmlPath(current_path)
-            bboxes = self.image_widget.bboxes
-            xml_content = self.file_handler.generate_voc_xml(bboxes, current_path)
-            with open(xml_path, "w", encoding="utf-8") as f:
-                f.write(xml_content)
-            status_message = f"Annotations saved to {xml_path}"
+            # 搬移圖片
+            file_name = Path(current_path).name
+            save_path = Path(file_h.folder_path, cfg.save_folder, file_name).as_posix()
+            shutil.copy(current_path, save_path)
+
+        # 儲存xml
+        xml_path = getXmlPath(save_path)
+        bboxes = self.image_widget.bboxes
+        xml_content = file_h.generate_voc_xml(bboxes, save_path)
+        with open(xml_path, "w", encoding="utf-8") as f:
+            f.write(xml_content)
+        status_message = f"Annotations saved to {xml_path}"
 
         if self.is_auto_save():
             self.statusbar.showMessage(f"Auto saved: {status_message}")
@@ -501,7 +496,7 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage(status_message)
 
     def saveMask(self):
-        current_path = self.file_handler.current_image_path()
+        current_path = file_h.current_image_path()
         if not current_path:
             return
 
@@ -521,7 +516,7 @@ class MainWindow(QMainWindow):
         if self.image_widget.is_playing:
             # 播放前先儲存標籤資訊
             if self.is_auto_save():
-                self.save_annotations()
+                self.save_img_and_labels()
 
             icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
             self.play_pause_action.setIcon(icon)
@@ -575,6 +570,21 @@ class MainWindow(QMainWindow):
             self.last_used_label = label.strip()  # 更新上次使用的標籤
             self.updateFocusOrLastBbox()
 
+    def delete_img_and_xml(self):
+        current_path = file_h.current_image_path()
+        if not current_path:
+            QMessageBox.warning(self, "Warning", "No img selected.")
+            log.w("no img selected")
+            return
+
+        xml_path = getXmlPath(current_path)
+        Path(xml_path).unlink(missing_ok=True)
+        Path(current_path).unlink(missing_ok=True)
+
+        file_h.image_files.pop(file_h.current_index)
+        log.i(f"delete {current_path} and his .xml")
+        self.show_image(ShowImageCmd.SAME_INDEX)
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_PageDown:
             self.show_image(ShowImageCmd.NEXT)
@@ -587,11 +597,13 @@ class MainWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_Q:
             self.close()
         elif event.key() == Qt.Key.Key_S:
-            self.save_annotations()
+            self.save_img_and_labels()
         elif event.key() == Qt.Key.Key_A:
             self.toggle_auto_save()
         elif event.key() == Qt.Key.Key_D:
             self.toggle_auto_detect()
+        elif event.key() == Qt.Key.Key_Delete:
+            self.delete_img_and_xml()
         elif event.key() == Qt.Key.Key_Space:
             self.toggle_play_pause()
         elif event.key() == Qt.Key.Key_L:
@@ -621,7 +633,7 @@ class MainWindow(QMainWindow):
         關閉前需要儲存最後的標籤資訊, 並更新動態設定檔
         """
         if self.is_auto_save():
-            self.save_annotations()
+            self.save_img_and_labels()
         update_dynamic_config()
 
     def convert_voc_to_yolo(self):
@@ -636,7 +648,7 @@ class MainWindow(QMainWindow):
                 folder_path, YOLO_LABELS_FOLDER
             )  # 在同資料夾下建立 yolo labels 資料夾
             output_folder.mkdir(parents=True, exist_ok=True)
-            self.file_handler.convertVocInFolder(folder_path, output_folder)
+            file_h.convertVocInFolder(folder_path, output_folder)
             self.statusbar.showMessage(
                 f"VOC to YOLO conversion completed in folder: {output_folder}"
             )
@@ -646,6 +658,14 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.statusbar.showMessage("Categories設定已儲存")
             update_dynamic_config()
+
+    def cbWheelEvent(self, wheel_up):
+        if self.is_auto_save():
+            self.save_img_and_labels()
+        if wheel_up:
+            self.show_image(ShowImageCmd.PREV)
+        else:
+            self.show_image(ShowImageCmd.NEXT)
 
 
 class BboxListModel(QAbstractListModel):
@@ -663,153 +683,9 @@ class BboxListModel(QAbstractListModel):
         return None
 
 
-class FileHandler:
-    def __init__(self):
-        self.folder_path = None
-        self.image_files = []
-        self.current_index = 0
-
-    def load_folder(self, folder_path):
-        self.folder_path = folder_path
-        self.image_files = []
-        self.current_index = 0
-        for file in os.listdir(folder_path):
-            if file.lower().endswith(ALL_EXTS):
-                self.image_files.append(file)
-        self.image_files.sort()  # 排序
-
-    def current_image_path(self):
-        if not self.image_files:
-            return None
-        return os.path.join(self.folder_path, self.image_files[self.current_index])
-
-    def show_image(self, cmd: str):
-        """
-        show [next, prev, first, last] image
-        Args:
-            cmd: one of "next", "prev", "first", "last"
-
-        Returns:
-            True if file is changed
-        """
-        if cmd == ShowImageCmd.NEXT:
-            if self.current_index < len(self.image_files) - 1:
-                self.current_index += 1
-                return True
-        elif cmd == ShowImageCmd.PREV:
-            if self.current_index > 0:
-                self.current_index -= 1
-                return True
-        elif cmd == ShowImageCmd.FIRST:
-            if self.current_index != 0:
-                self.current_index = 0
-                return True
-        elif cmd == ShowImageCmd.LAST:
-            if self.current_index != len(self.image_files) - 1:
-                self.current_index = len(self.image_files) - 1
-                return True
-        return False
-
-    def generate_voc_xml(self, bboxes, image_path):
-        """
-        基於現有的bbox 產生符合voc格式的xml檔案
-        """
-        image_filename = os.path.basename(image_path)
-        folder_name = os.path.basename(os.path.dirname(image_path))
-
-        xml_str = "<annotation>\n"
-        xml_str += f"    <folder>{folder_name}</folder>\n"
-        xml_str += f"    <filename>{image_filename}</filename>\n"
-        # xml_str += f"    <path>{image_path}</path>\n"
-        # xml_str += "    <source>\n        <database>Unknown</database>\n    </source>\n"
-
-        # 讀取圖片大小
-        img = cv2.imread(image_path)
-        height, width, depth = img.shape
-
-        xml_str += f"    <size>\n        <width>{width}</width>\n        <height>{height}</height>\n    </size>\n"
-
-        for bbox in bboxes:
-            xml_str += "    <object>\n"
-            xml_str += f"        <name>{bbox.label}</name>\n"
-            xml_str += "        <bndbox>\n"
-            xml_str += f"            <xmin>{bbox.x}</xmin>\n"
-            xml_str += f"            <ymin>{bbox.y}</ymin>\n"
-            xml_str += f"            <xmax>{bbox.x + bbox.width}</xmax>\n"
-            xml_str += f"            <ymax>{bbox.y + bbox.height}</ymax>\n"
-            xml_str += f"            <confidence>{bbox.confidence}</confidence>\n"
-            xml_str += "        </bndbox>\n"
-            xml_str += "    </object>\n"
-
-        xml_str += "</annotation>\n"
-        return xml_str
-
-    def convertVocInFolder(self, folder_path, output_folder: Optional[Path] = None):
-        """
-        將指定資料夾下的所有 VOC XML 檔案轉換為 YOLO 格式
-        """
-        if output_folder is None:
-            output_folder = folder_path  # 預設輸出到同一個資料夾
-
-        for xml_file in Path(folder_path).glob("*.xml"):
-            self.convert_voc_xml_to_yolo_txt(xml_file, output_folder)
-
-    def convert_voc_xml_to_yolo_txt(self, xml_path, output_folder):
-        """
-        轉換單個 VOC XML 檔案到 YOLO 格式
-        """
-
-        # root = ET.parse(Path(xml_path).as_posix())
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
-        size_element = root.find("size")
-        if size_element is None:
-            print(f"Warning: No size element found in {xml_path}, skipping")
-            return
-        width = int(size_element.find("width").text)
-        height = int(size_element.find("height").text)
-        yolo_lines = []
-
-        for object_element in root.findall("object"):
-            label_name = object_element.find("name").text
-            if label_name not in Settings.data["categories"]:
-                print(f"Warning: Label '{label_name}' not in categories,")
-                continue  # Skip to the next object if label is not in categories
-
-            category_id = Settings.data["categories"].get(label_name)
-            if category_id is None or not isinstance(category_id, int):
-                print(
-                    f"Warning: Category ID not found for label '{label_name}', skipping"
-                )
-                continue
-
-            bndbox_element = object_element.find("bndbox")
-            xmin = int(bndbox_element.find("xmin").text)
-            ymin = int(bndbox_element.find("ymin").text)
-            xmax = int(bndbox_element.find("xmax").text)
-            ymax = int(bndbox_element.find("ymax").text)
-
-            # Convert VOC bbox to YOLO normalized coordinates
-            x_center = (xmin + xmax) / 2 / width
-            y_center = (ymin + ymax) / 2 / height
-            w = (xmax - xmin) / width
-            h = (ymax - ymin) / height
-
-            yolo_line = f"{category_id} {x_center:.6f} {y_center:.6f} {w:.6f} {h:.6f}"
-            yolo_lines.append(yolo_line)
-
-        # Save YOLO txt file
-        output_file = output_folder / Path(xml_path).with_suffix(".txt").name
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write("\n".join(yolo_lines))
-
-        print(f"Converted {xml_path} to {output_file}")
-
-
 def main():
     app = QApplication(sys.argv)
-    main_window = MainWindow()
-    main_window.show()
+    MainWindow().show()
     sys.exit(app.exec())
 
 

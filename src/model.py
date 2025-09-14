@@ -29,3 +29,5 @@ class ShowImageCmd:
     PREV = "prev"
     FIRST = "first"
     LAST = "last"
+
+    SAME_INDEX = "same_index"

@@ -16,10 +16,12 @@ from PyQt6.QtWidgets import (
 )
 from ultralytics import YOLO
 
+from src.config import cfg
 from src.const import CORNER_SIZE, VIDEO_EXTS
 from src.func import getXmlPath
 from src.loglo import getUniqueLogger
-from src.model import Bbox, ColorPen, FileType, ShowImageCmd
+from src.model import Bbox, ColorPen, FileType
+from src.utils.file_handler import file_h
 
 log = getUniqueLogger(__file__)
 
@@ -85,7 +87,7 @@ class ImageWidget(QWidget):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )  # 設定大小策略
 
-        # # 影片播放相關
+        # 影片播放相關
         self.timer = QTimer()
         self.timer.timeout.connect(self._update_frame)
 
@@ -106,6 +108,7 @@ class ImageWidget(QWidget):
     def _update_frame(self):
         if self.is_playing and self.cap:
             ret, self.cv_img = self.cap.read()
+            self.clearBboxes()
             if not ret:
                 self.timer.stop()
                 self.is_playing = False
@@ -137,16 +140,10 @@ class ImageWidget(QWidget):
             self.update()
 
             # 自動儲存邏輯
-            if (
-                self.main_window.is_auto_save()
-                and self.main_window.auto_save_per_second > 0
-            ):
+            if self.main_window.is_auto_save() and cfg.auto_save_per_second > 0:
                 self.auto_save_counter += 1
-                if (
-                    self.auto_save_counter
-                    >= self.main_window.auto_save_per_second * self.fps
-                ):
-                    self.main_window.save_annotations()
+                if self.auto_save_counter >= cfg.auto_save_per_second * self.fps:
+                    self.main_window.save_img_and_labels()
                     self.auto_save_counter = 0
 
     def _scale_to_original(self, point):
@@ -261,7 +258,7 @@ class ImageWidget(QWidget):
             QMessageBox.critical(self, "Error", "Model not loaded")
             return
 
-        if not self.main_window.file_handler.current_image_path():
+        if not file_h.current_image_path():
             # QMessageBox.critical(self, "Error", "No image loaded")
             return
 
@@ -308,6 +305,12 @@ class ImageWidget(QWidget):
         self.brush_size = size
 
     def load_image(self, file_path):
+        if not file_path:
+            self.pixmap = None
+            self.clearBboxes()
+            self.update()
+            return
+
         # 判斷檔案是否為影片
         self.is_playing = False
         if file_path.lower().endswith(VIDEO_EXTS):
@@ -342,7 +345,9 @@ class ImageWidget(QWidget):
             self.main_window.play_pause_action.setEnabled(False)
             self.main_window.progress_bar.setEnabled(False)
             self.main_window.speed_control.setEnabled(False)
-            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton)
+            icon = self.style().standardIcon(
+                QStyle.StandardPixmap.SP_TitleBarCloseButton
+            )
 
         self.main_window.play_pause_action.setIcon(icon)
         if self.cv_img is None:
@@ -750,9 +755,5 @@ class ImageWidget(QWidget):
         self.update()
 
     def wheelEvent(self, event):
-        if self.main_window.is_auto_save():
-            self.main_window.save_annotations()
-        if event.angleDelta().y() > 0:
-            self.main_window.show_image(ShowImageCmd.PREV)
-        else:
-            self.main_window.show_image(ShowImageCmd.NEXT)
+        # event.angleDelta().y() > 0, 代表滑鼠滾輪往上滾
+        self.main_window.cbWheelEvent(event.angleDelta().y() > 0)
