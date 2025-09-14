@@ -31,7 +31,8 @@ from src.model import FileType, PlayState, ShowImageCmd
 from src.utils.dialogs import CategorySettingsDialog
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
-from src.utils.global_param import global_param
+from src.utils.global_param import g_param
+
 log = getUniqueLogger(__file__)
 yaml = YAML()
 
@@ -55,7 +56,7 @@ class MainWindow(QMainWindow):
 
         # 儲存
         self.save_action = QAction("Save", self)
-        self.save_action.triggered.connect(self.save_img_and_labels)
+        self.save_action.triggered.connect(self.saveImgAndLabels)
 
         self.auto_save_action = QAction("Auto Save", self)
         self.auto_save_action.setCheckable(True)
@@ -65,9 +66,6 @@ class MainWindow(QMainWindow):
         self.save_mask_action.triggered.connect(self.saveMask)
 
         self.show_fps = False
-
-        # 如果user label了, 就必定要儲存
-        self.user_labeling = False
 
         # 自動使用偵測 (GPU不好速度就會慢)
         self.auto_detect_action = QAction("Auto Detect", self)
@@ -272,7 +270,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", f"Error parsing config/cfg.yaml: {e}")
 
     def resetStates(self):
-        global_param.auto_save_counter = 0
+        g_param.auto_save_counter = 0
         self.play_state = PlayState.STOP
         self.image_widget.clearBboxes()
 
@@ -299,6 +297,7 @@ class MainWindow(QMainWindow):
             self.auto_detect_action.setChecked(self.auto_detect)
             self.image_widget.detectImage()
             self.statusbar.showMessage(f"Model loaded: {model_path}")
+            save_settings()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
 
@@ -359,8 +358,8 @@ class MainWindow(QMainWindow):
 
     def show_image(self, cmd: str):
         """show下一個影校或影片, 如有自動記錄則要先儲存之前的labels"""
-        if self.is_auto_save():
-            self.save_img_and_labels()
+        if self.is_auto_save() or g_param.user_labeling:
+            self.saveImgAndLabels()
         self.resetStates()
         if file_h.show_image(cmd):
             self.image_widget.load_image(file_h.current_image_path())
@@ -369,6 +368,7 @@ class MainWindow(QMainWindow):
                 f"Image: {file_h.current_image_path()}"
             )
             settings.file_index = file_h.current_index
+            save_settings()
 
     def toggle_auto_save(self):
         self.auto_save = not self.auto_save
@@ -392,7 +392,7 @@ class MainWindow(QMainWindow):
 
     def update_frame(self):
         if self.play_state == PlayState.PLAY and self.image_widget.cap:
-            ret, self.cv_img = self.image_widget.cap.read()
+            ret, self.image_widget.cv_img = self.image_widget.cap.read()
             self.image_widget.clearBboxes()
             if not ret:
                 self.timer.stop()
@@ -401,11 +401,10 @@ class MainWindow(QMainWindow):
                 self.play_pause_action.setIcon(icon)
                 return
 
-            self.image_widget.clearBboxes()
-            height, width, channel = self.cv_img.shape
+            height, width, channel = self.image_widget.cv_img.shape
             bytesPerLine = 3 * width
             qImg = QImage(
-                self.cv_img.data,
+                self.image_widget.cv_img.data,
                 width,
                 height,
                 bytesPerLine,
@@ -415,22 +414,25 @@ class MainWindow(QMainWindow):
 
             if self.is_auto_detect():
                 self.image_widget.detectImage()
+            else:
+                self.image_widget.update()
 
             position = self.image_widget.cap.get(cv2.CAP_PROP_POS_MSEC)
             self.progress_bar.blockSignals(True)  # 暫時阻止信號傳遞
             self.progress_bar.setValue(int(position))
             self.progress_bar.blockSignals(False)  # 恢復信號傳遞
 
-            self.image_widget.update()
-
             # 自動儲存邏輯
             if self.is_auto_save() and cfg.auto_save_per_second > 0:
-                global_param.auto_save_counter += 1
-                if global_param.auto_save_counter >= cfg.auto_save_per_second * self.image_widget.fps:
-                    self.save_img_and_labels()
-                    global_param.auto_save_counter = 0
+                g_param.auto_save_counter += 1
+                if (
+                    g_param.auto_save_counter
+                    >= cfg.auto_save_per_second * self.image_widget.fps
+                ):
+                    self.saveImgAndLabels()
+                    g_param.auto_save_counter = 0
 
-    def save_img_and_labels(self):
+    def saveImgAndLabels(self):
         """
         儲存標記, 注意就算沒有bbox也是要儲存, 表示有處理過, 也能讓trainer知道這是在訓練背景
         """
@@ -461,12 +463,9 @@ class MainWindow(QMainWindow):
         xml_content = file_h.generate_voc_xml(bboxes, save_path)
         with open(xml_path, "w", encoding="utf-8") as f:
             f.write(xml_content)
+        g_param.user_labeling = False
         status_message = f"Annotations saved to {xml_path}"
-
-        if self.is_auto_save():
-            self.statusbar.showMessage(f"Auto saved: {status_message}")
-        else:
-            self.statusbar.showMessage(status_message)
+        self.statusbar.showMessage(status_message)
 
     def saveMask(self):
         current_path = file_h.current_image_path()
@@ -491,8 +490,8 @@ class MainWindow(QMainWindow):
 
         if self.play_state in [PlayState.STOP, PlayState.PAUSE]:
             # 播放前先儲存標籤資訊
-            if self.is_auto_save():
-                self.save_img_and_labels()
+            if self.is_auto_save() or g_param.user_labeling:
+                self.saveImgAndLabels()
             icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
             self.play_pause_action.setIcon(icon)
             self.timer.start(self.refresh_interval)
@@ -509,6 +508,8 @@ class MainWindow(QMainWindow):
             self.progress_bar.blockSignals(True)
             self.image_widget.cap.set(cv2.CAP_PROP_POS_MSEC, position)
             self.progress_bar.blockSignals(False)
+            self.progress_bar.setValue(position)
+            self.image_widget.update()
 
     def set_playback_speed(self, index):
         # 設定播放速度
@@ -565,18 +566,22 @@ class MainWindow(QMainWindow):
         self.show_image(ShowImageCmd.SAME_INDEX)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_PageDown:
+        if event.key() == Qt.Key.Key_PageDown:
             self.show_image(ShowImageCmd.NEXT)
-        elif event.key() == Qt.Key.Key_Left or event.key() == Qt.Key.Key_PageUp:
+        elif event.key() == Qt.Key.Key_PageUp:
             self.show_image(ShowImageCmd.PREV)
         elif event.key() == Qt.Key.Key_Home:
             self.show_image(ShowImageCmd.FIRST)
         elif event.key() == Qt.Key.Key_End:
             self.show_image(ShowImageCmd.LAST)
+        elif event.key() == Qt.Key.Key_Right:
+            self.set_media_position(self.progress_bar.value() + 3000)
+        elif event.key() == Qt.Key.Key_Left:
+            self.set_media_position(self.progress_bar.value() - 3000)
         elif event.key() == Qt.Key.Key_Q:
             self.close()
         elif event.key() == Qt.Key.Key_S:
-            self.save_img_and_labels()
+            self.saveImgAndLabels()
         elif event.key() == Qt.Key.Key_A:
             self.toggle_auto_save()
         elif event.key() == Qt.Key.Key_D:
@@ -611,8 +616,8 @@ class MainWindow(QMainWindow):
         """
         關閉前需要儲存最後的標籤資訊, 並更新動態設定檔
         """
-        if self.is_auto_save():
-            self.save_img_and_labels()
+        if self.is_auto_save() or g_param.user_labeling:
+            self.saveImgAndLabels()
         save_settings()
 
     def convert_voc_to_yolo(self):
@@ -639,8 +644,8 @@ class MainWindow(QMainWindow):
             save_settings()
 
     def cbWheelEvent(self, wheel_up):
-        if self.is_auto_save():
-            self.save_img_and_labels()
+        if self.is_auto_save() or g_param.user_labeling:
+            self.saveImgAndLabels()
         if wheel_up:
             self.show_image(ShowImageCmd.PREV)
         else:

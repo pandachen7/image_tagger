@@ -2,7 +2,11 @@ from pydantic import BaseModel
 
 
 class GlobalParam(BaseModel):
-    auto_save_counter: int = 0  # 自動儲存計數器
+    # 自動儲存計數器
+    auto_save_counter: int = 0
+
+    # 如果user label了, 就必定要儲存
+    user_labeling: bool = False
 
 
-global_param = GlobalParam()
+g_param = GlobalParam()

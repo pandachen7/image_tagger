@@ -21,6 +21,7 @@ from src.func import getXmlPath
 from src.loglo import getUniqueLogger
 from src.model import Bbox, ColorPen, FileType
 from src.utils.file_handler import file_h
+from src.utils.global_param import g_param
 
 log = getUniqueLogger(__file__)
 
@@ -334,102 +335,84 @@ class ImageWidget(QWidget):
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
-        if self.pixmap:
-            # 計算繪製區域，將縮放後的影像置於左上
-            scaled_pixmap = self.pixmap.scaled(
-                self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio
+        if not self.pixmap:
+            return
+        # 計算繪製區域，將縮放後的影像置於左上
+        scaled_pixmap = self.pixmap.scaled(
+            self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio
+        )
+
+        # 計算縮放後的影像尺寸, 之後都幾乎以這兩個為參考
+        self.scaled_width = scaled_pixmap.width()
+        self.scaled_height = scaled_pixmap.height()
+
+        painter.drawPixmap(0, 0, scaled_pixmap)
+
+        # Draw mask
+        if self.mask_pixmap:
+            painter.drawPixmap(
+                0,
+                0,
+                self.mask_pixmap.scaled(
+                    self.scaled_width,
+                    self.scaled_height,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                ),
             )
 
-            # 計算縮放後的影像尺寸, 之後都幾乎以這兩個為參考
-            self.scaled_width = scaled_pixmap.width()
-            self.scaled_height = scaled_pixmap.height()
+        # 繪製 Bounding Box
+        for bbox in self.bboxes:
+            painter.setPen(bbox.color_pen)
+            rect = QRect(
+                self._scale_to_widget(QPoint(bbox.x, bbox.y)),
+                self._scale_to_widget(
+                    QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
+                ),
+            )
+            painter.drawRect(rect)
 
-            painter.drawPixmap(0, 0, scaled_pixmap)
+            # 計算文字大小
+            text = f"{bbox.label} ({bbox.confidence:.2f})"
+            font_metrics = painter.fontMetrics()
+            text_width = font_metrics.horizontalAdvance(text)
+            text_height = font_metrics.height()
 
-            # Draw mask
-            if self.mask_pixmap:
-                painter.drawPixmap(
-                    0,
-                    0,
-                    self.mask_pixmap.scaled(
-                        self.scaled_width,
-                        self.scaled_height,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                    ),
-                )
+            # 繪製文字底色
+            qpt_text = QPoint(bbox.x, bbox.y)
+            bg_rect = QRect(
+                QPoint(
+                    self._scale_to_widget(qpt_text).x(),
+                    self._scale_to_widget(qpt_text).y() - int(text_height),
+                ),
+                QPoint(
+                    self._scale_to_widget(qpt_text).x() + int(text_width),
+                    self._scale_to_widget(qpt_text).y(),
+                ),
+            )
+            painter.fillRect(bg_rect, QColor(0, 0, 0, 150))  # 黑色半透明底色
 
-            # 繪製 Bounding Box
-            for bbox in self.bboxes:
-                painter.setPen(bbox.color_pen)
-                rect = QRect(
-                    self._scale_to_widget(QPoint(bbox.x, bbox.y)),
-                    self._scale_to_widget(
-                        QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
-                    ),
-                )
-                painter.drawRect(rect)
+            # 繪製文字
+            painter.drawText(
+                self._scale_to_widget(qpt_text),
+                text,
+            )
 
-                # 計算文字大小
-                text = f"{bbox.label} ({bbox.confidence:.2f})"
+        if self.drawing and self.drawing_mode == DrawingMode.BBOX:
+            painter.setPen(ColorPen.RED)  # 繪製中的 Bounding Box 用紅色
+            rect = QRect(self.start_pos, self.end_pos)
+            painter.drawRect(rect)
+
+            # 顯示繪製中的 bbox 解析度
+            if self.start_pos and self.end_pos:
+                orig_start = self._scale_to_original(self.start_pos)
+                orig_end = self._scale_to_original(self.end_pos)
+                w = abs(orig_end.x() - orig_start.x())
+                h = abs(orig_end.y() - orig_start.y())
+                text = f"{w}x{h}={w * h}"
                 font_metrics = painter.fontMetrics()
                 text_width = font_metrics.horizontalAdvance(text)
                 text_height = font_metrics.height()
-
-                # 繪製文字底色
-                qpt_text = QPoint(bbox.x, bbox.y)
-                bg_rect = QRect(
-                    QPoint(
-                        self._scale_to_widget(qpt_text).x(),
-                        self._scale_to_widget(qpt_text).y() - int(text_height),
-                    ),
-                    QPoint(
-                        self._scale_to_widget(qpt_text).x() + int(text_width),
-                        self._scale_to_widget(qpt_text).y(),
-                    ),
-                )
-                painter.fillRect(bg_rect, QColor(0, 0, 0, 150))  # 黑色半透明底色
-
-                # 繪製文字
-                painter.drawText(
-                    self._scale_to_widget(qpt_text),
-                    text,
-                )
-
-            if self.drawing and self.drawing_mode == DrawingMode.BBOX:
-                painter.setPen(ColorPen.RED)  # 繪製中的 Bounding Box 用紅色
-                rect = QRect(self.start_pos, self.end_pos)
-                painter.drawRect(rect)
-
-                # 顯示繪製中的 bbox 解析度
-                if self.start_pos and self.end_pos:
-                    orig_start = self._scale_to_original(self.start_pos)
-                    orig_end = self._scale_to_original(self.end_pos)
-                    w = abs(orig_end.x() - orig_start.x())
-                    h = abs(orig_end.y() - orig_start.y())
-                    text = f"{w}x{h}={w * h}"
-                    font_metrics = painter.fontMetrics()
-                    text_width = font_metrics.horizontalAdvance(text)
-                    text_height = font_metrics.height()
-                    text_pos = self.end_pos + QPoint(15, 15)
-                    bg_rect = QRect(
-                        text_pos,
-                        QPoint(
-                            text_pos.x() + text_width + 4, text_pos.y() + text_height
-                        ),
-                    )
-                    painter.fillRect(bg_rect, QColor(0, 0, 0, 150))
-                    painter.setPen(QColor(255, 255, 255))
-                    painter.drawText(
-                        text_pos + QPoint(2, text_height - font_metrics.descent()), text
-                    )
-
-            # 如果正在調整大小, 也顯示解析度
-            if self.resizing and self.selected_bbox and self.current_mouse_pos:
-                text = f"{self.selected_bbox.width}x{self.selected_bbox.height}={self.selected_bbox.width * self.selected_bbox.height}"
-                font_metrics = painter.fontMetrics()
-                text_width = font_metrics.horizontalAdvance(text)
-                text_height = font_metrics.height()
-                text_pos = self.current_mouse_pos + QPoint(15, 15)
+                text_pos = self.end_pos + QPoint(15, 15)
                 bg_rect = QRect(
                     text_pos,
                     QPoint(text_pos.x() + text_width + 4, text_pos.y() + text_height),
@@ -439,6 +422,23 @@ class ImageWidget(QWidget):
                 painter.drawText(
                     text_pos + QPoint(2, text_height - font_metrics.descent()), text
                 )
+
+        # 如果正在調整大小, 也顯示解析度
+        if self.resizing and self.selected_bbox and self.current_mouse_pos:
+            text = f"{self.selected_bbox.width}x{self.selected_bbox.height}={self.selected_bbox.width * self.selected_bbox.height}"
+            font_metrics = painter.fontMetrics()
+            text_width = font_metrics.horizontalAdvance(text)
+            text_height = font_metrics.height()
+            text_pos = self.current_mouse_pos + QPoint(15, 15)
+            bg_rect = QRect(
+                text_pos,
+                QPoint(text_pos.x() + text_width + 4, text_pos.y() + text_height),
+            )
+            painter.fillRect(bg_rect, QColor(0, 0, 0, 150))
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(
+                text_pos + QPoint(2, text_height - font_metrics.descent()), text
+            )
 
     def draw_on_mask(self, pos: QPoint):
         if self.last_pos is None:
@@ -699,6 +699,7 @@ class ImageWidget(QWidget):
         self.setCursor(Qt.CursorShape.ArrowCursor)
         for bbox in self.bboxes:
             bbox.color_pen = ColorPen.GREEN
+        g_param.user_labeling = True
         self.update()
 
     def wheelEvent(self, event):
