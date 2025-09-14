@@ -74,6 +74,7 @@ ultralytics的官網也有提供範例, 有興趣就到官網看看
 
 ## 快捷鍵
   - `q`: quit
+  - `s`: save, 用於儲存幾張背景時很好用
   - `a`: toggle auto save
   - `d`: toggle auto detect
   - `l`: 彈出視窗, 輸入label名

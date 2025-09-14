@@ -26,10 +26,10 @@ results = model.train(
     save=True,
     save_period=100,
     device=0,
-    imgsz=640,
-    batch=30,  # 如果 VRAM 不足，請降低此數值。-1 代表自動調整, 但低batch會導致梯度不穩, 建議VRAM拿24GB以上來訓練(batch=32)。
-    name="liyu_lake_voc_enhanced",
-    exist_ok=True,
+    imgsz=640,  # 輸入解析度
+    batch=30,  # 如果 VRAM 不足，請降低此數值。-1 代表自動調整, 但低batch會導致梯度不穩, 建議VRAM拿24GB以上來訓練(batch=32)
+    name="liyu_lake_voc_ex",
+    exist_ok=True,  # 同名資料夾則蓋過
     close_mosaic=10,
     plots=True,
     # 幾何增強（俯視角度）
@@ -41,13 +41,13 @@ results = model.train(
     flipud=0.2,  # 紅外線俯視增加上下翻轉
     fliplr=0.5,
     # === 色彩增強（對灰階也有效）===
-    hsv_h=0.01,  # 降低色調變化（灰階無色調）, default=0.015
-    hsv_s=0.2,  # 降低飽和度變化, default=0.7
-    hsv_v=0.4,  # 增加亮度變化（模擬紅外線強度變化）, default=0.4
+    hsv_h=0.015,  # 色相變化（灰階無色調）, default=0.015
+    hsv_s=0.7,  # 飽和度變化, default=0.7
+    hsv_v=0.4,  # 亮度變化（模擬紅外線強度變化）, default=0.4
     # === 高級增強 ===
-    mosaic=0.5,  # 紅外線場景本來就特徵稀疏，不要太高過度打亂, default=1.0
+    mosaic=1.0,  # 馬賽克拼接增加多樣性, default=1.0
     # === NMS設定 ===
-    iou=0.65,  # 稍微降低，紅外線邊界可能不清晰
+    iou=0.7,  # 融合IoU閾值, default=0.7
     # === 驗證設定 ===
     val=True,
     # === 其他重要設定 ===

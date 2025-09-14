@@ -128,10 +128,10 @@ class MainWindow(QMainWindow):
         self.auto_detect = False
 
         # 儲存
-        self.save_action = QAction("&Save", self)
+        self.save_action = QAction("Save", self)
         self.save_action.triggered.connect(self.save_annotations)
 
-        self.auto_save_action = QAction("&Auto Save", self)
+        self.auto_save_action = QAction("Auto Save", self)
         self.auto_save_action.setCheckable(True)
         self.auto_save_action.triggered.connect(self.toggle_auto_save)
 
@@ -586,6 +586,8 @@ class MainWindow(QMainWindow):
             self.show_image(ShowImageCmd.LAST)
         elif event.key() == Qt.Key.Key_Q:
             self.close()
+        elif event.key() == Qt.Key.Key_S:
+            self.save_annotations()
         elif event.key() == Qt.Key.Key_A:
             self.toggle_auto_save()
         elif event.key() == Qt.Key.Key_D:
