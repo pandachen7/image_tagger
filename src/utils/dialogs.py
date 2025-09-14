@@ -7,14 +7,14 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from src.settings import Settings
+from src.utils.dynamic_settings import settings
 
 
 class CategorySettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Edit Categories")
-        self.categories = Settings.data["categories"]
+        self.setWindowTitle("Edit Categories, 這是給VOC轉yolo用的")
+        self.categories = settings.categories
 
         self.table_widget = QTableWidget()
         self.table_widget.setColumnCount(2)
@@ -76,5 +76,5 @@ class CategorySettingsDialog(QDialog):
                 index_str = index_item.text()
                 if name and index_str.isdigit():
                     categories[name] = int(index_str)
-        Settings.data["categories"] = categories
+        settings.categories = categories
         self.accept()

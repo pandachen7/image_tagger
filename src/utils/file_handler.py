@@ -7,7 +7,7 @@ import cv2
 
 from src.const import ALL_EXTS
 from src.model import ShowImageCmd
-from src.settings import Settings
+from src.utils.dynamic_settings import settings
 
 
 class FileHandler:
@@ -124,11 +124,11 @@ class FileHandler:
 
         for object_element in root.findall("object"):
             label_name = object_element.find("name").text
-            if label_name not in Settings.data["categories"]:
+            if label_name not in settings.categories:
                 print(f"Warning: Label '{label_name}' not in categories,")
                 continue  # Skip to the next object if label is not in categories
 
-            category_id = Settings.data["categories"].get(label_name)
+            category_id = settings.categories.get(label_name)
             if category_id is None or not isinstance(category_id, int):
                 print(
                     f"Warning: Category ID not found for label '{label_name}', skipping"

@@ -28,8 +28,8 @@ from src.func import getMaskPath, getXmlPath
 from src.image_widget import DrawingMode, ImageWidget
 from src.loglo import getUniqueLogger
 from src.model import FileType, PlayState, ShowImageCmd
-from src.settings import Settings, update_dynamic_config
 from src.utils.dialogs import CategorySettingsDialog
+from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
 
 log = getUniqueLogger(__file__)
@@ -248,9 +248,9 @@ class MainWindow(QMainWindow):
         self.preset_labels = {}
         self.last_used_label = "object"  # 預設值
 
-        if Settings.data["model_path"]:
-            self.load_model(Settings.data["model_path"])
-        self.choose_folder(Settings.data["folder_path"], Settings.data["file_index"])
+        if settings.model_path:
+            self.load_model(settings.model_path)
+        self.choose_folder(settings.folder_path, settings.file_index)
 
         try:
             with open("cfg/system.yaml", "r", encoding="utf-8") as f:
@@ -282,7 +282,7 @@ class MainWindow(QMainWindow):
         )
         if model_path:
             self.load_model(model_path)
-            Settings.data["model_path"] = model_path
+            settings.model_path = model_path
 
     def load_model(self, model_path):
         try:
@@ -333,8 +333,8 @@ class MainWindow(QMainWindow):
         """
         folder_path = QFileDialog.getExistingDirectory(self, "Open Folder")  # PyQt6
         self.choose_folder(folder_path)
-        Settings.data["folder_path"] = folder_path
-        Settings.data["file_index"] = 0
+        settings.folder_path = folder_path
+        settings.file_index = 0
 
     def choose_folder(self, folder_path: str, file_index: int = 0):
         """
@@ -364,7 +364,7 @@ class MainWindow(QMainWindow):
                 f"[{file_h.current_index + 1} / {len(file_h.image_files)}] "
                 f"Image: {file_h.current_image_path()}"
             )
-            Settings.data["file_index"] = file_h.current_index
+            settings.file_index = file_h.current_index
 
     def toggle_auto_save(self):
         self.auto_save = not self.auto_save
@@ -606,7 +606,7 @@ class MainWindow(QMainWindow):
         """
         if self.is_auto_save():
             self.save_img_and_labels()
-        update_dynamic_config()
+        save_settings()
 
     def convert_voc_to_yolo(self):
         """
@@ -629,7 +629,7 @@ class MainWindow(QMainWindow):
         dialog = CategorySettingsDialog(self)
         if dialog.exec():
             self.statusbar.showMessage("Categories設定已儲存")
-            update_dynamic_config()
+            save_settings()
 
     def cbWheelEvent(self, wheel_up):
         if self.is_auto_save():
