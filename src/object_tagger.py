@@ -343,7 +343,7 @@ class MainWindow(QMainWindow):
         """
         開啟資料夾的檔案
         """
-        if folder_path:
+        if Path(folder_path).is_dir():
             file_h.load_folder(folder_path)
             if file_h.image_files:
                 file_h.current_index = min(file_index, len(file_h.image_files) - 1)
@@ -354,7 +354,9 @@ class MainWindow(QMainWindow):
                 )
             else:
                 # QMessageBox.information(self, "Info", "No files in the folder.")
-                self.statusbar.showMessage("No files in the folder")
+                self.statusbar.showMessage(f"No files in the folder {folder_path}")
+        else:
+            self.statusbar.showMessage(f"Invalid folder path {folder_path}")
 
     def show_image(self, cmd: str):
         """show下一個影校或影片, 如有自動記錄則要先儲存之前的labels"""
