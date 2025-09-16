@@ -16,10 +16,10 @@ from PyQt6.QtWidgets import (
 )
 from ultralytics import YOLO
 
-from src.const import CORNER_SIZE, VIDEO_EXTS
-from src.func import getXmlPath
-from src.loglo import getUniqueLogger
-from src.model import Bbox, ColorPen, FileType
+from src.utils.const import CORNER_SIZE, VIDEO_EXTS
+from src.utils.func import getXmlPath
+from src.utils.loglo import getUniqueLogger
+from src.utils.model import Bbox, ColorPen, FileType
 from src.utils.file_handler import file_h
 from src.utils.global_param import g_param
 

@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from ruamel.yaml import YAML
 
-from src.loglo import getUniqueLogger
+from src.utils.loglo import getUniqueLogger
 
 yaml = YAML()
 log = getUniqueLogger(__file__)

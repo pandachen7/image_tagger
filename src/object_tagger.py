@@ -24,10 +24,10 @@ from ruamel.yaml import YAML
 from ultralytics import YOLO
 
 from src.config import cfg
-from src.func import getMaskPath, getXmlPath
+from src.utils.func import getMaskPath, getXmlPath
 from src.image_widget import DrawingMode, ImageWidget
-from src.loglo import getUniqueLogger
-from src.model import FileType, PlayState, ShowImageCmd
+from src.utils.loglo import getUniqueLogger
+from src.utils.model import FileType, PlayState, ShowImageCmd
 from src.utils.dialogs import CategorySettingsDialog
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h

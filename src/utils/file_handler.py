@@ -5,8 +5,8 @@ from typing import Optional
 
 import cv2
 
-from src.const import ALL_EXTS
-from src.model import ShowImageCmd
+from src.utils.const import ALL_EXTS
+from src.utils.model import ShowImageCmd
 from src.utils.dynamic_settings import settings
 
 
