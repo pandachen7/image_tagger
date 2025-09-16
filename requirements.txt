@@ -4,3 +4,4 @@ dicttoxml>=1.7.16
 ultralytics
 ruamel.yaml
 python-dotenv
+pydantic

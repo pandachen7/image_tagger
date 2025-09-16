@@ -5,7 +5,7 @@ PURPOSE:
   - 可用TimedRotatingFileHandler來針對不同天數分檔
 3. 用python env設定log level
 
-2025.06.25 by Panda
+2025.09.12 by Panda
 """
 
 import inspect
@@ -31,30 +31,30 @@ SAVE_LOG = False
 
 
 class CustomLogger(logging.Logger):
-    def d(self, *args):
+    def d(self, *args, stacklevel=1):
         prefix = ""
         frame = inspect.currentframe().f_back
         for var_name, var_val in frame.f_locals.items():
             if var_val is args[0]:
-                prefix = var_name + " "
+                prefix = f"{var_name}<{type(var_val).__name__}> "
         msg = f"{prefix}" + " ".join(str(a) for a in args)
-        super().debug(msg, stacklevel=2)
+        super().debug(msg, stacklevel=stacklevel + 1)
 
-    def i(self, *args):
+    def i(self, *args, stacklevel=1):
         msg = " ".join(str(a) for a in args)
-        super().info(msg, stacklevel=2)
+        super().info(msg, stacklevel=stacklevel + 1)
 
-    def w(self, *args):
+    def w(self, *args, stacklevel=1):
         msg = " ".join(str(a) for a in args)
-        super().warning(msg, stacklevel=2)
+        super().warning(msg, stacklevel=stacklevel + 1)
 
-    def e(self, *args):
+    def e(self, *args, stacklevel=1):
         msg = " ".join(str(a) for a in args)
-        super().error(msg, stacklevel=2)
+        super().error(msg, stacklevel=stacklevel + 1)
 
-    def c(self, *args):
+    def c(self, *args, stacklevel=1):
         msg = " ".join(str(a) for a in args)
-        super().critical(msg, stacklevel=2)
+        super().critical(msg, stacklevel=stacklevel + 1)
 
 
 logging.setLoggerClass(CustomLogger)
