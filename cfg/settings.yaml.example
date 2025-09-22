@@ -2,5 +2,16 @@ model_path:
 folder_path:
 file_index: 0
 categories:
-  person: 0
-  cat: 1
+  leo_cat: 0
+  ferret: 1
+  civet: 2
+  cat: 3
+  bicycle: 4
+  bird: 5
+  bus: 6
+  car: 7
+  dog: 8
+  motorbike: 9
+  motor: 9
+  person: 10
+  pottedplant: 11

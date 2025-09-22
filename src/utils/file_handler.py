@@ -6,8 +6,11 @@ from typing import Optional
 import cv2
 
 from src.utils.const import ALL_EXTS
-from src.utils.model import ShowImageCmd
 from src.utils.dynamic_settings import settings
+from src.utils.loglo import getUniqueLogger
+from src.utils.model import ShowImageCmd
+
+log = getUniqueLogger(__file__)
 
 
 class FileHandler:
@@ -103,8 +106,11 @@ class FileHandler:
         if output_folder is None:
             output_folder = folder_path  # 預設輸出到同一個資料夾
 
+        ct = 0
         for xml_file in Path(folder_path).glob("*.xml"):
             self.convert_voc_xml_to_yolo_txt(xml_file, output_folder)
+            ct += 1
+        log.i(f"converted {ct} xml files")
 
     def convert_voc_xml_to_yolo_txt(self, xml_path, output_folder):
         """
@@ -116,7 +122,7 @@ class FileHandler:
         root = tree.getroot()
         size_element = root.find("size")
         if size_element is None:
-            print(f"Warning: No size element found in {xml_path}, skipping")
+            log.w(f"Warning: No size element found in {xml_path}, skipping")
             return
         width = int(size_element.find("width").text)
         height = int(size_element.find("height").text)
@@ -125,12 +131,12 @@ class FileHandler:
         for object_element in root.findall("object"):
             label_name = object_element.find("name").text
             if label_name not in settings.categories:
-                print(f"Warning: Label '{label_name}' not in categories,")
+                log.w(f"Warning: Label '{label_name}' not in categories,")
                 continue  # Skip to the next object if label is not in categories
 
             category_id = settings.categories.get(label_name)
             if category_id is None or not isinstance(category_id, int):
-                print(
+                log.w(
                     f"Warning: Category ID not found for label '{label_name}', skipping"
                 )
                 continue
@@ -155,7 +161,7 @@ class FileHandler:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("\n".join(yolo_lines))
 
-        print(f"Converted {xml_path} to {output_file}")
+        # log.d(f"Converted {xml_path} to {output_file}")
 
 
 file_h = FileHandler()

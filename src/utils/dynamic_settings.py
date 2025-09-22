@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from typing import Optional
+
+from pydantic import BaseModel, Field
 from ruamel.yaml import YAML
 
 from src.utils.loglo import getUniqueLogger
@@ -8,10 +10,10 @@ log = getUniqueLogger(__file__)
 
 
 class Settings(BaseModel):
-    model_path: str = None
-    folder_path: str = None
-    file_index: int = 0
-    categories: dict = {}
+    model_path: Optional[str] = None
+    folder_path: Optional[str] = None
+    file_index: Optional[int] = 0
+    categories: Optional[dict] = Field(default_factory=dict)
 
 
 def load_settings(file_path="cfg/settings.yaml"):
