@@ -216,7 +216,8 @@ class ImageWidget(QWidget):
         if self.main_window.show_fps:
             t1 = time.time()
         self.bboxes = []
-        results = self.model.predict(self.cv_img, verbose=False)
+        # 強制設定device=0跑gpu
+        results = self.model.predict(self.cv_img, device=0, verbose=False)
         for result in results:
             if result.boxes is not None:
                 for box in result.boxes:

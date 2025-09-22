@@ -42,10 +42,6 @@
         "--max-line-length=180"  // 每行最大長度, 設定後就不要忽略 E501
     ],
 
-    "code-runner.executorMap": {
-        "python": "../venv/llm310/bin/python -u",
-    },
-
     // > commnet上色
     "better-comments.tags": [
         {

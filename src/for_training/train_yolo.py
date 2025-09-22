@@ -1,6 +1,11 @@
 import os
+import time
+from datetime import datetime, timedelta
 
 from ultralytics import YOLO
+
+start_time = time.time()
+print(f"開始訓練: {datetime.now()}")
 
 model_name = "yolo12m.pt"
 
@@ -79,3 +84,7 @@ print(f"訓練結果保存在: {results.save_dir}")
 print(f"mAP@0.5: {results.box.map50}")  # mAP@0.5
 print(f"mAP@0.5:0.95: {results.box.map}")  # mAP@0.5:0.95
 print(f"各類別 AP@0.5:0.95: {results.box.ap}")
+
+print(f"結束訓練: {datetime.now()}")
+t_delta = timedelta(seconds=time.time() - start_time)
+print(f"訓練共花時: {t_delta}")
