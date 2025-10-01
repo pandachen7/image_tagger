@@ -6,10 +6,10 @@ from glob import glob
 # --- 1. 請在這裡修改您的配置 ---
 
 # 原始數據集文件夾路徑
-SOURCE_DATA_DIR = os.path.expanduser("~/datasets/img/2024_liyu_lake_voc/train")
+SOURCE_DATA_DIR = os.path.expanduser("~/datasets/img/2024_liyu_lake_voc_coco/train")
 
 # 新的劃分後數據集存放路徑
-OUTPUT_DATA_DIR = os.path.expanduser("~/datasets/img/2024_liyu_lake_voc_split")
+OUTPUT_DATA_DIR = os.path.expanduser("~/datasets/img/liyu_lake_split")
 
 # 數據集劃分比例 [訓練集, 驗證集, 測試集]
 # 確保三者相加等於 1

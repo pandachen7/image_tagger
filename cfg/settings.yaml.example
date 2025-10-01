@@ -13,5 +13,7 @@ categories:
   dog: 8
   motorbike: 9
   motor: 9
+  motorcycle: 9
   person: 10
   pottedplant: 11
+  truck: 12
