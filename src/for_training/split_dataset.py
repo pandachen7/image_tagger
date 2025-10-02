@@ -6,7 +6,7 @@ from glob import glob
 # --- 1. 請在這裡修改您的配置 ---
 
 # 原始數據集文件夾路徑
-SOURCE_DATA_DIR = os.path.expanduser("~/datasets/img/2024_liyu_lake_voc_coco/train")
+SOURCE_DATA_DIR = os.path.expanduser("~/datasets/img/2024_liyu_lake_voc_coco")
 
 # 新的劃分後數據集存放路徑
 OUTPUT_DATA_DIR = os.path.expanduser("~/datasets/img/liyu_lake_split")
@@ -31,8 +31,8 @@ def split_yolo_dataset():
     print("--- 開始處理數據集劃分 ---")
 
     # 檢查源文件夾路徑是否存在
-    source_images_dir = os.path.join(SOURCE_DATA_DIR, "images")
-    source_labels_dir = os.path.join(SOURCE_DATA_DIR, "labels")
+    source_images_dir = os.path.join(SOURCE_DATA_DIR, "train", "images")
+    source_labels_dir = os.path.join(SOURCE_DATA_DIR, "train", "labels")
 
     if not os.path.isdir(source_images_dir):
         print(f"錯誤: 圖片文件夾不存在于 '{source_images_dir}'")
@@ -115,6 +115,11 @@ def split_yolo_dataset():
 
     print("\n--- 數據集劃分完成！---")
     print(f"數據已保存至: '{os.path.abspath(OUTPUT_DATA_DIR)}'")
+
+    # copy data.yaml
+    yaml_path = os.path.join(SOURCE_DATA_DIR, "data.yaml")
+    shutil.copy2(yaml_path, OUTPUT_DATA_DIR)
+    print("data.yaml 已複製到數據集目錄。")
 
 
 if __name__ == "__main__":
