@@ -1,0 +1,6 @@
+# 如果不小心中斷了training, 使用以下指令可以再繼續接下去, 需修改對應的路徑與參數
+# 通常會開一個新的資料夾, 例如runs/train1 之類的, 可以從裡面的args.yaml來對照
+nohup yolo train \
+  model=~/ws/img_proc/runs/detect/liyu_lake_2025_voc_rot15_large/weights/epoch200.pt \
+  data=~/datasets/img/liyu_lake_split/data.yaml \
+  epochs=600 &
