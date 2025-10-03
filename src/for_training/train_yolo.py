@@ -7,18 +7,18 @@ from ultralytics import YOLO
 start_time = time.time()
 print(f"開始訓練: {datetime.now()}")
 
-model_name = "yolo12m.pt"
-
 data_config_path = os.path.expanduser(
     "~/datasets/img/2024_liyu_lake_voc_split/data.yaml"
 )
 
 # 加載模型
-# 如果您想從頭開始訓練，可以使用 .yaml 配置文件，例如 'yolov8n.yaml'
-# 但通常建議使用預訓練權重 .pt 進行遷移學習
+# - 如果您想從頭開始訓練，可以使用 .yaml 配置文件，例如 'yolov8n.yaml'
+# - 但通常建議使用預訓練權重 .pt 進行遷移學習. 例如設定yolo版本來訓練 e.g. yolo12m.pt
+# - 選擇上次中斷的model路徑以進行再訓練
+model_name = "yolo12m.pt"
 model = YOLO(model_name)
 
-print(f"使用模型: {model_name}")
+print(f"訓練model資訊: {model_name}")
 print(f"使用數據集配置: {data_config_path}")
 
 # 執行訓練
