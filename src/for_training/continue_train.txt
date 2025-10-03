@@ -1,6 +1,7 @@
 # 如果不小心中斷了training, 也可使用以下指令再繼續訓練, 需修改對應的路徑與參數
 # 通常會開一個新的資料夾, 例如runs/train1 之類的, 可以從裡面的args.yaml來對照
+# 注意如果pt不是last, 而是選best或epochXXX, 會喪失 優化器狀態、學習率調度器狀態 和 當前 epoch 數。
 nohup yolo train \
-  model=~/ws/img_proc/runs/detect/liyu_lake_2025_voc_rot15_large/weights/epoch200.pt \
+  model=~/ws/img_proc/runs/detect/liyu_lake_2025_voc_rot15_large/weights/last.pt \
   data=~/datasets/img/liyu_lake_split/data.yaml \
   epochs=600 &

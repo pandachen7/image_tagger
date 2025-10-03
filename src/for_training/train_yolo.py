@@ -14,7 +14,7 @@ data_config_path = os.path.expanduser(
 # 加載模型
 # - 如果您想從頭開始訓練，可以使用 .yaml 配置文件，例如 'yolov8n.yaml'
 # - 但通常建議使用預訓練權重 .pt 進行遷移學習. 例如設定yolo版本來訓練 e.g. yolo12m.pt
-# - 選擇上次中斷的model路徑以進行再訓練
+# - 選擇上次中斷的last.pt的路徑以繼續訓練
 model_name = "yolo12m.pt"
 model = YOLO(model_name)
 
