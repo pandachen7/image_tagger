@@ -7,18 +7,17 @@ from ultralytics import YOLO
 start_time = time.time()
 print(f"開始訓練: {datetime.now()}")
 
-data_config_path = os.path.expanduser(
-    "~/datasets/img/2024_liyu_lake_voc_split/data.yaml"
-)
+data_config_path = os.path.expanduser("~/datasets/img/liyu_lake_split/data.yaml")
 
 # 加載模型
 # - 如果您想從頭開始訓練，可以使用 .yaml 配置文件，例如 'yolov8n.yaml'
 # - 但通常建議使用預訓練權重 .pt 進行遷移學習. 例如設定yolo版本來訓練 e.g. yolo12m.pt
 # - 選擇上次中斷的last.pt的路徑以繼續訓練
-model_name = "yolo12m.pt"
-model = YOLO(model_name)
+model_info = "yolo12m.pt"
+# model_info = "runs/detect/train3/weights/last.pt"
+model = YOLO(model_info)
 
-print(f"訓練model資訊: {model_name}")
+print(f"訓練model資訊: {model_info}")
 print(f"使用數據集配置: {data_config_path}")
 
 # 執行訓練
@@ -26,7 +25,7 @@ print(f"使用數據集配置: {data_config_path}")
 results = model.train(
     data=data_config_path,
     mode="detect",  # 這裡是指object detection(detect), 其他還有segmentation(segment), classification(classify)等等
-    epochs=500,  # 紅外線大概300~500就差不多
+    epochs=600,
     patience=50,  # 早停和保存
     save=True,
     save_period=100,
@@ -38,7 +37,7 @@ results = model.train(
     close_mosaic=10,
     plots=True,
     # 幾何增強（俯視角度）
-    degrees=30.0,  # 增加旋轉，俯視很適合
+    degrees=15.0,  # 增加旋轉，俯視很適合
     translate=0.1,  # 增加平移
     scale=0.8,  # 大範圍縮放模擬距離變化, 建議0.5~1.2
     perspective=0.0005,  # 透視變換
@@ -48,17 +47,15 @@ results = model.train(
     # === 色彩增強（對灰階也有效）===
     hsv_h=0.015,  # 色相變化（灰階無色調）, default=0.015
     hsv_s=0.7,  # 飽和度變化, default=0.7
-    hsv_v=0.4,  # 亮度變化（模擬紅外線強度變化）, default=0.4
+    hsv_v=0.5,  # 亮度變化（模擬紅外線強度變化）, default=0.4
     # === 高級增強 ===
     mosaic=1.0,  # 馬賽克拼接增加多樣性, default=1.0
-    # === NMS設定 ===
-    iou=0.7,  # 融合IoU閾值, default=0.7
     # === 驗證設定 ===
     val=True,
     # === 其他重要設定 ===
     seed=42,  # 固定隨機種子
     # === 推論相關（訓練時也會影響驗證）===
-    conf=0.25,  # 偵測門檻, default=0.25
+    # conf=0.25,  # 使用這個會導致mAP曲線及早停止, 盡量不要設定
 )
 
 """
