@@ -90,14 +90,8 @@ class MainWindow(QMainWindow):
         self.toolbar = QToolBar()
         self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
 
-        self.toolbar_auto_save = QAction("Auto Save", self)
-        self.toolbar_auto_save.triggered.connect(self.app_state.toggle_auto_save)
         self.toolbar.addAction(self.auto_save_action)
-
-        self.toolbar_auto_detect = QAction("Auto Detect", self)
-        self.toolbar_auto_detect.triggered.connect(self.app_state.toggle_auto_detect)
         self.toolbar.addAction(self.auto_detect_action)
-
         self.toolbar.addAction(self.save_action)
 
         # 播放控制
@@ -283,6 +277,14 @@ class MainWindow(QMainWindow):
             on_video_loaded=self.cbVideoLoaded,
             on_image_loaded=self.cbImageLoaded,
         )
+
+        # Sync initial UI state with app_state
+        self._sync_ui_state()
+
+    def _sync_ui_state(self):
+        """Sync UI components with app_state."""
+        self.auto_save_action.setChecked(self.app_state.auto_save)
+        self.auto_detect_action.setChecked(self.app_state.auto_detect)
 
     def _on_auto_save_changed(self, enabled: bool):
         """Callback when auto save state changes."""
