@@ -21,17 +21,17 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from ruamel.yaml import YAML
-from ultralytics import YOLO
 
 from src.config import cfg
-from src.utils.func import getMaskPath, getXmlPath
+from src.core import AppState
 from src.image_widget import DrawingMode, ImageWidget
-from src.utils.loglo import getUniqueLogger
-from src.utils.model import FileType, PlayState, ShowImageCmd
 from src.utils.dialogs import CategorySettingsDialog
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
+from src.utils.func import getMaskPath, getXmlPath
 from src.utils.global_param import g_param
+from src.utils.loglo import getUniqueLogger
+from src.utils.model import FileType, PlayState, ShowImageCmd
 
 log = getUniqueLogger(__file__)
 yaml = YAML()
@@ -50,9 +50,8 @@ class MainWindow(QMainWindow):
         # 設定最小尺寸
         self.setMinimumSize(500, 500)
 
-        # 自動
-        self.auto_save = False
-        self.auto_detect = False
+        # Initialize state
+        self.app_state = AppState()
 
         # 儲存
         self.save_action = QAction("Save", self)
@@ -60,17 +59,15 @@ class MainWindow(QMainWindow):
 
         self.auto_save_action = QAction("Auto Save", self)
         self.auto_save_action.setCheckable(True)
-        self.auto_save_action.triggered.connect(self.toggle_auto_save)
+        self.auto_save_action.triggered.connect(self.app_state.toggle_auto_save)
 
         self.save_mask_action = QAction("Save &Mask", self)
         self.save_mask_action.triggered.connect(self.saveMask)
 
-        self.show_fps = False
-
         # 自動使用偵測 (GPU不好速度就會慢)
         self.auto_detect_action = QAction("Auto Detect", self)
         self.auto_detect_action.setCheckable(True)
-        self.auto_detect_action.triggered.connect(self.toggle_auto_detect)
+        self.auto_detect_action.triggered.connect(self.app_state.toggle_auto_detect)
 
         # 檔案相關動作
         self.open_folder_action = QAction("&Open Folder", self)
@@ -86,7 +83,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
 
-        self.image_widget = ImageWidget(self)
+        self.image_widget = ImageWidget(self.app_state)
         self.main_layout.addWidget(self.image_widget)
 
         # 工具列
@@ -94,11 +91,11 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
 
         self.toolbar_auto_save = QAction("Auto Save", self)
-        self.toolbar_auto_save.triggered.connect(self.toggle_auto_save)
+        self.toolbar_auto_save.triggered.connect(self.app_state.toggle_auto_save)
         self.toolbar.addAction(self.auto_save_action)
 
         self.toolbar_auto_detect = QAction("Auto Detect", self)
-        self.toolbar_auto_detect.triggered.connect(self.toggle_auto_detect)
+        self.toolbar_auto_detect.triggered.connect(self.app_state.toggle_auto_detect)
         self.toolbar.addAction(self.auto_detect_action)
 
         self.toolbar.addAction(self.save_action)
@@ -244,9 +241,6 @@ class MainWindow(QMainWindow):
         self.ai_menu.addAction(self.auto_detect_action)
 
         # 讀取預設標籤和上次使用的標籤
-        self.preset_labels = {}
-        self.last_used_label = "object"  # 預設值
-
         if settings.model_path:
             self.load_model(settings.model_path)
         self.choose_folder(settings.folder_path, settings.file_index)
@@ -256,18 +250,51 @@ class MainWindow(QMainWindow):
                 config = yaml.load(f)
             yaml_labels = config.get("labels", {})
             if yaml_labels:
-                self.preset_labels = {
+                self.app_state.preset_labels = {
                     str(key): value
                     for key, value in yaml_labels.items()
                     if isinstance(key, (int, str))
                 }
-            self.last_used_label = config.get("default_label", "object")
-            self.show_fps = config.get("show_fps", False)
+            self.app_state.last_used_label = config.get("default_label", "object")
+            self.app_state.show_fps = config.get("show_fps", False)
 
         except FileNotFoundError:
             QMessageBox.warning(self, "Warning", "config/cfg.yaml not found.")
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Error parsing config/cfg.yaml: {e}")
+
+        # Register callbacks
+        self.app_state.register_callback(
+            "auto_save_changed", self._on_auto_save_changed
+        )
+        self.app_state.register_callback(
+            "auto_detect_changed", self._on_auto_detect_changed
+        )
+        self.app_state.register_callback("model_loaded", self._on_model_loaded)
+        self.app_state.register_callback(
+            "detection_completed", self.image_widget.detectImage
+        )
+        self.app_state.register_callback("status_message", self.statusbar.showMessage)
+
+        # Set image widget callbacks
+        self.image_widget.set_callbacks(
+            on_mouse_press=self.cbMousePress,
+            on_wheel_event=self.cbWheelEvent,
+            on_video_loaded=self.cbVideoLoaded,
+            on_image_loaded=self.cbImageLoaded,
+        )
+
+    def _on_auto_save_changed(self, enabled: bool):
+        """Callback when auto save state changes."""
+        self.auto_save_action.setChecked(enabled)
+
+    def _on_auto_detect_changed(self, enabled: bool):
+        """Callback when auto detect state changes."""
+        self.auto_detect_action.setChecked(enabled)
+
+    def _on_model_loaded(self, model_path: str):
+        """Callback when model is loaded."""
+        save_settings()
 
     def resetStates(self):
         g_param.auto_save_counter = 0
@@ -287,19 +314,11 @@ class MainWindow(QMainWindow):
             settings.model_path = model_path
 
     def load_model(self, model_path):
-        try:
-            if self.image_widget.model:
-                del self.image_widget.model
-            self.image_widget.model = YOLO(model_path)
-            # self.image_widget.model.to("cuda")
-            self.image_widget.use_model = True
-            self.auto_detect = True
-            self.auto_detect_action.setChecked(self.auto_detect)
-            self.image_widget.detectImage()
-            self.statusbar.showMessage(f"Model loaded: {model_path}")
-            save_settings()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load model: {e}")
+        success, message = self.app_state.load_model(model_path)
+        if success:
+            settings.model_path = model_path
+        else:
+            QMessageBox.critical(self, "Error", message)
 
     def open_file_by_index(self):
         self.resetStates()
@@ -360,7 +379,7 @@ class MainWindow(QMainWindow):
 
     def show_image(self, cmd: str):
         """show下一個影校或影片, 如有自動記錄則要先儲存之前的labels"""
-        if self.is_auto_save() or g_param.user_labeling:
+        if self.app_state.auto_save or g_param.user_labeling:
             self.saveImgAndLabels()
         self.resetStates()
         if file_h.show_image(cmd):
@@ -371,26 +390,6 @@ class MainWindow(QMainWindow):
             )
             settings.file_index = file_h.current_index
             save_settings()
-
-    def toggle_auto_save(self):
-        self.auto_save = not self.auto_save
-        self.auto_save_action.setChecked(self.auto_save)
-        self.statusbar.showMessage(f"Auto save: {'on' if self.auto_save else 'off'}")
-
-    def toggle_auto_detect(self):
-        self.auto_detect = not self.auto_detect
-        self.auto_detect_action.setChecked(self.auto_detect)
-        self.statusbar.showMessage(
-            f"Auto detect: {'on' if self.auto_detect else 'off'}"
-        )
-        if self.auto_detect:
-            self.image_widget.detectImage()
-
-    def is_auto_save(self):
-        return self.auto_save
-
-    def is_auto_detect(self):
-        return self.auto_detect
 
     def update_frame(self):
         if self.play_state == PlayState.PLAY and self.image_widget.cap:
@@ -414,7 +413,7 @@ class MainWindow(QMainWindow):
             ).rgbSwapped()
             self.image_widget.pixmap = QPixmap.fromImage(qImg)
 
-            if self.is_auto_detect():
+            if self.app_state.auto_detect:
                 self.image_widget.detectImage()
             else:
                 self.image_widget.update()
@@ -425,7 +424,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.blockSignals(False)  # 恢復信號傳遞
 
             # 自動儲存邏輯
-            if self.is_auto_save() and cfg.auto_save_per_second > 0:
+            if self.app_state.auto_save and cfg.auto_save_per_second > 0:
                 g_param.auto_save_counter += 1
                 if (
                     g_param.auto_save_counter
@@ -472,11 +471,12 @@ class MainWindow(QMainWindow):
     def saveMask(self):
         current_path = file_h.current_image_path()
         if not current_path:
-            return
+            current_path = "./"
 
         if self.image_widget.mask_pixmap:
             mask_path = getMaskPath(current_path).as_posix()
             self.image_widget.mask_pixmap.save(mask_path, "PNG")
+        self.statusbar.showMessage(f"Mask saved to {mask_path}")
 
     def toggle_play_pause(self):
         if self.image_widget.file_type != FileType.VIDEO:
@@ -492,7 +492,7 @@ class MainWindow(QMainWindow):
 
         if self.play_state in [PlayState.STOP, PlayState.PAUSE]:
             # 播放前先儲存標籤資訊
-            if self.is_auto_save() or g_param.user_labeling:
+            if self.app_state.auto_save or g_param.user_labeling:
                 self.saveImgAndLabels()
             icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)
             self.play_pause_action.setIcon(icon)
@@ -538,16 +538,16 @@ class MainWindow(QMainWindow):
             else -1
         )
         if self.image_widget.bboxes:
-            self.image_widget.bboxes[idx].label = self.last_used_label
+            self.image_widget.bboxes[idx].label = self.app_state.last_used_label
             self.image_widget.update()
 
     def promptInputLabel(self):
         # 彈出輸入框，讓使用者輸入標籤
         label, ok = QInputDialog.getText(
-            self, "Input", "Enter label name:", text=self.last_used_label
+            self, "Input", "Enter label name:", text=self.app_state.last_used_label
         )
         if ok and label.strip():
-            self.last_used_label = label.strip()  # 更新上次使用的標籤
+            self.app_state.set_last_used_label(label)
             self.updateFocusOrLastBbox()
 
     def deletePairOfImgXml(self):
@@ -585,9 +585,9 @@ class MainWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_S:
             self.saveImgAndLabels()
         elif event.key() == Qt.Key.Key_A:
-            self.toggle_auto_save()
+            self.app_state.toggle_auto_save()
         elif event.key() == Qt.Key.Key_D:
-            self.toggle_auto_detect()
+            self.app_state.toggle_auto_detect()
         elif event.key() == Qt.Key.Key_Delete:
             self.deletePairOfImgXml()
         elif event.key() == Qt.Key.Key_Space:
@@ -608,17 +608,17 @@ class MainWindow(QMainWindow):
             Qt.Key.Key_0,
         ]:
             key_val = event.key() - Qt.Key.Key_1 + 1
-            self.last_used_label = self.preset_labels.get(
-                str(key_val), self.last_used_label
+            self.app_state.last_used_label = self.app_state.get_label_by_key(
+                str(key_val)
             )
             self.updateFocusOrLastBbox()
-            self.statusBar().showMessage(f"labels: {self.preset_labels}")
+            self.statusBar().showMessage(f"labels: {self.app_state.preset_labels}")
 
     def closeEvent(self, event):
         """
         關閉前需要儲存最後的標籤資訊, 並更新動態設定檔
         """
-        if self.is_auto_save() or g_param.user_labeling:
+        if self.app_state.auto_save or g_param.user_labeling:
             self.saveImgAndLabels()
         save_settings()
 
@@ -646,7 +646,7 @@ class MainWindow(QMainWindow):
             save_settings()
 
     def cbWheelEvent(self, wheel_up):
-        if self.is_auto_save() or g_param.user_labeling:
+        if self.app_state.auto_save or g_param.user_labeling:
             self.saveImgAndLabels()
         if wheel_up:
             self.show_image(ShowImageCmd.PREV)
@@ -656,6 +656,32 @@ class MainWindow(QMainWindow):
     def cbMousePress(self, event):
         if self.play_state == PlayState.PLAY:
             self.play_state = PlayState.PAUSE
+
+    def cbVideoLoaded(self, total_msec: int):
+        """Callback when a video is loaded."""
+        self.progress_bar.setRange(0, total_msec)
+        self.progress_bar.blockSignals(True)
+        self.progress_bar.setValue(0)
+        self.image_widget.cap.set(cv2.CAP_PROP_POS_MSEC, 0)
+        self.progress_bar.blockSignals(False)
+        # 啟用與影片相關的控制項
+        self.play_pause_action.setEnabled(True)
+        self.progress_bar.setEnabled(True)
+        self.speed_control.setEnabled(True)
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+        self.play_pause_action.setIcon(icon)
+
+    def cbImageLoaded(self):
+        """Callback when an image is loaded."""
+        self.progress_bar.blockSignals(True)
+        self.progress_bar.setValue(0)
+        self.progress_bar.blockSignals(False)
+        # 禁用與影片相關的控制項
+        self.play_pause_action.setEnabled(False)
+        self.progress_bar.setEnabled(False)
+        self.speed_control.setEnabled(False)
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton)
+        self.play_pause_action.setIcon(icon)
 
 
 def main():

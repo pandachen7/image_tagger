@@ -11,17 +11,16 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMessageBox,
     QSizePolicy,
-    QStyle,
     QWidget,
 )
-from ultralytics import YOLO
 
+from src.core import AppState
 from src.utils.const import CORNER_SIZE, VIDEO_EXTS
+from src.utils.file_handler import file_h
 from src.utils.func import getXmlPath
+from src.utils.global_param import g_param
 from src.utils.loglo import getUniqueLogger
 from src.utils.model import Bbox, ColorPen, FileType
-from src.utils.file_handler import file_h
-from src.utils.global_param import g_param
 
 log = getUniqueLogger(__file__)
 
@@ -55,9 +54,9 @@ def cv_mat_to_qimage(cv_mat: np.ndarray) -> QImage:
 
 
 class ImageWidget(QWidget):
-    def __init__(self, main_window):
+    def __init__(self, app_state: AppState):
         super().__init__()
-        self.main_window = main_window
+        self.app_state = app_state
         self.image_label = QLabel()
         self.pixmap = None
         self.bboxes: list[Bbox] = []
@@ -78,8 +77,6 @@ class ImageWidget(QWidget):
         self.brush_size = 20
         self.last_pos = None
 
-        self.model: None | YOLO = None
-        self.use_model = False
         self.list_fps = []
 
         self.cv_img = None
@@ -91,11 +88,36 @@ class ImageWidget(QWidget):
         self.scaled_width = None
         self.scaled_height = None
         self.cap = None
+
+        # Callbacks for main window communication
+        self.on_mouse_press_callback = None
+        self.on_wheel_event_callback = None
+        self.on_video_loaded_callback = None
+        self.on_image_loaded_callback = None
+        self.file_type = FileType.IMAGE
+        self.fps = 30
         # (x, y)--->┌－－－－－－－┐ ╮
         #           │             │ │
         #           │<---width--->│  height
         #           │             │ │
         #           └－－－－－－－┘ ╯
+
+    def set_callbacks(
+        self,
+        on_mouse_press=None,
+        on_wheel_event=None,
+        on_video_loaded=None,
+        on_image_loaded=None,
+    ):
+        """Set callback functions for main window communication."""
+        if on_mouse_press:
+            self.on_mouse_press_callback = on_mouse_press
+        if on_wheel_event:
+            self.on_wheel_event_callback = on_wheel_event
+        if on_video_loaded:
+            self.on_video_loaded_callback = on_video_loaded
+        if on_image_loaded:
+            self.on_image_loaded_callback = on_image_loaded
 
     def _scale_to_original(self, point):
         if self.pixmap:
@@ -203,9 +225,8 @@ class ImageWidget(QWidget):
         執行物件偵測, 只有在model讀取時才會執行
         執行前先清除bboxes, 以免搞混
         """
-        if not self.model:
-            self.main_window.auto_detect = False
-            self.main_window.auto_detect_action.setChecked(False)
+        if not self.app_state.model:
+            self.app_state.auto_detect = False
             QMessageBox.critical(self, "Error", "Model not loaded")
             return
 
@@ -213,11 +234,11 @@ class ImageWidget(QWidget):
             # QMessageBox.critical(self, "Error", "No image loaded")
             return
 
-        if self.main_window.show_fps:
+        if self.app_state.show_fps:
             t1 = time.time()
         self.bboxes = []
         # 強制設定device=0跑gpu
-        results = self.model.predict(self.cv_img, device=0, verbose=False)
+        results = self.app_state.model.predict(self.cv_img, device=0, verbose=False)
         for result in results:
             if result.boxes is not None:
                 for box in result.boxes:
@@ -226,7 +247,7 @@ class ImageWidget(QWidget):
                     ]  # get box coordinates in (top, left, bottom, right) format
                     c = box.cls
                     conf = box.conf
-                    label = self.model.names[int(c)]
+                    label = self.app_state.model.names[int(c)]
                     self.bboxes.append(
                         Bbox(
                             int(b[0]),
@@ -237,7 +258,7 @@ class ImageWidget(QWidget):
                             float(conf),
                         )
                     )
-        if self.main_window.show_fps:
+        if self.app_state.show_fps:
             self.list_fps.append(1 / (time.time() - t1))
             if len(self.list_fps) > 10:
                 self.list_fps.pop(0)
@@ -274,33 +295,14 @@ class ImageWidget(QWidget):
             self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30
             # log.info(f"Video FPS: {self.fps}")
 
-            self.main_window.progress_bar.setRange(0, self.get_total_msec())
-
-            self.main_window.progress_bar.blockSignals(True)
-            self.main_window.progress_bar.setValue(0)
-            self.cap.set(cv2.CAP_PROP_POS_MSEC, 0)
-            self.main_window.progress_bar.blockSignals(False)
-            # 啟用與影片相關的控制項
-            self.main_window.play_pause_action.setEnabled(True)
-            self.main_window.progress_bar.setEnabled(True)
-            self.main_window.speed_control.setEnabled(True)
-            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+            if self.on_video_loaded_callback:
+                self.on_video_loaded_callback(self.get_total_msec())
         else:
             self.file_type = FileType.IMAGE
             self.cv_img = cv2.imread(file_path)
 
-            self.main_window.progress_bar.blockSignals(True)
-            self.main_window.progress_bar.setValue(0)
-            self.main_window.progress_bar.blockSignals(False)
-            # 禁用與影片相關的控制項
-            self.main_window.play_pause_action.setEnabled(False)
-            self.main_window.progress_bar.setEnabled(False)
-            self.main_window.speed_control.setEnabled(False)
-            icon = self.style().standardIcon(
-                QStyle.StandardPixmap.SP_TitleBarCloseButton
-            )
-
-        self.main_window.play_pause_action.setIcon(icon)
+            if self.on_image_loaded_callback:
+                self.on_image_loaded_callback()
         if self.cv_img is None:
             log.w(f"load {file_path} failed")
             QMessageBox.critical(self, "Error", f"Failed to load file `{file_path}`")
@@ -324,7 +326,7 @@ class ImageWidget(QWidget):
         xml_path = getXmlPath(file_path)
         if not self.loadBboxFromXml(xml_path):
             # 如果 bbox (來自xml) 不存在, 才嘗試使用 YOLO 偵測
-            if self.main_window.is_auto_detect():
+            if self.app_state.auto_detect:
                 self.detectImage()
         self.update()  # 觸發 paintEvent
 
@@ -519,7 +521,8 @@ class ImageWidget(QWidget):
         self.update()
 
     def mousePressEvent(self, event):
-        self.main_window.cbMousePress(event)
+        if self.on_mouse_press_callback:
+            self.on_mouse_press_callback(event)
 
         if event.button() == Qt.MouseButton.LeftButton:
             if self.drawing_mode in [DrawingMode.MASK_DRAW, DrawingMode.MASK_ERASE]:
@@ -686,7 +689,7 @@ class ImageWidget(QWidget):
                         min(y1_original, y1_original + height_original),
                         width_original,
                         height_original,
-                        self.main_window.last_used_label,
+                        self.app_state.last_used_label,
                         1.0,
                     )
                 )
@@ -705,4 +708,5 @@ class ImageWidget(QWidget):
 
     def wheelEvent(self, event):
         # event.angleDelta().y() > 0, 代表滑鼠滾輪往上滾
-        self.main_window.cbWheelEvent(event.angleDelta().y() > 0)
+        if self.on_wheel_event_callback:
+            self.on_wheel_event_callback(event.angleDelta().y() > 0)

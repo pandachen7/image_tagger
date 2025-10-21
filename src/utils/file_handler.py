@@ -28,7 +28,7 @@ class FileHandler:
                 self.image_files.append(file)
         self.image_files.sort()  # 排序
 
-    def current_image_path(self):
+    def current_image_path(self) -> str:
         if not self.image_files:
             return None
         return os.path.join(self.folder_path, self.image_files[self.current_index])
