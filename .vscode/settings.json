@@ -124,5 +124,6 @@
     },
     "todo-tree.highlights.defaultHighlight": {},
     "todo-tree.general.tags": ["BUG", "TEST", "FIXME", "TODO", "NOTE", "/!"],
-    "todo-tree.general.tagGroups": {}
+    "todo-tree.general.tagGroups": {},
+    "python-envs.pythonProjects": []
 }
