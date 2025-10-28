@@ -8,7 +8,7 @@ import cv2
 from src.utils.const import ALL_EXTS
 from src.utils.dynamic_settings import settings
 from src.utils.loglo import getUniqueLogger
-from src.utils.model import ShowImageCmd
+from src.utils.model import ShowImageCmd, Bbox
 
 log = getUniqueLogger(__file__)
 
@@ -65,7 +65,7 @@ class FileHandler:
             return True
         return False
 
-    def generate_voc_xml(self, bboxes, image_path):
+    def generate_voc_xml(self, bboxes: list[Bbox], image_path):
         """
         基於現有的bbox 產生符合voc格式的xml檔案
         """
@@ -93,6 +93,7 @@ class FileHandler:
             xml_str += f"            <xmax>{bbox.x + bbox.width}</xmax>\n"
             xml_str += f"            <ymax>{bbox.y + bbox.height}</ymax>\n"
             xml_str += f"            <confidence>{bbox.confidence}</confidence>\n"
+            xml_str += f"            <angle>{bbox.angle}</angle>\n"
             xml_str += "        </bndbox>\n"
             xml_str += "    </object>\n"
 

@@ -207,10 +207,13 @@ class ImageWidget(QWidget):
                     xmax = int(bndbox.find("xmax").text)
                     ymax = int(bndbox.find("ymax").text)
                     confidence = float(bndbox.find("confidence").text)
+                    # 讀取 angle 參數，如果不存在則預設為 0
+                    angle_element = bndbox.find("angle")
+                    angle = float(angle_element.text) if angle_element is not None else 0.0
                     width = xmax - xmin
                     height = ymax - ymin
                     self.bboxes.append(
-                        Bbox(xmin, ymin, width, height, name, confidence)
+                        Bbox(xmin, ymin, width, height, name, confidence, angle)
                     )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to parse XML: {e}")
@@ -366,39 +369,88 @@ class ImageWidget(QWidget):
         # 繪製 Bounding Box
         for bbox in self.bboxes:
             painter.setPen(bbox.color_pen)
-            rect = QRect(
-                self._scale_to_widget(QPoint(bbox.x, bbox.y)),
-                self._scale_to_widget(
-                    QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
-                ),
-            )
-            painter.drawRect(rect)
 
-            # 計算文字大小
-            text = f"{bbox.label} ({bbox.confidence:.2f})"
-            font_metrics = painter.fontMetrics()
-            text_width = font_metrics.horizontalAdvance(text)
-            text_height = font_metrics.height()
+            if bbox.angle != 0:
+                # 繪製旋轉的 bounding box
+                # 計算中心點（原始座標）
+                center_x = bbox.x + bbox.width / 2
+                center_y = bbox.y + bbox.height / 2
 
-            # 繪製文字底色
-            qpt_text = QPoint(bbox.x, bbox.y)
-            bg_rect = QRect(
-                QPoint(
-                    self._scale_to_widget(qpt_text).x(),
-                    self._scale_to_widget(qpt_text).y() - int(text_height),
-                ),
-                QPoint(
-                    self._scale_to_widget(qpt_text).x() + int(text_width),
-                    self._scale_to_widget(qpt_text).y(),
-                ),
-            )
-            painter.fillRect(bg_rect, QColor(0, 0, 0, 150))  # 黑色半透明底色
+                # 轉換到視窗座標
+                center_widget = self._scale_to_widget(QPoint(int(center_x), int(center_y)))
 
-            # 繪製文字
-            painter.drawText(
-                self._scale_to_widget(qpt_text),
-                text,
-            )
+                # 計算縮放後的寬高
+                scaled_width = bbox.width * self.scaled_width / self.pixmap.width()
+                scaled_height = bbox.height * self.scaled_height / self.pixmap.height()
+
+                # 保存當前畫筆狀態
+                painter.save()
+                # 移動到中心點
+                painter.translate(center_widget.x(), center_widget.y())
+                # 順時針旋轉
+                painter.rotate(bbox.angle)
+                # 繪製矩形（以中心為原點）
+                painter.drawRect(int(-scaled_width/2), int(-scaled_height/2),
+                               int(scaled_width), int(scaled_height))
+                # 恢復畫筆狀態
+                painter.restore()
+
+                # 繪製文字（在未旋轉的位置）
+                text = f"{bbox.label} ({bbox.confidence:.2f})"
+                if bbox.angle != 0:
+                    text += f" [{bbox.angle:.0f}°]"
+                font_metrics = painter.fontMetrics()
+                text_width = font_metrics.horizontalAdvance(text)
+                text_height = font_metrics.height()
+
+                qpt_text = QPoint(bbox.x, bbox.y)
+                bg_rect = QRect(
+                    QPoint(
+                        self._scale_to_widget(qpt_text).x(),
+                        self._scale_to_widget(qpt_text).y() - int(text_height),
+                    ),
+                    QPoint(
+                        self._scale_to_widget(qpt_text).x() + int(text_width),
+                        self._scale_to_widget(qpt_text).y(),
+                    ),
+                )
+                painter.fillRect(bg_rect, QColor(0, 0, 0, 150))
+                painter.drawText(self._scale_to_widget(qpt_text), text)
+            else:
+                # 繪製一般的 bounding box
+                rect = QRect(
+                    self._scale_to_widget(QPoint(bbox.x, bbox.y)),
+                    self._scale_to_widget(
+                        QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
+                    ),
+                )
+                painter.drawRect(rect)
+
+                # 計算文字大小
+                text = f"{bbox.label} ({bbox.confidence:.2f})"
+                font_metrics = painter.fontMetrics()
+                text_width = font_metrics.horizontalAdvance(text)
+                text_height = font_metrics.height()
+
+                # 繪製文字底色
+                qpt_text = QPoint(bbox.x, bbox.y)
+                bg_rect = QRect(
+                    QPoint(
+                        self._scale_to_widget(qpt_text).x(),
+                        self._scale_to_widget(qpt_text).y() - int(text_height),
+                    ),
+                    QPoint(
+                        self._scale_to_widget(qpt_text).x() + int(text_width),
+                        self._scale_to_widget(qpt_text).y(),
+                    ),
+                )
+                painter.fillRect(bg_rect, QColor(0, 0, 0, 150))  # 黑色半透明底色
+
+                # 繪製文字
+                painter.drawText(
+                    self._scale_to_widget(qpt_text),
+                    text,
+                )
 
         if self.drawing and self.drawing_mode == DrawingMode.BBOX:
             painter.setPen(ColorPen.RED)  # 繪製中的 Bounding Box 用紅色

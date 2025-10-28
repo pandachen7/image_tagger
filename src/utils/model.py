@@ -9,13 +9,14 @@ class ColorPen:
 
 
 class Bbox:
-    def __init__(self, x, y, width, height, label, confidence=-1.0):
+    def __init__(self, x, y, width, height, label, confidence=-1.0, angle=0.0):
         self.x = x
         self.y = y
         self.width = width
         self.height = height
         self.label = label
         self.confidence = confidence
+        self.angle = angle  # 旋轉角度（順時針，單位：度）
         self.color_pen = ColorPen.GREEN
 
 
