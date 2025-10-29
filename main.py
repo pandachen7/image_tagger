@@ -2,9 +2,10 @@ import torch
 
 from src.object_tagger import main
 
-print(torch.__version__)
-print(torch.cuda.is_available())
-print(torch.version.cuda)
-print(torch.backends.cudnn.version())
+print("torch version:", torch.__version__)
+print("cuda available:", torch.cuda.is_available())
+print("cuda version:", torch.version.cuda)
+print("cudnn version:", torch.backends.cudnn.version())
+
 if __name__ == "__main__":
     main()
