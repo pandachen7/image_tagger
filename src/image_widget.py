@@ -1,3 +1,4 @@
+import math
 import time
 import xml.etree.ElementTree as ET
 from enum import Enum
@@ -14,8 +15,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.config import cfg
 from src.core import AppState
-from src.utils.const import CORNER_SIZE, VIDEO_EXTS
+from src.utils.const import (
+    CORNER_SIZE,
+    ROTATION_HANDLE_DISTANCE,
+    ROTATION_HANDLE_RADIUS,
+    VIDEO_EXTS,
+)
 from src.utils.file_handler import file_h
 from src.utils.func import getXmlPath
 from src.utils.global_param import g_param
@@ -66,9 +73,12 @@ class ImageWidget(QWidget):
 
         self.idx_focus_bbox: int = -1
         self.resizing = False
+        self.rotating = False  # 旋轉狀態
         self.selected_bbox = None
         self.resizing_corner = None
         self.original_bbox = None  # 儲存原始 bbox 資訊
+        self.original_angle = None  # 儲存原始角度
+        self.rotation_start_angle = None  # 旋轉開始時的滑鼠角度
         self.current_mouse_pos = None  # 儲存滑鼠當前位置
 
         # Mask drawing properties
@@ -185,6 +195,40 @@ class ImageWidget(QWidget):
                 return corner
         return None
 
+    def _getRotationHandlePos(self, bbox: Bbox) -> QPoint:
+        """取得旋轉控制點的位置（原始座標）"""
+        center_x = bbox.x + bbox.width / 2
+        center_y = bbox.y + bbox.height / 2
+
+        # 計算旋轉後的控制點位置
+        # 預設控制點在上方，需要根據角度旋轉
+        angle_rad = math.radians(bbox.angle)
+        # 控制點相對於中心的位置（未旋轉時在上方）
+        handle_offset_x = 0
+        handle_offset_y = -(bbox.height / 2 + ROTATION_HANDLE_DISTANCE)
+
+        # 旋轉這個偏移量
+        rotated_x = handle_offset_x * math.cos(angle_rad) - handle_offset_y * math.sin(
+            angle_rad
+        )
+        rotated_y = handle_offset_x * math.sin(angle_rad) + handle_offset_y * math.cos(
+            angle_rad
+        )
+
+        return QPoint(int(center_x + rotated_x), int(center_y + rotated_y))
+
+    def _isOnRotationHandle(self, pos, bbox: Bbox) -> bool:
+        """檢查滑鼠是否在旋轉控制點上"""
+        pos_original = self._scale_to_original(pos)
+        handle_pos = self._getRotationHandlePos(bbox)
+
+        # 計算距離
+        dx = pos_original.x() - handle_pos.x()
+        dy = pos_original.y() - handle_pos.y()
+        distance = (dx * dx + dy * dy) ** 0.5
+
+        return distance <= ROTATION_HANDLE_RADIUS * 2
+
     def loadBboxFromXml(self, xml_path) -> bool:
         """
         讀取xml的bbox資訊
@@ -209,7 +253,9 @@ class ImageWidget(QWidget):
                     confidence = float(bndbox.find("confidence").text)
                     # 讀取 angle 參數，如果不存在則預設為 0
                     angle_element = bndbox.find("angle")
-                    angle = float(angle_element.text) if angle_element is not None else 0.0
+                    angle = (
+                        float(angle_element.text) if angle_element is not None else 0.0
+                    )
                     width = xmax - xmin
                     height = ymax - ymin
                     self.bboxes.append(
@@ -237,7 +283,7 @@ class ImageWidget(QWidget):
             # QMessageBox.critical(self, "Error", "No image loaded")
             return
 
-        if self.app_state.show_fps:
+        if cfg.show_fps:
             t1 = time.time()
         self.bboxes = []
         # 強制設定device=0跑gpu
@@ -261,7 +307,7 @@ class ImageWidget(QWidget):
                             float(conf),
                         )
                     )
-        if self.app_state.show_fps:
+        if cfg.show_fps:
             self.list_fps.append(1 / (time.time() - t1))
             if len(self.list_fps) > 10:
                 self.list_fps.pop(0)
@@ -377,7 +423,9 @@ class ImageWidget(QWidget):
                 center_y = bbox.y + bbox.height / 2
 
                 # 轉換到視窗座標
-                center_widget = self._scale_to_widget(QPoint(int(center_x), int(center_y)))
+                center_widget = self._scale_to_widget(
+                    QPoint(int(center_x), int(center_y))
+                )
 
                 # 計算縮放後的寬高
                 scaled_width = bbox.width * self.scaled_width / self.pixmap.width()
@@ -390,8 +438,12 @@ class ImageWidget(QWidget):
                 # 順時針旋轉
                 painter.rotate(bbox.angle)
                 # 繪製矩形（以中心為原點）
-                painter.drawRect(int(-scaled_width/2), int(-scaled_height/2),
-                               int(scaled_width), int(scaled_height))
+                painter.drawRect(
+                    int(-scaled_width / 2),
+                    int(-scaled_height / 2),
+                    int(scaled_width),
+                    int(scaled_height),
+                )
                 # 恢復畫筆狀態
                 painter.restore()
 
@@ -451,6 +503,44 @@ class ImageWidget(QWidget):
                     self._scale_to_widget(qpt_text),
                     text,
                 )
+
+        # 繪製選中 bbox 的旋轉控制點
+        if self.idx_focus_bbox != -1 and 0 <= self.idx_focus_bbox < len(self.bboxes):
+            focused_bbox = self.bboxes[self.idx_focus_bbox]
+
+            # 計算中心點和旋轉控制點位置
+            center_x = focused_bbox.x + focused_bbox.width / 2
+            center_y = focused_bbox.y + focused_bbox.height / 2
+            center_widget = self._scale_to_widget(QPoint(int(center_x), int(center_y)))
+
+            handle_pos_original = self._getRotationHandlePos(focused_bbox)
+            handle_pos_widget = self._scale_to_widget(handle_pos_original)
+
+            # 繪製虛線（從 bbox 上邊中點到旋轉控制點）
+            angle_rad = math.radians(focused_bbox.angle)
+            top_center_offset_x = 0
+            top_center_offset_y = -focused_bbox.height / 2
+            rotated_top_x = top_center_offset_x * math.cos(
+                angle_rad
+            ) - top_center_offset_y * math.sin(angle_rad)
+            rotated_top_y = top_center_offset_x * math.sin(
+                angle_rad
+            ) + top_center_offset_y * math.cos(angle_rad)
+            top_center_original = QPoint(
+                int(center_x + rotated_top_x), int(center_y + rotated_top_y)
+            )
+            top_center_widget = self._scale_to_widget(top_center_original)
+
+            dashed_pen = QPen(QColor(255, 255, 0), 1, Qt.PenStyle.DashLine)
+            painter.setPen(dashed_pen)
+            painter.drawLine(top_center_widget, handle_pos_widget)
+
+            # 繪製旋轉控制點圓圈
+            painter.setPen(QPen(QColor(255, 255, 0), 2))
+            painter.setBrush(QColor(255, 255, 255, 200))
+            painter.drawEllipse(
+                handle_pos_widget, ROTATION_HANDLE_RADIUS, ROTATION_HANDLE_RADIUS
+            )
 
         if self.drawing and self.drawing_mode == DrawingMode.BBOX:
             painter.setPen(ColorPen.RED)  # 繪製中的 Bounding Box 用紅色
@@ -588,6 +678,25 @@ class ImageWidget(QWidget):
                 self.fill_mask(event.pos())
             elif self.drawing_mode == DrawingMode.BBOX:
                 for idx_focus, bbox in enumerate(self.bboxes):
+                    # 先檢查旋轉控制點
+                    if self._isOnRotationHandle(event.pos(), bbox):
+                        self.selected_bbox = bbox
+                        self.selected_bbox.color_pen = ColorPen.YELLOW
+                        self.idx_focus_bbox = idx_focus
+                        self.rotating = True
+                        self.original_angle = bbox.angle
+
+                        # 計算滑鼠相對於 bbox 中心的角度
+                        pos_original = self._scale_to_original(event.pos())
+                        center_x = bbox.x + bbox.width / 2
+                        center_y = bbox.y + bbox.height / 2
+                        dx = pos_original.x() - center_x
+                        dy = pos_original.y() - center_y
+                        self.rotation_start_angle = math.degrees(math.atan2(dy, dx))
+
+                        self.update()
+                        break
+
                     corner = self._isInCorner(event.pos(), bbox)
                     if corner:
                         self.selected_bbox = bbox
@@ -647,8 +756,13 @@ class ImageWidget(QWidget):
 
         # BBOX mode logic
         cursor_changed = False
-        if not self.resizing and not self.drawing:
+        if not self.resizing and not self.drawing and not self.rotating:
             for bbox in self.bboxes:
+                # 檢查旋轉控制點
+                if self._isOnRotationHandle(event.pos(), bbox):
+                    self.setCursor(Qt.CursorShape.CrossCursor)
+                    cursor_changed = True
+                    break
                 corner = self._isInCorner(event.pos(), bbox)
                 if corner in ["top_left", "bottom_right"]:
                     self.setCursor(Qt.CursorShape.SizeFDiagCursor)
@@ -658,7 +772,7 @@ class ImageWidget(QWidget):
                     self.setCursor(Qt.CursorShape.SizeBDiagCursor)
                     cursor_changed = True
                     break
-        if not cursor_changed and not self.resizing:
+        if not cursor_changed and not self.resizing and not self.rotating:
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
         if self.drawing:  # BBOX drawing
@@ -693,6 +807,22 @@ class ImageWidget(QWidget):
             #     self.selected_bbox.x = self.original_bbox[0] + dx
             #     self.selected_bbox.y = self.original_bbox[1] + dy
 
+        elif self.rotating:
+            # 計算當前滑鼠相對於 bbox 中心的角度
+            pos_original = self._scale_to_original(event.pos())
+            center_x = self.selected_bbox.x + self.selected_bbox.width / 2
+            center_y = self.selected_bbox.y + self.selected_bbox.height / 2
+            dx = pos_original.x() - center_x
+            dy = pos_original.y() - center_y
+            current_angle = math.degrees(math.atan2(dy, dx))
+
+            # 計算角度變化
+            angle_delta = current_angle - self.rotation_start_angle
+            new_angle = self.original_angle + angle_delta
+
+            # 正規化角度到 0-360 範圍
+            self.selected_bbox.angle = new_angle % 360
+
         self.update()
 
     def mouseReleaseEvent(self, event):
@@ -702,6 +832,13 @@ class ImageWidget(QWidget):
                 self.selected_bbox = None
                 self.resizing_corner = None
                 self.original_bbox = None
+
+            elif self.rotating:
+                self.rotating = False
+                self.selected_bbox = None
+                self.original_angle = None
+                self.rotation_start_angle = None
+                self.completeMouseAction()
 
             elif self.drawing:
                 self.drawing = False
@@ -721,7 +858,7 @@ class ImageWidget(QWidget):
                 height = abs(y2 - y1)
 
                 # 檢查寬高是否大於最小限制
-                if width < 5 or height < 5:
+                if width < cfg.minimal_bbox_length or height < cfg.minimal_bbox_length:
                     # 範圍太小
                     self.completeMouseAction()
                     return
