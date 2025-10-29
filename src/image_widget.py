@@ -80,6 +80,7 @@ class ImageWidget(QWidget):
         self.original_angle = None  # 儲存原始角度
         self.rotation_start_angle = None  # 旋轉開始時的滑鼠角度
         self.current_mouse_pos = None  # 儲存滑鼠當前位置
+        self.fixed_corner_pos = None  # 儲存resize時固定的對角點位置（原始座標）
 
         # Mask drawing properties
         self.drawing_mode = DrawingMode.BBOX
@@ -146,54 +147,73 @@ class ImageWidget(QWidget):
             return point
 
     def _isInBboxArea(self, pos, bbox: Bbox) -> bool:
-        """用於選取bbox"""
+        """用於選取bbox，考慮旋轉後的bbox區域"""
         pos = self._scale_to_original(pos)
 
-        rect = QRect(bbox.x, bbox.y, bbox.width, bbox.height)
-        if rect.contains(pos):
-            return True
-        return False
+        if bbox.angle == 0:
+            # 未旋轉時，直接取矩形角落
+            rect = QRect(bbox.x, bbox.y, bbox.width, bbox.height)
+            return rect.contains(pos)
+        else:
+            # 旋轉時，多邊形檢測
+            corners = self._getRotatedCorners(bbox)
+            polygon = np.array(corners, dtype=np.float32)
+            point = (float(pos.x()), float(pos.y()))
+            result = cv2.pointPolygonTest(polygon, point, False)
+            return result >= 0
 
     def _isInCorner(self, pos, bbox: Bbox) -> str:
-        """檢查滑鼠是否在角落"""
-        # 將視窗座標轉換為原始影像座標
+        """檢查滑鼠是否在角落，並且resize"""
         pos = self._scale_to_original(pos)
 
-        x1, y1 = bbox.x, bbox.y
-        x2, y2 = bbox.x + bbox.width, bbox.y + bbox.height
+        if bbox.angle == 0:
+            x1, y1 = bbox.x, bbox.y
+            x2, y2 = bbox.x + bbox.width, bbox.y + bbox.height
 
-        # 計算四個角落的範圍
-        corners = {
-            "top_left": QRect(
-                x1 - CORNER_SIZE,
-                y1 - CORNER_SIZE,
-                CORNER_SIZE * 2,
-                CORNER_SIZE * 2,
-            ),
-            "top_right": QRect(
-                x2 - CORNER_SIZE,
-                y1 - CORNER_SIZE,
-                CORNER_SIZE * 2,
-                CORNER_SIZE * 2,
-            ),
-            "bottom_left": QRect(
-                x1 - CORNER_SIZE,
-                y2 - CORNER_SIZE,
-                CORNER_SIZE * 2,
-                CORNER_SIZE * 2,
-            ),
-            "bottom_right": QRect(
-                x2 - CORNER_SIZE,
-                y2 - CORNER_SIZE,
-                CORNER_SIZE * 2,
-                CORNER_SIZE * 2,
-            ),
-        }
+            # 計算四個角落的範圍
+            corners = {
+                "top_left": QRect(
+                    x1 - CORNER_SIZE,
+                    y1 - CORNER_SIZE,
+                    CORNER_SIZE * 2,
+                    CORNER_SIZE * 2,
+                ),
+                "top_right": QRect(
+                    x2 - CORNER_SIZE,
+                    y1 - CORNER_SIZE,
+                    CORNER_SIZE * 2,
+                    CORNER_SIZE * 2,
+                ),
+                "bottom_left": QRect(
+                    x1 - CORNER_SIZE,
+                    y2 - CORNER_SIZE,
+                    CORNER_SIZE * 2,
+                    CORNER_SIZE * 2,
+                ),
+                "bottom_right": QRect(
+                    x2 - CORNER_SIZE,
+                    y2 - CORNER_SIZE,
+                    CORNER_SIZE * 2,
+                    CORNER_SIZE * 2,
+                ),
+            }
 
-        for corner, rect in corners.items():
-            if rect.contains(pos):
-                return corner
-        return None
+            for corner, rect in corners.items():
+                if rect.contains(pos):
+                    return corner
+            return None
+        else:
+            # 旋轉的情況，使用角點距離檢測
+            corners = self._getRotatedCorners(bbox)
+            corner_names = ["top_left", "top_right", "bottom_right", "bottom_left"]
+
+            for i, (cx, cy) in enumerate(corners):
+                dx = pos.x() - cx
+                dy = pos.y() - cy
+                distance = (dx * dx + dy * dy) ** 0.5
+                if distance <= CORNER_SIZE * 2:
+                    return corner_names[i]
+            return None
 
     def _getRotationHandlePos(self, bbox: Bbox) -> QPoint:
         """取得旋轉控制點的位置（原始座標）"""
@@ -216,6 +236,32 @@ class ImageWidget(QWidget):
         )
 
         return QPoint(int(center_x + rotated_x), int(center_y + rotated_y))
+
+    def _getRotatedCorners(self, bbox: Bbox) -> list[tuple[float, float]]:
+        """獲取旋轉後的四個角點座標（原始座標）
+        返回順序：top_left, top_right, bottom_right, bottom_left
+        """
+        center_x = bbox.x + bbox.width / 2
+        center_y = bbox.y + bbox.height / 2
+
+        # 四個角點相對於中心的位置（未旋轉時）
+        corners = [
+            (-bbox.width / 2, -bbox.height / 2),  # top_left
+            (bbox.width / 2, -bbox.height / 2),  # top_right
+            (bbox.width / 2, bbox.height / 2),  # bottom_right
+            (-bbox.width / 2, bbox.height / 2),  # bottom_left
+        ]
+
+        angle_rad = math.radians(bbox.angle)
+        rotated_corners = []
+
+        for dx, dy in corners:
+            # 旋轉這個偏移量
+            rotated_x = dx * math.cos(angle_rad) - dy * math.sin(angle_rad)
+            rotated_y = dx * math.sin(angle_rad) + dy * math.cos(angle_rad)
+            rotated_corners.append((center_x + rotated_x, center_y + rotated_y))
+
+        return rotated_corners
 
     def _isOnRotationHandle(self, pos, bbox: Bbox) -> bool:
         """檢查滑鼠是否在旋轉控制點上"""
@@ -259,7 +305,7 @@ class ImageWidget(QWidget):
                     width = xmax - xmin
                     height = ymax - ymin
                     self.bboxes.append(
-                        Bbox(xmin, ymin, width, height, name, confidence, angle)
+                        Bbox(xmin, ymin, width, height, name, confidence, int(angle))
                     )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to parse XML: {e}")
@@ -713,6 +759,18 @@ class ImageWidget(QWidget):
                             event.pos()
                         )  # 紀錄原始座標
 
+                        # 計算固定的對角點位置（用於旋轉bbox的resize）
+                        if bbox.angle != 0:
+                            corners = self._getRotatedCorners(bbox)
+                            corner_map = {
+                                "top_left": 2,  # 固定 bottom_right
+                                "top_right": 3,  # 固定 bottom_left
+                                "bottom_right": 0,  # 固定 top_left
+                                "bottom_left": 1,  # 固定 top_right
+                            }
+                            fixed_idx = corner_map.get(corner, 0)
+                            self.fixed_corner_pos = corners[fixed_idx]
+
                         self.resizing = True
                         self.update()
                         break
@@ -782,30 +840,92 @@ class ImageWidget(QWidget):
             self.end_pos = event.pos()
         elif self.resizing:
             pos = self._scale_to_original(event.pos())
-            dx = pos.x() - self.start_pos.x()
-            dy = pos.y() - self.start_pos.y()
 
-            # 根據不同的角落調整大小
-            if self.resizing_corner == "top_left":
-                self.selected_bbox.x = self.original_bbox[0] + dx
-                self.selected_bbox.y = self.original_bbox[1] + dy
-                self.selected_bbox.width = self.original_bbox[2] - dx
-                self.selected_bbox.height = self.original_bbox[3] - dy
-            elif self.resizing_corner == "top_right":
-                self.selected_bbox.y = self.original_bbox[1] + dy
-                self.selected_bbox.width = self.original_bbox[2] + dx
-                self.selected_bbox.height = self.original_bbox[3] - dy
-            elif self.resizing_corner == "bottom_left":
-                self.selected_bbox.x = self.original_bbox[0] + dx
-                self.selected_bbox.width = self.original_bbox[2] - dx
-                self.selected_bbox.height = self.original_bbox[3] + dy
-            elif self.resizing_corner == "bottom_right":
-                self.selected_bbox.width = self.original_bbox[2] + dx
-                self.selected_bbox.height = self.original_bbox[3] + dy
-            # # 不太實用, 畢竟有可能從bbox中間再畫出一個bbox
-            # elif self.resizing_corner == "bbox_area":
-            #     self.selected_bbox.x = self.original_bbox[0] + dx
-            #     self.selected_bbox.y = self.original_bbox[1] + dy
+            if self.selected_bbox.angle == 0:
+                # 未旋轉的情況，使用原有邏輯
+                dx = pos.x() - self.start_pos.x()
+                dy = pos.y() - self.start_pos.y()
+
+                # 根據不同的角落調整大小
+                if self.resizing_corner == "top_left":
+                    self.selected_bbox.x = self.original_bbox[0] + dx
+                    self.selected_bbox.y = self.original_bbox[1] + dy
+                    self.selected_bbox.width = self.original_bbox[2] - dx
+                    self.selected_bbox.height = self.original_bbox[3] - dy
+                elif self.resizing_corner == "top_right":
+                    self.selected_bbox.y = self.original_bbox[1] + dy
+                    self.selected_bbox.width = self.original_bbox[2] + dx
+                    self.selected_bbox.height = self.original_bbox[3] - dy
+                elif self.resizing_corner == "bottom_left":
+                    self.selected_bbox.x = self.original_bbox[0] + dx
+                    self.selected_bbox.width = self.original_bbox[2] - dx
+                    self.selected_bbox.height = self.original_bbox[3] + dy
+                elif self.resizing_corner == "bottom_right":
+                    self.selected_bbox.width = self.original_bbox[2] + dx
+                    self.selected_bbox.height = self.original_bbox[3] + dy
+            else:
+                # 旋轉的情況，固定對角點進行resize
+                # 獲取固定點和滑鼠位置
+                fixed_x, fixed_y = self.fixed_corner_pos
+                mouse_x, mouse_y = pos.x(), pos.y()
+
+                # 計算當前bbox的中心點（用於座標轉換）
+                orig_center_x = self.original_bbox[0] + self.original_bbox[2] / 2
+                orig_center_y = self.original_bbox[1] + self.original_bbox[3] / 2
+
+                # 將固定點和滑鼠點轉換到局部座標系（相對於原始中心，反旋轉）
+                angle_rad = -math.radians(self.selected_bbox.angle)  # 反向旋轉
+
+                # 固定點的局部座標
+                fixed_dx = fixed_x - orig_center_x
+                fixed_dy = fixed_y - orig_center_y
+                local_fixed_x = fixed_dx * math.cos(angle_rad) - fixed_dy * math.sin(
+                    angle_rad
+                )
+                local_fixed_y = fixed_dx * math.sin(angle_rad) + fixed_dy * math.cos(
+                    angle_rad
+                )
+
+                # 滑鼠點的局部座標
+                mouse_dx = mouse_x - orig_center_x
+                mouse_dy = mouse_y - orig_center_y
+                local_mouse_x = mouse_dx * math.cos(angle_rad) - mouse_dy * math.sin(
+                    angle_rad
+                )
+                local_mouse_y = mouse_dx * math.sin(angle_rad) + mouse_dy * math.cos(
+                    angle_rad
+                )
+
+                # 在局部座標系中計算新的寬高
+                new_width = abs(local_mouse_x - local_fixed_x)
+                new_height = abs(local_mouse_y - local_fixed_y)
+
+                # 設置最小值
+                new_width = max(new_width, 10)
+                new_height = max(new_height, 10)
+
+                # 計算新的中心點（局部座標）
+                new_local_center_x = (local_mouse_x + local_fixed_x) / 2
+                new_local_center_y = (local_mouse_y + local_fixed_y) / 2
+
+                # 將新的中心點轉換回全局座標系（旋轉）
+                angle_rad = math.radians(self.selected_bbox.angle)  # 正向旋轉
+                new_center_x = (
+                    new_local_center_x * math.cos(angle_rad)
+                    - new_local_center_y * math.sin(angle_rad)
+                    + orig_center_x
+                )
+                new_center_y = (
+                    new_local_center_x * math.sin(angle_rad)
+                    + new_local_center_y * math.cos(angle_rad)
+                    + orig_center_y
+                )
+
+                # 更新bbox
+                self.selected_bbox.width = int(new_width)
+                self.selected_bbox.height = int(new_height)
+                self.selected_bbox.x = int(new_center_x - new_width / 2)
+                self.selected_bbox.y = int(new_center_y - new_height / 2)
 
         elif self.rotating:
             # 計算當前滑鼠相對於 bbox 中心的角度
@@ -832,6 +952,7 @@ class ImageWidget(QWidget):
                 self.selected_bbox = None
                 self.resizing_corner = None
                 self.original_bbox = None
+                self.fixed_corner_pos = None
 
             elif self.rotating:
                 self.rotating = False
@@ -883,8 +1004,8 @@ class ImageWidget(QWidget):
                     )
                 )
 
-                # 框已成形, 就讓選取index失效
-                self.idx_focus_bbox = -1
+                # 框已成形, focus到最後一個框, 以顯示旋轉控制點
+                self.idx_focus_bbox = len(self.bboxes) - 1
 
             self.completeMouseAction()
 
