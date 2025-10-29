@@ -25,7 +25,7 @@ from ruamel.yaml import YAML
 from src.config import cfg
 from src.core import AppState
 from src.image_widget import DrawingMode, ImageWidget
-from src.utils.dialogs import CategorySettingsDialog
+from src.utils.dialogs import CategorySettingsDialog, ConvertSettingsDialog
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
 from src.utils.func import getMaskPath, getXmlPath
@@ -198,10 +198,14 @@ class MainWindow(QMainWindow):
         self.edit_categories_action = QAction("&Edit Categories", self)
         self.edit_categories_action.triggered.connect(self.edit_categories)
 
+        self.convert_settings_action = QAction("&Settings", self)
+        self.convert_settings_action.triggered.connect(self.show_convert_settings)
+
         self.convert_voc_yolo_action = QAction("&VOC to YOLO", self)
         self.convert_voc_yolo_action.triggered.connect(self.convert_voc_to_yolo)
 
         self.convert_menu.addAction(self.edit_categories_action)
+        self.convert_menu.addAction(self.convert_settings_action)
         self.convert_menu.addAction(self.convert_voc_yolo_action)
 
         self.open_file_by_index_action = QAction("Open File by &Index", self)
@@ -635,7 +639,7 @@ class MainWindow(QMainWindow):
                 folder_path, YOLO_LABELS_FOLDER
             )  # 在同資料夾下建立 yolo labels 資料夾
             output_folder.mkdir(parents=True, exist_ok=True)
-            file_h.convertVocInFolder(folder_path, output_folder)
+            file_h.convertVocInFolder(folder_path, output_folder, self.app_state)
             self.statusbar.showMessage(
                 f"VOC to YOLO conversion completed in folder: {output_folder}"
             )
@@ -645,6 +649,12 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.statusbar.showMessage("Categories設定已儲存")
             save_settings()
+
+    def show_convert_settings(self):
+        """顯示轉換設定對話框"""
+        dialog = ConvertSettingsDialog(self, self.app_state)
+        if dialog.exec():
+            self.statusbar.showMessage("轉換設定已儲存")
 
     def cbWheelEvent(self, wheel_up):
         if self.app_state.auto_save or g_param.user_labeling:

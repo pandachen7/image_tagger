@@ -3,6 +3,7 @@ import time
 import xml.etree.ElementTree as ET
 from enum import Enum
 from pathlib import Path
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -74,7 +75,7 @@ class ImageWidget(QWidget):
         self.idx_focus_bbox: int = -1
         self.resizing = False
         self.rotating = False  # 旋轉狀態
-        self.selected_bbox = None
+        self.selected_bbox: Optional[Bbox] = None
         self.resizing_corner = None
         self.original_bbox = None  # 儲存原始 bbox 資訊
         self.original_angle = None  # 儲存原始角度
@@ -959,7 +960,6 @@ class ImageWidget(QWidget):
                 self.selected_bbox = None
                 self.original_angle = None
                 self.rotation_start_angle = None
-                self.completeMouseAction()
 
             elif self.drawing:
                 self.drawing = False

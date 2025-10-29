@@ -1,12 +1,6 @@
 // TODO
-# 左右鍵無法在影片pause時使用
-
-
 # build
 pyqt6似乎不能直接用於cython
-
-# func
-- 框加上角度
 // TODO
 
 // NOTE

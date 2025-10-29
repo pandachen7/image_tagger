@@ -1,3 +1,4 @@
+import math
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -8,7 +9,7 @@ import cv2
 from src.utils.const import ALL_EXTS
 from src.utils.dynamic_settings import settings
 from src.utils.loglo import getUniqueLogger
-from src.utils.model import ShowImageCmd, Bbox
+from src.utils.model import Bbox, ShowImageCmd
 
 log = getUniqueLogger(__file__)
 
@@ -93,14 +94,16 @@ class FileHandler:
             xml_str += f"            <xmax>{bbox.x + bbox.width}</xmax>\n"
             xml_str += f"            <ymax>{bbox.y + bbox.height}</ymax>\n"
             xml_str += f"            <confidence>{bbox.confidence}</confidence>\n"
-            xml_str += f"            <angle>{bbox.angle}</angle>\n"
+            xml_str += f"            <angle>{int(bbox.angle)}</angle>\n"
             xml_str += "        </bndbox>\n"
             xml_str += "    </object>\n"
 
         xml_str += "</annotation>\n"
         return xml_str
 
-    def convertVocInFolder(self, folder_path, output_folder: Optional[Path] = None):
+    def convertVocInFolder(
+        self, folder_path, output_folder: Optional[Path] = None, app_state=None
+    ):
         """
         將指定資料夾下的所有 VOC XML 檔案轉換為 YOLO 格式
         """
@@ -109,13 +112,14 @@ class FileHandler:
 
         ct = 0
         for xml_file in Path(folder_path).glob("*.xml"):
-            self.convert_voc_xml_to_yolo_txt(xml_file, output_folder)
+            self.convert_voc_xml_to_yolo_txt(xml_file, output_folder, app_state)
             ct += 1
         log.i(f"converted {ct} xml files")
 
-    def convert_voc_xml_to_yolo_txt(self, xml_path, output_folder):
+    def convert_voc_xml_to_yolo_txt(self, xml_path, output_folder, app_state=None):
         """
         轉換單個 VOC XML 檔案到 YOLO 格式
+        支援 OBB (Oriented Bounding Box) 格式，輸出四個角點座標
         """
 
         # root = ET.parse(Path(xml_path).as_posix())
@@ -125,8 +129,8 @@ class FileHandler:
         if size_element is None:
             log.w(f"Warning: No size element found in {xml_path}, skipping")
             return
-        width = int(size_element.find("width").text)
-        height = int(size_element.find("height").text)
+        img_width = int(size_element.find("width").text)
+        img_height = int(size_element.find("height").text)
         yolo_lines = []
 
         for object_element in root.findall("object"):
@@ -148,14 +152,59 @@ class FileHandler:
             xmax = int(bndbox_element.find("xmax").text)
             ymax = int(bndbox_element.find("ymax").text)
 
-            # Convert VOC bbox to YOLO normalized coordinates
-            x_center = (xmin + xmax) / 2 / width
-            y_center = (ymin + ymax) / 2 / height
-            w = (xmax - xmin) / width
-            h = (ymax - ymin) / height
+            # 讀取角度（如果存在）
+            angle_element = bndbox_element.find("angle")
+            angle = float(angle_element.text) if angle_element is not None else 0.0
 
-            yolo_line = f"{category_id} {x_center:.6f} {y_center:.6f} {w:.6f} {h:.6f}"
-            yolo_lines.append(yolo_line)
+            # 判斷是否使用 OBB 格式
+            use_obb = app_state.yolo_obb_format if app_state else False
+            if use_obb and angle != 0:
+                # OBB 格式：輸出四個角點的歸一化座標
+                # 計算 bbox 的中心點和寬高
+                bbox_width = xmax - xmin
+                bbox_height = ymax - ymin
+                center_x = (xmin + xmax) / 2
+                center_y = (ymin + ymax) / 2
+
+                # 計算四個角點（未旋轉時）相對於中心的位置
+                corners = [
+                    (-bbox_width / 2, -bbox_height / 2),  # top_left
+                    (bbox_width / 2, -bbox_height / 2),  # top_right
+                    (bbox_width / 2, bbox_height / 2),  # bottom_right
+                    (-bbox_width / 2, bbox_height / 2),  # bottom_left
+                ]
+
+                # 旋轉角點
+                angle_rad = math.radians(angle)
+                rotated_corners = []
+                for dx, dy in corners:
+                    # 旋轉
+                    rotated_x = dx * math.cos(angle_rad) - dy * math.sin(angle_rad)
+                    rotated_y = dx * math.sin(angle_rad) + dy * math.cos(angle_rad)
+                    # 加上中心點偏移
+                    abs_x = center_x + rotated_x
+                    abs_y = center_y + rotated_y
+                    # 歸一化
+                    norm_x = abs_x / img_width
+                    norm_y = abs_y / img_height
+                    rotated_corners.append((norm_x, norm_y))
+
+                # 格式：class_id x1 y1 x2 y2 x3 y3 x4 y4
+                yolo_line = f"{category_id}"
+                for x, y in rotated_corners:
+                    yolo_line += f" {x:.6f} {y:.6f}"
+                yolo_lines.append(yolo_line)
+            else:
+                # 標準 YOLO 格式：中心點 + 寬高
+                x_center = (xmin + xmax) / 2 / img_width
+                y_center = (ymin + ymax) / 2 / img_height
+                w = (xmax - xmin) / img_width
+                h = (ymax - ymin) / img_height
+
+                yolo_line = (
+                    f"{category_id} {x_center:.6f} {y_center:.6f} {w:.6f} {h:.6f}"
+                )
+                yolo_lines.append(yolo_line)
 
         # Save YOLO txt file
         output_file = output_folder / Path(xml_path).with_suffix(".txt").name

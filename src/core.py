@@ -25,6 +25,10 @@ class AppState:
         self.preset_labels: dict[str, str] = {}
         self.last_used_label = "object"
 
+        # Convert settings
+        self.convert_format = "yolo"  # 轉換格式，目前只有 "yolo"
+        self.yolo_obb_format = False  # 是否使用 YOLO OBB 格式（包含旋轉角度）
+
         # Callbacks for UI updates
         self._callbacks: dict[str, list[Callable]] = {
             "auto_save_changed": [],
