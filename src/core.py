@@ -25,9 +25,6 @@ class AppState:
         self.preset_labels: dict[str, str] = {}
         self.last_used_label = "object"
 
-        # FPS tracking
-        self.show_fps = False
-
         # Callbacks for UI updates
         self._callbacks: dict[str, list[Callable]] = {
             "auto_save_changed": [],

@@ -14,6 +14,9 @@ labels:
 # default label name, draw bbox with this label
 default_label: object
 
+# minimal height or width of bbox
+minimal_bbox_length: 30
+
 # Auto save interval in seconds. -1 means disabled.
 # N秒自動儲存, 以免重複性太高. 但有些問題, 就是要存的有時候會被跳過, 目前不建議使用
 auto_save_per_second: 5

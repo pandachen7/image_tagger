@@ -250,7 +250,6 @@ class MainWindow(QMainWindow):
                     if isinstance(key, (int, str))
                 }
             self.app_state.last_used_label = config.get("default_label", "object")
-            self.app_state.show_fps = config.get("show_fps", False)
 
         except FileNotFoundError:
             QMessageBox.warning(self, "Warning", "config/cfg.yaml not found.")
