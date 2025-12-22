@@ -16,8 +16,8 @@
     "mechatroner.rainbow-csv",
 
     // 自動化編程
-    // "codeium.codeium",  // 別名windsurf, 建議code與documents
-    "saoudrizwan.claude-dev",
-    "RooVeterinaryInc.roo-cline",    
+    "codeium.codeium",  // 別名windsurf, 建議code與documents
+    // "saoudrizwan.claude-dev",
+    // "RooVeterinaryInc.roo-cline",    
   ]
 }
