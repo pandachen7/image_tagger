@@ -353,7 +353,7 @@ class ImageWidget(QWidget):
             return
         if not file_h.current_image_path():
             return
-        if not self.app_state._ensure_loaded():
+        if not self.app_state.ensure_loaded():
             return
 
         self.bboxes = []

@@ -81,7 +81,7 @@ class AppState:
         self._trigger_callback("model_changed")
         self._trigger_callback("status_message", f"Active model: {model_type}")
 
-    def _ensure_loaded(self) -> bool:
+    def ensure_loaded(self) -> bool:
         """Lazy-load the active model. Returns True if ready."""
         if self.active_model_type == ModelType.YOLO:
             if self._yolo_model is None and self.model_path:
@@ -148,9 +148,7 @@ class AppState:
                     )
                     if contours:
                         largest = max(contours, key=cv2.contourArea)
-                        points = [
-                            (float(pt[0][0]), float(pt[0][1])) for pt in largest
-                        ]
+                        points = [(float(pt[0][0]), float(pt[0][1])) for pt in largest]
                         if len(points) >= 3:
                             polygons.append(Polygon(points, label, -1.0))
             if boxes is not None:
@@ -160,56 +158,6 @@ class AppState:
                     if (x2 - x1) > 0 and (y2 - y1) > 0:
                         bboxes.append(Bbox(x1, y1, x2 - x1, y2 - y1, label, -1.0))
         return bboxes, polygons
-
-    def load_model(self, model_path: str) -> tuple[bool, str]:
-        """Load a YOLO model (force-loads immediately)."""
-        try:
-            from ultralytics import YOLO
-
-            if self._yolo_model:
-                del self._yolo_model
-            self._yolo_model = YOLO(model_path)
-            self.model_path = model_path
-            self.active_model_type = ModelType.YOLO
-            self.auto_detect = True
-            message = f"Model loaded: {model_path}"
-            self._trigger_callback("model_changed")
-            self._trigger_callback("auto_detect_changed", self.auto_detect)
-            self._trigger_callback("status_message", message)
-            return True, message
-        except Exception as e:
-            message = f"Failed to load model: {e}"
-            return False, message
-
-    def load_sam_model(self, model_path: str) -> tuple[bool, str]:
-        """Load a SAM3 model (force-loads immediately)."""
-        try:
-            from ultralytics.models.sam import SAM3SemanticPredictor
-
-            if self._sam_predictor:
-                del self._sam_predictor
-            if self._sam_inference:
-                del self._sam_inference
-
-            overrides = dict(
-                conf=0.50,
-                task="segment",
-                mode="predict",
-                model=model_path,
-                verbose=False,
-            )
-            self._sam_predictor = SAM3SemanticPredictor(overrides=overrides)
-            self._sam_inference = SAM3SemanticPredictor(overrides=overrides)
-            self._sam_inference.setup_model()
-            self.sam_model_path = model_path
-            self.active_model_type = ModelType.SAM3
-            message = f"SAM model loaded: {model_path}"
-            self._trigger_callback("model_changed")
-            self._trigger_callback("status_message", message)
-            return True, message
-        except Exception as e:
-            message = f"Failed to load SAM model ({model_path}): {e}"
-            return False, message
 
     def set_last_used_label(self, label: str):
         """Set the last used label."""
