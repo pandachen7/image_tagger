@@ -298,15 +298,29 @@ class MainWindow(QMainWindow):
         self.ai_menu.addAction(self.auto_detect_action)
 
         # Store model paths only (lazy load on first inference)
+        # Verify model files exist before assigning
+        missing_models = []
         if settings.sam3_model_path:
-            self.app_state.sam_model_path = settings.sam3_model_path
+            if Path(settings.sam3_model_path).is_file():
+                self.app_state.sam_model_path = settings.sam3_model_path
+            else:
+                missing_models.append(f"SAM3: {settings.sam3_model_path}")
         if settings.model_path:
-            self.app_state.model_path = settings.model_path
+            if Path(settings.model_path).is_file():
+                self.app_state.model_path = settings.model_path
+            else:
+                missing_models.append(f"YOLO: {settings.model_path}")
+        if missing_models:
+            QMessageBox.warning(
+                self,
+                "Model Not Found",
+                "以下模型檔案不存在:\n" + "\n".join(missing_models),
+            )
         # Set active model type (YOLO takes priority if both exist)
-        if settings.model_path:
+        if self.app_state.model_path:
             self.app_state.active_model_type = ModelType.YOLO
             self.app_state.auto_detect = True
-        elif settings.sam3_model_path:
+        elif self.app_state.sam_model_path:
             self.app_state.active_model_type = ModelType.SAM3
         self.choose_folder(settings.folder_path, settings.file_index)
 
