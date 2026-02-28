@@ -118,9 +118,9 @@ class Inferencer:
                     mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                 )
                 if contours:
-                    largest = max(contours, key=cv2.contourArea)
-                    points = [(float(pt[0][0]), float(pt[0][1])) for pt in largest]
-                    if len(points) >= 3:
+                    tolerance = settings.polygon_tolerance or 0.002
+                    for poly_pts in mask_to_polygon(contours, tolerance):
+                        points = [(float(x), float(y)) for x, y in poly_pts]
                         polygons.append(Polygon(points, label, -1.0))
         if boxes is not None:
             boxes_np = boxes.cpu().numpy()

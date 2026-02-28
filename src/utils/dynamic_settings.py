@@ -19,6 +19,7 @@ class Settings(BaseModel):
         default_factory=lambda: ["person", "cat", "dog", "car"]
     )
     active_model: Optional[str] = None
+    polygon_tolerance: Optional[float] = 0.002
 
 
 def load_settings(file_path="cfg/settings.yaml"):
