@@ -28,6 +28,7 @@ from src.image_widget import DrawingMode, ImageWidget
 from src.utils.dialogs import (
     CategorySettingsDialog,
     ConvertSettingsDialog,
+    ParamDialog,
     TextPromptsDialog,
 )
 from src.utils.dynamic_settings import save_settings, settings
@@ -271,6 +272,10 @@ class MainWindow(QMainWindow):
         self.edit_text_prompts_action = QAction("&Text Prompts", self)
         self.edit_text_prompts_action.triggered.connect(self.edit_text_prompts)
         self.edit_menu.addAction(self.edit_text_prompts_action)
+
+        self.edit_param_action = QAction("&Param", self)
+        self.edit_param_action.triggered.connect(self.edit_param)
+        self.edit_menu.addAction(self.edit_param_action)
 
         # Model selection radio group
         self.model_action_group = QActionGroup(self)
@@ -778,6 +783,14 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             save_settings()
             self.statusbar.showMessage(f"Text prompts: {settings.class_names.text_prompts}")
+
+    def edit_param(self):
+        dialog = ParamDialog(self)
+        if dialog.exec():
+            save_settings()
+            self.statusbar.showMessage(
+                f"Polygon tolerance: {settings.models.polygon_tolerance}"
+            )
 
     def show_convert_settings(self):
         """顯示轉換設定對話框"""
