@@ -4,6 +4,49 @@
 
 ![system gui](./asset/system_gui.png)
 
+
+# 安裝相關
+安裝pytorch的延伸package, 都一定要先裝pytorch的cuda版本; 不然幾乎都是先自動安裝cpu版的, 所以會跑很慢
+
+windows可使用pip來安裝pytorch CUDA版, 詳細可看  
+https://pytorch.org/get-started/locally/  
+選一個比你電腦的CUDA版本還低的pytorch就行  
+**NOTE: 安裝前把所有pytorch的package都清乾淨, 尤其是 torchvision 很容易被遺忘, 沒清乾淨直接裝的話版本配不上一定出錯**
+```bash
+# 範例CUDA 12.4
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+```
+之後安裝requirements即可
+```bash
+pip install -r requirements.txt
+```
+
+如果PyQt6出現相關錯誤, 可試試
+```
+sudo apt-get install -y libxcb-cursor-dev
+```
+
+### 有時候電腦好端端的就突然不能平行加速
+如果有GPU的情況下1秒只有1~2張, 那肯定是沒用到GPU, 可從`nvidia-smi`這個指令來查看是否將model讀入到VRAM中 e.g.  
+![alt text](asset/nvidia-smi.png)  
+yolo至少要幾百MB, 而不會是0  
+這樣才能使用GPU加速, 如果不行的話可能升級就nvidia drive, 以上pkg都重灌一遍, 然後重開機在祈禱能正常  
+
+常見的問題在於安裝了某個pkg後(尤其是用`-U` upgrade), 把你的torch換成CPU版的  
+這時你就要用`pip list`或跑
+```sh
+python tools/cuda_info.py
+```
+來看看你的torch版本與使用狀態, 例如以下才會是可用CUDA的torch版
+```
+torch version: 2.10.0+cu126
+cuda available: True
+cuda version: 12.6
+cudnn version: 91002
+```
+torch後面一定有個cu配版本, 而不是寫cpu  
+cuda available一定為true, cuda version不能超過你的nvidia driver的版本(可用`mvidia-smi`確認右上角)
+
 ### [Optional] 關於SAM3
 由於SAM3是需要申請下載權限, 因此請到  
 https://huggingface.co/facebook/sam3  
@@ -102,34 +145,6 @@ ultralytics的官網也有提供範例, 有興趣就到官網看看
   - `Page Up/Down` or `方向鍵左/右`: 切換檔案
   - `Home/End`: 切換到最 前/後 檔案
   - `space空白鍵`: play/pause video
-
-# 安裝相關
-安裝pytorch的延伸package, 都一定要先裝pytorch的cuda版本; 不然幾乎都是先自動安裝cpu版的, 所以會跑很慢
-
-windows可使用pip來安裝pytorch CUDA版, 詳細可看  
-https://pytorch.org/get-started/locally/  
-選一個比你電腦的CUDA版本還低的pytorch就行  
-**NOTE: 安裝前把所有pytorch的package都清乾淨, 尤其是 torchvision 很容易被遺忘, 沒清乾淨直接裝的話版本配不上一定出錯**
-```bash
-# 範例CUDA 12.4
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-```
-之後安裝requirements即可
-```bash
-pip install -r requirements.txt
-```
-
-如果PyQt6出現相關錯誤, 可試試
-```
-sudo apt-get install -y libxcb-cursor-dev
-```
-
-### 有時候電腦好端端的就突然不能平行加速
-如果有GPU的情況下1秒只有1~2張, 那肯定是沒用到GPU, 可從`nvidia-smi`這個指令來查看是否將model讀入到VRAM中 e.g.  
-![alt text](asset/nvidia-smi.png)  
-yolo至少要幾百MB, 而不會是0  
-這樣才能使用GPU加速, 如果不行的話可能升級就nvidia drive, 以上pkg都重灌一遍, 然後重開機在祈禱能正常  
-如果怎樣都無法用, 連小精靈都不幫忙...那就嘗試用conda的方式安裝吧  
 
 ### TODO
 - 顯示目前多少bbox
