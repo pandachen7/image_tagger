@@ -31,13 +31,12 @@ from src.utils.file_handler import file_h
 from src.utils.func import getMaskPath, getXmlPath
 from src.utils.global_param import g_param
 from src.utils.loglo import getUniqueLogger
-from src.utils.model import FileType, PlayState, ShowImageCmd
+from src.utils.model import FileType, ModelType, PlayState, ShowImageCmd, ViewMode
 
 log = getUniqueLogger(__file__)
 yaml = YAML()
 
 YOLO_LABELS_FOLDER = "labels"
-DEFAULT_DETECT_MODEL = "yolov8n.pt"
 
 
 class MainWindow(QMainWindow):
@@ -192,7 +191,7 @@ class MainWindow(QMainWindow):
 
         # 偵測
         self.detect_action = QAction("&Detect", self)
-        self.detect_action.triggered.connect(self.image_widget.detectImage)
+        self.detect_action.triggered.connect(self.image_widget.runInference)
 
         # 主選單
         self.menu = self.menuBar()
@@ -200,8 +199,38 @@ class MainWindow(QMainWindow):
         self.edit_menu = self.menu.addMenu("Edit")
         self.ai_menu = self.menu.addMenu("Ai")
         self.convert_menu = self.menu.addMenu("&Convert")
-        # self.view_menu = self.menu.addMenu("&View")
+        self.view_menu = self.menu.addMenu("&View")
         # self.help_menu = self.menu.addMenu("&Help")
+
+        # View mode actions
+        self.view_action_group = QActionGroup(self)
+        self.view_action_group.setExclusive(True)
+
+        self.view_all_action = QAction("Show All", self)
+        self.view_all_action.setCheckable(True)
+        self.view_all_action.setChecked(True)
+        self.view_all_action.triggered.connect(
+            lambda: self.image_widget.set_view_mode(ViewMode.ALL)
+        )
+        self.view_action_group.addAction(self.view_all_action)
+
+        self.view_bbox_action = QAction("Show BBox Only", self)
+        self.view_bbox_action.setCheckable(True)
+        self.view_bbox_action.triggered.connect(
+            lambda: self.image_widget.set_view_mode(ViewMode.BBOX)
+        )
+        self.view_action_group.addAction(self.view_bbox_action)
+
+        self.view_seg_action = QAction("Show Seg Only", self)
+        self.view_seg_action.setCheckable(True)
+        self.view_seg_action.triggered.connect(
+            lambda: self.image_widget.set_view_mode(ViewMode.SEG)
+        )
+        self.view_action_group.addAction(self.view_seg_action)
+
+        self.view_menu.addAction(self.view_all_action)
+        self.view_menu.addAction(self.view_bbox_action)
+        self.view_menu.addAction(self.view_seg_action)
 
         self.edit_categories_action = QAction("&Edit Categories", self)
         self.edit_categories_action.triggered.connect(self.edit_categories)
@@ -234,34 +263,51 @@ class MainWindow(QMainWindow):
 
         self.edit_menu.addAction(self.edit_label_action)
 
-        self.select_model_action = QAction("&Select Model", self)
+        # Model selection radio group
+        self.model_action_group = QActionGroup(self)
+        self.model_action_group.setExclusive(True)
+
+        self.use_yolo_action = QAction("Use YOLO", self)
+        self.use_yolo_action.setCheckable(True)
+        self.use_yolo_action.triggered.connect(
+            lambda: self.app_state.set_active_model(ModelType.YOLO)
+        )
+        self.model_action_group.addAction(self.use_yolo_action)
+
+        self.use_sam_action = QAction("Use SAM3", self)
+        self.use_sam_action.setCheckable(True)
+        self.use_sam_action.triggered.connect(
+            lambda: self.app_state.set_active_model(ModelType.SAM3)
+        )
+        self.model_action_group.addAction(self.use_sam_action)
+
+        self.ai_menu.addAction(self.use_yolo_action)
+        self.ai_menu.addAction(self.use_sam_action)
+        self.ai_menu.addSeparator()
+
+        self.select_model_action = QAction("Select &YOLO Model...", self)
         self.select_model_action.triggered.connect(self.select_model)
 
-        self.use_default_model_action = QAction("&Use default Model", self)
-        self.use_default_model_action.triggered.connect(self.use_default_model)
+        self.select_sam_model_action = QAction("Select &SAM3 Model...", self)
+        self.select_sam_model_action.triggered.connect(self.select_sam_model)
 
-        self.ai_menu.addAction(self.use_default_model_action)
         self.ai_menu.addAction(self.select_model_action)
+        self.ai_menu.addAction(self.select_sam_model_action)
         self.ai_menu.addSeparator()
         self.ai_menu.addAction(self.detect_action)
         self.ai_menu.addAction(self.auto_detect_action)
 
-        self.ai_menu.addSeparator()
-        self.select_sam_model_action = QAction("Select &SAM Model", self)
-        self.select_sam_model_action.triggered.connect(self.select_sam_model)
-        self.ai_menu.addAction(self.select_sam_model_action)
-
-        self.run_sam_action = QAction("&Run SAM (Text→Polygon)", self)
-        self.run_sam_action.triggered.connect(
-            self.image_widget.generatePolygonsFromText
-        )
-        self.ai_menu.addAction(self.run_sam_action)
-
-        # 讀取預設標籤和上次使用的標籤
-        if settings.model_path:
-            self.load_model(settings.model_path)
+        # Store model paths only (lazy load on first inference)
         if settings.sam3_model_path:
-            self.load_sam_model(settings.sam3_model_path)
+            self.app_state.sam_model_path = settings.sam3_model_path
+        if settings.model_path:
+            self.app_state.model_path = settings.model_path
+        # Set active model type (YOLO takes priority if both exist)
+        if settings.model_path:
+            self.app_state.active_model_type = ModelType.YOLO
+            self.app_state.auto_detect = True
+        elif settings.sam3_model_path:
+            self.app_state.active_model_type = ModelType.SAM3
         self.choose_folder(settings.folder_path, settings.file_index)
 
         try:
@@ -288,10 +334,7 @@ class MainWindow(QMainWindow):
         self.app_state.register_callback(
             "auto_detect_changed", self._on_auto_detect_changed
         )
-        self.app_state.register_callback("model_loaded", self._on_model_loaded)
-        self.app_state.register_callback(
-            "detection_completed", self.image_widget.detectImage
-        )
+        self.app_state.register_callback("model_changed", self._on_model_changed)
         self.app_state.register_callback("status_message", self.statusbar.showMessage)
 
         # Set image widget callbacks
@@ -309,6 +352,10 @@ class MainWindow(QMainWindow):
         """Sync UI components with app_state."""
         self.auto_save_action.setChecked(self.app_state.auto_save)
         self.auto_detect_action.setChecked(self.app_state.auto_detect)
+        if self.app_state.active_model_type == ModelType.YOLO:
+            self.use_yolo_action.setChecked(True)
+        elif self.app_state.active_model_type == ModelType.SAM3:
+            self.use_sam_action.setChecked(True)
 
     def _on_auto_save_changed(self, enabled: bool):
         """Callback when auto save state changes."""
@@ -317,9 +364,15 @@ class MainWindow(QMainWindow):
     def _on_auto_detect_changed(self, enabled: bool):
         """Callback when auto detect state changes."""
         self.auto_detect_action.setChecked(enabled)
+        if enabled:
+            self.image_widget.runInference()
 
-    def _on_model_loaded(self, model_path: str):
-        """Callback when model is loaded."""
+    def _on_model_changed(self):
+        """Callback when active model changes."""
+        if self.app_state.active_model_type == ModelType.YOLO:
+            self.use_yolo_action.setChecked(True)
+        elif self.app_state.active_model_type == ModelType.SAM3:
+            self.use_sam_action.setChecked(True)
         save_settings()
 
     def resetStates(self):
@@ -327,39 +380,37 @@ class MainWindow(QMainWindow):
         self.play_state = PlayState.STOP
         self.image_widget.clearBboxes()
 
-    def use_default_model(self):
-        self.load_model(DEFAULT_DETECT_MODEL)
-        settings.model_path = DEFAULT_DETECT_MODEL
-
     def select_model(self):
         model_path, _ = QFileDialog.getOpenFileName(
-            self, "Open Ultralytics Model File", "", "Model Files (*.pt)"
+            self, "Open YOLO Model File", "", "Model Files (*.pt)"
         )
         if model_path:
-            self.load_model(model_path)
+            self.app_state.set_active_model(ModelType.YOLO, model_path)
             settings.model_path = model_path
-
-    def load_model(self, model_path):
-        success, message = self.app_state.load_model(model_path)
-        if success:
-            settings.model_path = model_path
-        else:
-            QMessageBox.critical(self, "Error", message)
+            self.use_yolo_action.setChecked(True)
 
     def select_sam_model(self):
         model_path, _ = QFileDialog.getOpenFileName(
-            self, "Open SAM Model File", "", "Model Files (*.pt)"
+            self, "Open SAM3 Model File", "", "Model Files (*.pt)"
         )
         if model_path:
-            self.load_sam_model(model_path)
+            self.app_state.set_active_model(ModelType.SAM3, model_path)
             settings.sam3_model_path = model_path
+            self.use_sam_action.setChecked(True)
 
-    def load_sam_model(self, model_path):
-        success, message = self.app_state.load_sam_model(model_path)
-        if success:
-            settings.sam3_model_path = model_path
+    def cycle_view_mode(self):
+        """Cycle view mode: ALL -> BBOX -> SEG -> ALL"""
+        current = self.image_widget.view_mode
+        if current == ViewMode.ALL:
+            self.image_widget.set_view_mode(ViewMode.BBOX)
+            self.view_bbox_action.setChecked(True)
+        elif current == ViewMode.BBOX:
+            self.image_widget.set_view_mode(ViewMode.SEG)
+            self.view_seg_action.setChecked(True)
         else:
-            QMessageBox.critical(self, "Error", message)
+            self.image_widget.set_view_mode(ViewMode.ALL)
+            self.view_all_action.setChecked(True)
+        self.statusbar.showMessage(f"View mode: {self.image_widget.view_mode}")
 
     def open_file_by_index(self):
         self.resetStates()
@@ -455,7 +506,7 @@ class MainWindow(QMainWindow):
             self.image_widget.pixmap = QPixmap.fromImage(qImg)
 
             if self.app_state.auto_detect:
-                self.image_widget.detectImage()
+                self.image_widget.runInference()
             else:
                 self.image_widget.update()
 
@@ -640,7 +691,9 @@ class MainWindow(QMainWindow):
             self.polygon_mode_action.setChecked(True)
             self.image_widget.set_drawing_mode(DrawingMode.POLYGON)
         elif event.key() == Qt.Key.Key_G:
-            self.image_widget.generatePolygonsFromText()
+            self.image_widget.runInference()
+        elif event.key() == Qt.Key.Key_V:
+            self.cycle_view_mode()
 
         elif event.key() in [
             Qt.Key.Key_1,

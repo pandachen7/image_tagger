@@ -45,12 +45,15 @@ cuda version: 12.6
 cudnn version: 91002
 ```
 torch後面一定有個cu配版本, 而不是寫cpu  
-cuda available一定為true, cuda version不能超過你的nvidia driver的版本(可用`mvidia-smi`確認右上角)
+cuda available一定為true, cuda version不能超過你的nvidia driver的版本(可用`mvidia-smi`確認右上角)  
+
+Ref.  
+https://www.notion.so/PyTorch-30936ed5d3d680ceb0e1ed1dc8c2c7bf?source=copy_link
 
 ### [Optional] 關於SAM3
 由於SAM3是需要申請下載權限, 因此請到  
 https://huggingface.co/facebook/sam3  
-跑流程並下載model.safetensors, 然後到設定檔設定model路徑`sam3_model_path`  
+跑流程並下載 `sam3.pt`, 然後到設定檔設定model路徑`sam3_model_path`  
 
 # 簡易Use Case [2025.3.29]
 1. Menu: File -> Open Folder, 開啟一個需要圖片畫框的資料夾

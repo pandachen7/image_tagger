@@ -47,3 +47,15 @@ class PlayState:
     PLAY = "play"
     PAUSE = "pause"
     STOP = "stop"
+
+
+class ViewMode:
+    ALL = "all"
+    BBOX = "bbox"
+    SEG = "seg"
+
+
+class ModelType:
+    NONE = "none"
+    YOLO = "yolo"
+    SAM3 = "sam3"

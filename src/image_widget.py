@@ -30,7 +30,7 @@ from src.utils.file_handler import file_h
 from src.utils.func import getXmlPath
 from src.utils.global_param import g_param
 from src.utils.loglo import getUniqueLogger
-from src.utils.model import Bbox, ColorPen, FileType, Polygon
+from src.utils.model import Bbox, ColorPen, FileType, ModelType, Polygon, ViewMode
 
 log = getUniqueLogger(__file__)
 
@@ -97,6 +97,7 @@ class ImageWidget(QWidget):
         self.current_polygon_points: list[QPoint] = []  # widget coords, in-progress
         self.idx_focus_polygon: int = -1
 
+        self.view_mode = ViewMode.ALL
         self.list_fps = []
 
         self.cv_img = None
@@ -346,49 +347,37 @@ class ImageWidget(QWidget):
             else:
                 return False
 
-    def detectImage(self):
-        """
-        執行物件偵測, 只有在model讀取時才會執行
-        執行前先清除bboxes, 以免搞混
-        """
-        if not self.app_state.model:
-            self.app_state.auto_detect = False
-            QMessageBox.critical(self, "Error", "Model not loaded")
+    def runInference(self):
+        """Run inference using the active model (YOLO or SAM3)."""
+        if self.app_state.active_model_type == ModelType.NONE:
+            return
+        if not file_h.current_image_path():
+            return
+        if not self.app_state._ensure_loaded():
             return
 
-        if not file_h.current_image_path():
-            # QMessageBox.critical(self, "Error", "No image loaded")
-            return
+        self.bboxes = []
+        self.polygons = []
 
         if cfg.show_fps:
             t1 = time.time()
-        self.bboxes = []
-        # 強制設定device=0跑gpu
-        results = self.app_state.model.predict(self.cv_img, device=0, verbose=False)
-        for result in results:
-            if result.boxes is not None:
-                for box in result.boxes:
-                    b = box.xyxy[
-                        0
-                    ]  # get box coordinates in (top, left, bottom, right) format
-                    c = box.cls
-                    conf = box.conf
-                    label = self.app_state.model.names[int(c)]
-                    self.bboxes.append(
-                        Bbox(
-                            int(b[0]),
-                            int(b[1]),
-                            int(b[2] - b[0]),
-                            int(b[3] - b[1]),
-                            label,
-                            float(conf),
-                        )
-                    )
+
+        if self.app_state.active_model_type == ModelType.YOLO:
+            self.bboxes = self.app_state.infer_yolo(self.cv_img)
+        elif self.app_state.active_model_type == ModelType.SAM3:
+            src_shape = (self.pixmap.height(), self.pixmap.width())
+            bboxes, polygons = self.app_state.infer_sam3(
+                file_h.current_image_path(), src_shape
+            )
+            self.bboxes = bboxes
+            self.polygons = polygons
+
         if cfg.show_fps:
             self.list_fps.append(1 / (time.time() - t1))
             if len(self.list_fps) > 10:
                 self.list_fps.pop(0)
-            log.i(f"Detection avg fps: {sum(self.list_fps) / len(self.list_fps):.0f}")
+            log.i(f"Inference avg fps: {sum(self.list_fps) / len(self.list_fps):.0f}")
+
         self.update()
 
     def get_total_msec(self):
@@ -453,7 +442,7 @@ class ImageWidget(QWidget):
         if not self.loadBboxFromXml(xml_path):
             # 如果 bbox (來自xml) 不存在, 才嘗試使用 YOLO 偵測
             if self.app_state.auto_detect:
-                self.detectImage()
+                self.runInference()
         self.update()  # 觸發 paintEvent
 
     def clearBboxes(self):
@@ -492,8 +481,9 @@ class ImageWidget(QWidget):
                 ),
             )
 
-        # 繪製 Bounding Box
-        for bbox in self.bboxes:
+        # 繪製 Bounding Box (filtered by view mode)
+        _bboxes_to_draw = self.bboxes if self.view_mode in (ViewMode.BBOX, ViewMode.ALL) else []
+        for bbox in _bboxes_to_draw:
             painter.setPen(bbox.color_pen)
 
             if bbox.angle != 0:
@@ -585,7 +575,7 @@ class ImageWidget(QWidget):
                 )
 
         # 繪製選中 bbox 的旋轉控制點
-        if self.idx_focus_bbox != -1 and 0 <= self.idx_focus_bbox < len(self.bboxes):
+        if _bboxes_to_draw and self.idx_focus_bbox != -1 and 0 <= self.idx_focus_bbox < len(self.bboxes):
             focused_bbox = self.bboxes[self.idx_focus_bbox]
 
             # 計算中心點和旋轉控制點位置
@@ -622,8 +612,9 @@ class ImageWidget(QWidget):
                 handle_pos_widget, ROTATION_HANDLE_RADIUS, ROTATION_HANDLE_RADIUS
             )
 
-        # 繪製 Polygons
-        for poly_idx, polygon in enumerate(self.polygons):
+        # 繪製 Polygons (filtered by view mode)
+        _polygons_to_draw = self.polygons if self.view_mode in (ViewMode.SEG, ViewMode.ALL) else []
+        for poly_idx, polygon in enumerate(_polygons_to_draw):
             painter.setPen(polygon.color_pen)
             # Semi-transparent fill
             fill_color = QColor(0, 255, 0, 50)
@@ -1186,48 +1177,8 @@ class ImageWidget(QWidget):
         result = cv2.pointPolygonTest(np_poly, (float(pos.x()), float(pos.y())), False)
         return result >= 0
 
-    def generatePolygonsFromText(self):
-        """Use SAM3 model to generate polygons from preset labels via text prompts."""
-        if not self.app_state.sam_predictor:
-            QMessageBox.critical(self, "Error", "SAM3 model not loaded")
-            return
-        if not self.app_state.preset_labels:
-            QMessageBox.information(self, "Info", "No preset labels configured")
-            return
-        if not file_h.current_image_path():
-            return
-
-        try:
-            # Extract features from image once
-            image_path = file_h.current_image_path()
-            self.app_state.sam_predictor.set_image(image_path)
-            src_shape = (self.pixmap.height(), self.pixmap.width())
-
-            # Run inference for each label text using shared features
-            labels = list(set(self.app_state.preset_labels.values()))
-            for label in labels:
-                masks, boxes = self.app_state.sam_inference.inference_features(
-                    self.app_state.sam_predictor.features,
-                    src_shape=src_shape,
-                    text=[label],
-                )
-                if masks is not None:
-                    masks_np = masks.cpu().numpy()
-                    for mask in masks_np:
-                        mask_uint8 = (mask * 255).astype(np.uint8)
-                        contours, _ = cv2.findContours(
-                            mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-                        )
-                        if contours:
-                            largest = max(contours, key=cv2.contourArea)
-                            points = [(float(pt[0][0]), float(pt[0][1])) for pt in largest]
-                            if len(points) >= 3:
-                                self.polygons.append(
-                                    Polygon(points, label, -1.0)
-                                )
-            self.app_state._trigger_callback("sam_completed")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"SAM inference failed: {e}")
+    def set_view_mode(self, mode):
+        self.view_mode = mode
         self.update()
 
     def wheelEvent(self, event):
