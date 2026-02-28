@@ -4,9 +4,13 @@ This module decouples the ImageWidget from MainWindow by providing
 a centralized state management system.
 """
 
+import time
 from typing import Callable, Optional
 
+from src.utils.loglo import getUniqueLogger
 from src.utils.model import Bbox, ModelType, Polygon
+
+logger = getUniqueLogger(__file__)
 
 
 class AppState:
@@ -93,7 +97,8 @@ class AppState:
                 from ultralytics.models.sam import SAM3SemanticPredictor
 
                 overrides = dict(
-                    conf=0.50,
+                    conf=0.25,  # sam3沒有設定conf的意義
+                    imgsz=1036,  # 設愈高, VRAM容易不夠
                     task="segment",
                     mode="predict",
                     model=self.sam_model_path,
@@ -131,9 +136,12 @@ class AppState:
         import numpy as np
 
         predictor = self._sam_predictor
+        from src.utils.dynamic_settings import settings
+
         predictor.set_image(image_path)
-        labels = list(set(self.preset_labels.values()))
+        labels = list(set(settings.text_prompts or []))
         bboxes, polygons = [], []
+        t1 = time.time()
         for label in labels:
             masks, boxes = predictor.inference_features(
                 predictor.features, src_shape=src_shape, text=[label]
@@ -156,6 +164,7 @@ class AppState:
                     x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
                     if (x2 - x1) > 0 and (y2 - y1) > 0:
                         bboxes.append(Bbox(x1, y1, x2 - x1, y2 - y1, label, -1.0))
+        logger.d(f"SAM3 inference time: {time.time() - t1}")
         return bboxes, polygons
 
     def set_last_used_label(self, label: str):

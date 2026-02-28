@@ -25,7 +25,7 @@ from ruamel.yaml import YAML
 from src.config import cfg
 from src.core import AppState
 from src.image_widget import DrawingMode, ImageWidget
-from src.utils.dialogs import CategorySettingsDialog, ConvertSettingsDialog
+from src.utils.dialogs import CategorySettingsDialog, ConvertSettingsDialog, TextPromptsDialog
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
 from src.utils.func import getMaskPath, getXmlPath
@@ -262,6 +262,10 @@ class MainWindow(QMainWindow):
         self.edit_label_action.triggered.connect(self.promptInputLabel)
 
         self.edit_menu.addAction(self.edit_label_action)
+
+        self.edit_text_prompts_action = QAction("&Text Prompts", self)
+        self.edit_text_prompts_action.triggered.connect(self.edit_text_prompts)
+        self.edit_menu.addAction(self.edit_text_prompts_action)
 
         # Model selection radio group
         self.model_action_group = QActionGroup(self)
@@ -758,6 +762,14 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.statusbar.showMessage("Categories設定已儲存")
             save_settings()
+
+    def edit_text_prompts(self):
+        dialog = TextPromptsDialog(self)
+        if dialog.exec():
+            save_settings()
+            self.statusbar.showMessage(
+                f"Text prompts: {settings.text_prompts}"
+            )
 
     def show_convert_settings(self):
         """顯示轉換設定對話框"""

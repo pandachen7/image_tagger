@@ -9,7 +9,8 @@
       "Bash(cd /d/ws/image_tagger && python -c \"from src.utils.model import Polygon, Bbox; print\\('model OK'\\)\" 2>&1)",
       "Bash(cd /d/ws/image_tagger && python -c \"import sys; print\\(sys.executable\\)\" 2>&1)",
       "Bash(echo OK:*)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(cd:*)"
     ]
   }
 }

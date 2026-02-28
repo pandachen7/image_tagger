@@ -15,6 +15,9 @@ class Settings(BaseModel):
     folder_path: Optional[str] = None
     file_index: Optional[int] = 0
     categories: Optional[dict] = Field(default_factory=dict)
+    text_prompts: Optional[list] = Field(
+        default_factory=lambda: ["person", "cat", "dog", "car"]
+    )
 
 
 def load_settings(file_path="cfg/settings.yaml"):
