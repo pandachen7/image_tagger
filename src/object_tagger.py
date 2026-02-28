@@ -167,6 +167,14 @@ class MainWindow(QMainWindow):
         self.drawing_toolbar.addAction(self.fill_mode_action)
         self.drawing_mode_group.addAction(self.fill_mode_action)
 
+        self.polygon_mode_action = QAction("Polygon", self)
+        self.polygon_mode_action.setCheckable(True)
+        self.polygon_mode_action.triggered.connect(
+            lambda: self.image_widget.set_drawing_mode(DrawingMode.POLYGON)
+        )
+        self.drawing_toolbar.addAction(self.polygon_mode_action)
+        self.drawing_mode_group.addAction(self.polygon_mode_action)
+
         self.drawing_toolbar.addSeparator()
 
         self.brush_size_slider = QSlider(Qt.Orientation.Vertical)
@@ -238,9 +246,22 @@ class MainWindow(QMainWindow):
         self.ai_menu.addAction(self.detect_action)
         self.ai_menu.addAction(self.auto_detect_action)
 
+        self.ai_menu.addSeparator()
+        self.select_sam_model_action = QAction("Select &SAM Model", self)
+        self.select_sam_model_action.triggered.connect(self.select_sam_model)
+        self.ai_menu.addAction(self.select_sam_model_action)
+
+        self.run_sam_action = QAction("&Run SAM (Bbox→Polygon)", self)
+        self.run_sam_action.triggered.connect(
+            self.image_widget.generatePolygonsFromBboxes
+        )
+        self.ai_menu.addAction(self.run_sam_action)
+
         # 讀取預設標籤和上次使用的標籤
         if settings.model_path:
             self.load_model(settings.model_path)
+        if settings.sam3_model_path:
+            self.load_sam_model(settings.sam3_model_path)
         self.choose_folder(settings.folder_path, settings.file_index)
 
         try:
@@ -322,6 +343,21 @@ class MainWindow(QMainWindow):
         success, message = self.app_state.load_model(model_path)
         if success:
             settings.model_path = model_path
+        else:
+            QMessageBox.critical(self, "Error", message)
+
+    def select_sam_model(self):
+        model_path, _ = QFileDialog.getOpenFileName(
+            self, "Open SAM Model File", "", "Model Files (*.pt)"
+        )
+        if model_path:
+            self.load_sam_model(model_path)
+            settings.sam3_model_path = model_path
+
+    def load_sam_model(self, model_path):
+        success, message = self.app_state.load_sam_model(model_path)
+        if success:
+            settings.sam3_model_path = model_path
         else:
             QMessageBox.critical(self, "Error", message)
 
@@ -466,7 +502,8 @@ class MainWindow(QMainWindow):
         # 儲存xml
         xml_path = getXmlPath(save_path)
         bboxes = self.image_widget.bboxes
-        xml_content = file_h.generate_voc_xml(bboxes, save_path)
+        polygons = self.image_widget.polygons
+        xml_content = file_h.generate_voc_xml(bboxes, save_path, polygons)
         with open(xml_path, "w", encoding="utf-8") as f:
             f.write(xml_content)
         g_param.user_labeling = False
@@ -599,6 +636,11 @@ class MainWindow(QMainWindow):
             self.toggle_play_pause()
         elif event.key() == Qt.Key.Key_L:
             self.promptInputLabel()
+        elif event.key() == Qt.Key.Key_P:
+            self.polygon_mode_action.setChecked(True)
+            self.image_widget.set_drawing_mode(DrawingMode.POLYGON)
+        elif event.key() == Qt.Key.Key_G:
+            self.image_widget.generatePolygonsFromBboxes()
 
         elif event.key() in [
             Qt.Key.Key_1,

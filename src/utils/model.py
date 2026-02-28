@@ -5,6 +5,7 @@ class ColorPen:
     RED = QPen(QColor(255, 0, 0), 2)
     GREEN = QPen(QColor(0, 255, 0), 1)
     # GREEN_BOLD = QPen(QColor(0, 255, 0), 2)
+    ORANGE = QPen(QColor(255, 128, 0), 1)
     YELLOW = QPen(QColor(255, 255, 0), 1)
 
 
@@ -18,6 +19,14 @@ class Bbox:
         self.confidence = confidence
         self.angle = angle  # 旋轉角度（順時針，單位：度）
         self.color_pen = ColorPen.GREEN
+
+
+class Polygon:
+    def __init__(self, points, label, confidence=-1.0):
+        self.points = points  # list[(float, float)] in original image coords
+        self.label = label
+        self.confidence = confidence
+        self.color_pen = ColorPen.ORANGE
 
 
 class FileType:

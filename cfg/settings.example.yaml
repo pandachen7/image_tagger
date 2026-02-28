@@ -1,4 +1,5 @@
 model_path:
+sam3_model_path:
 folder_path:
 file_index: 0
 categories:

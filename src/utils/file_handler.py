@@ -6,10 +6,11 @@ from typing import Optional
 
 import cv2
 
+from src.core import AppState
 from src.utils.const import ALL_EXTS
 from src.utils.dynamic_settings import settings
 from src.utils.loglo import getUniqueLogger
-from src.utils.model import Bbox, ShowImageCmd
+from src.utils.model import Bbox, Polygon, ShowImageCmd
 
 log = getUniqueLogger(__file__)
 
@@ -66,18 +67,21 @@ class FileHandler:
             return True
         return False
 
-    def generate_voc_xml(self, bboxes: list[Bbox], image_path):
+    def generate_voc_xml(
+        self, bboxes: list[Bbox], image_path, polygons: list[Polygon] = None
+    ):
         """
-        基於現有的bbox 產生符合voc格式的xml檔案
+        基於現有的bbox與polygon產生符合voc格式的xml檔案
         """
+        if polygons is None:
+            polygons = []
+
         image_filename = os.path.basename(image_path)
         folder_name = os.path.basename(os.path.dirname(image_path))
 
         xml_str = "<annotation>\n"
         xml_str += f"    <folder>{folder_name}</folder>\n"
         xml_str += f"    <filename>{image_filename}</filename>\n"
-        # xml_str += f"    <path>{image_path}</path>\n"
-        # xml_str += "    <source>\n        <database>Unknown</database>\n    </source>\n"
 
         # 讀取圖片大小
         img = cv2.imread(image_path)
@@ -98,11 +102,26 @@ class FileHandler:
             xml_str += "        </bndbox>\n"
             xml_str += "    </object>\n"
 
+        for polygon in polygons:
+            xml_str += "    <object>\n"
+            xml_str += f"        <name>{polygon.label}</name>\n"
+            xml_str += "        <polygon>\n"
+            xml_str += f"            <confidence>{polygon.confidence}</confidence>\n"
+            for px, py in polygon.points:
+                xml_str += (
+                    f"            <point><x>{px:.1f}</x><y>{py:.1f}</y></point>\n"
+                )
+            xml_str += "        </polygon>\n"
+            xml_str += "    </object>\n"
+
         xml_str += "</annotation>\n"
         return xml_str
 
     def convertVocInFolder(
-        self, folder_path, output_folder: Optional[Path] = None, app_state=None
+        self,
+        folder_path,
+        output_folder: Optional[Path] = None,
+        app_state: AppState = None,
     ):
         """
         將指定資料夾下的所有 VOC XML 檔案轉換為 YOLO 格式
@@ -110,11 +129,15 @@ class FileHandler:
         if output_folder is None:
             output_folder = folder_path  # 預設輸出到同一個資料夾
 
+        use_seg = app_state.yolo_seg_format if app_state else False
         ct = 0
         for xml_file in Path(folder_path).glob("*.xml"):
-            self.convert_voc_xml_to_yolo_txt(xml_file, output_folder, app_state)
+            if use_seg:
+                self.convert_voc_xml_to_yolo_seg_txt(xml_file, output_folder, app_state)
+            else:
+                self.convert_voc_xml_to_yolo_txt(xml_file, output_folder, app_state)
             ct += 1
-        log.i(f"converted {ct} xml files")
+        log.i(f"converted {ct} xml files (seg={use_seg})")
 
     def convert_voc_xml_to_yolo_txt(self, xml_path, output_folder, app_state=None):
         """
@@ -212,6 +235,78 @@ class FileHandler:
             f.write("\n".join(yolo_lines))
 
         # log.d(f"Converted {xml_path} to {output_file}")
+
+    def convert_voc_xml_to_yolo_seg_txt(self, xml_path, output_folder, app_state=None):
+        """
+        轉換單個 VOC XML 檔案到 YOLO Segmentation 格式
+        格式: class_id x1 y1 x2 y2 ... xN yN (normalized 0-1)
+        """
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        size_element = root.find("size")
+        if size_element is None:
+            log.w(f"Warning: No size element found in {xml_path}, skipping")
+            return
+        img_width = int(size_element.find("width").text)
+        img_height = int(size_element.find("height").text)
+        yolo_lines = []
+
+        for object_element in root.findall("object"):
+            label_name = object_element.find("name").text
+            if label_name not in settings.categories:
+                log.w(f"Warning: Label '{label_name}' not in categories")
+                continue
+
+            category_id = settings.categories.get(label_name)
+            if category_id is None or not isinstance(category_id, int):
+                log.w(
+                    f"Warning: Category ID not found for label '{label_name}', skipping"
+                )
+                continue
+
+            polygon_element = object_element.find("polygon")
+            if polygon_element is not None:
+                # Use polygon points
+                points = []
+                for pt in polygon_element.findall("point"):
+                    px = float(pt.find("x").text)
+                    py = float(pt.find("y").text)
+                    points.append((px / img_width, py / img_height))
+
+                if points:
+                    yolo_line = f"{category_id}"
+                    for nx, ny in points:
+                        yolo_line += f" {nx:.6f} {ny:.6f}"
+                    yolo_lines.append(yolo_line)
+            else:
+                # Fallback: use bndbox as a 4-point polygon
+                bndbox_element = object_element.find("bndbox")
+                if bndbox_element is None:
+                    continue
+                xmin = int(bndbox_element.find("xmin").text)
+                ymin = int(bndbox_element.find("ymin").text)
+                xmax = int(bndbox_element.find("xmax").text)
+                ymax = int(bndbox_element.find("ymax").text)
+
+                # Normalize
+                nx1 = xmin / img_width
+                ny1 = ymin / img_height
+                nx2 = xmax / img_width
+                ny2 = ymax / img_height
+
+                yolo_line = (
+                    f"{category_id}"
+                    f" {nx1:.6f} {ny1:.6f}"
+                    f" {nx2:.6f} {ny1:.6f}"
+                    f" {nx2:.6f} {ny2:.6f}"
+                    f" {nx1:.6f} {ny2:.6f}"
+                )
+                yolo_lines.append(yolo_line)
+
+        # Save YOLO seg txt file
+        output_file = output_folder / Path(xml_path).with_suffix(".txt").name
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(yolo_lines))
 
 
 file_h = FileHandler()

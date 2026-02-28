@@ -7,8 +7,8 @@ from typing import Optional
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import QPoint, QRect, Qt
-from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
+from PyQt6.QtCore import QPoint, QPointF, QRect, Qt
+from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QPolygonF
 from PyQt6.QtWidgets import (
     QLabel,
     QMessageBox,
@@ -20,6 +20,8 @@ from src.config import cfg
 from src.core import AppState
 from src.utils.const import (
     CORNER_SIZE,
+    POLYGON_CLOSE_THRESHOLD,
+    POLYGON_VERTEX_RADIUS,
     ROTATION_HANDLE_DISTANCE,
     ROTATION_HANDLE_RADIUS,
     VIDEO_EXTS,
@@ -28,7 +30,7 @@ from src.utils.file_handler import file_h
 from src.utils.func import getXmlPath
 from src.utils.global_param import g_param
 from src.utils.loglo import getUniqueLogger
-from src.utils.model import Bbox, ColorPen, FileType
+from src.utils.model import Bbox, ColorPen, FileType, Polygon
 
 log = getUniqueLogger(__file__)
 
@@ -38,6 +40,7 @@ class DrawingMode(Enum):
     MASK_DRAW = 1
     MASK_ERASE = 2
     MASK_FILL = 3
+    POLYGON = 4
 
 
 def qimage_to_cv_mat(qimage: QImage) -> np.ndarray:
@@ -88,6 +91,11 @@ class ImageWidget(QWidget):
         self.mask_pixmap: QPixmap | None = None
         self.brush_size = 20
         self.last_pos = None
+
+        # Polygon drawing state
+        self.polygons: list[Polygon] = []
+        self.current_polygon_points: list[QPoint] = []  # widget coords, in-progress
+        self.idx_focus_polygon: int = -1
 
         self.list_fps = []
 
@@ -278,13 +286,13 @@ class ImageWidget(QWidget):
 
     def loadBboxFromXml(self, xml_path) -> bool:
         """
-        讀取xml的bbox資訊
+        讀取xml的bbox與polygon資訊
 
         Args:
             xml_path (str): xml檔案路徑
 
         Returns:
-            bool: 是否有bbox
+            bool: 是否有bbox或polygon
         """
         if Path(xml_path).is_file():
             try:
@@ -293,25 +301,47 @@ class ImageWidget(QWidget):
                 for obj in root.findall("object"):
                     name = obj.find("name").text
                     bndbox = obj.find("bndbox")
-                    xmin = int(bndbox.find("xmin").text)
-                    ymin = int(bndbox.find("ymin").text)
-                    xmax = int(bndbox.find("xmax").text)
-                    ymax = int(bndbox.find("ymax").text)
-                    confidence = float(bndbox.find("confidence").text)
-                    # 讀取 angle 參數，如果不存在則預設為 0
-                    angle_element = bndbox.find("angle")
-                    angle = (
-                        float(angle_element.text) if angle_element is not None else 0.0
-                    )
-                    width = xmax - xmin
-                    height = ymax - ymin
-                    self.bboxes.append(
-                        Bbox(xmin, ymin, width, height, name, confidence, int(angle))
-                    )
+                    polygon_elem = obj.find("polygon")
+
+                    if bndbox is not None:
+                        xmin = int(bndbox.find("xmin").text)
+                        ymin = int(bndbox.find("ymin").text)
+                        xmax = int(bndbox.find("xmax").text)
+                        ymax = int(bndbox.find("ymax").text)
+                        confidence = float(bndbox.find("confidence").text)
+                        angle_element = bndbox.find("angle")
+                        angle = (
+                            float(angle_element.text)
+                            if angle_element is not None
+                            else 0.0
+                        )
+                        width = xmax - xmin
+                        height = ymax - ymin
+                        self.bboxes.append(
+                            Bbox(
+                                xmin, ymin, width, height, name, confidence, int(angle)
+                            )
+                        )
+                    elif polygon_elem is not None:
+                        points = []
+                        for pt in polygon_elem.findall("point"):
+                            px = float(pt.find("x").text)
+                            py = float(pt.find("y").text)
+                            points.append((px, py))
+                        if points:
+                            conf_elem = polygon_elem.find("confidence")
+                            poly_conf = (
+                                float(conf_elem.text)
+                                if conf_elem is not None
+                                else -1.0
+                            )
+                            self.polygons.append(
+                                Polygon(points, name, poly_conf)
+                            )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to parse XML: {e}")
 
-            if self.bboxes:
+            if self.bboxes or self.polygons:
                 return True
             else:
                 return False
@@ -427,9 +457,12 @@ class ImageWidget(QWidget):
         self.update()  # 觸發 paintEvent
 
     def clearBboxes(self):
-        # 重置 Bounding Box 資訊
+        # 重置 Bounding Box 與 Polygon 資訊
         self.bboxes = []
         self.idx_focus_bbox = -1
+        self.polygons = []
+        self.current_polygon_points = []
+        self.idx_focus_polygon = -1
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -589,6 +622,76 @@ class ImageWidget(QWidget):
                 handle_pos_widget, ROTATION_HANDLE_RADIUS, ROTATION_HANDLE_RADIUS
             )
 
+        # 繪製 Polygons
+        for poly_idx, polygon in enumerate(self.polygons):
+            painter.setPen(polygon.color_pen)
+            # Semi-transparent fill
+            fill_color = QColor(0, 255, 0, 50)
+            if poly_idx == self.idx_focus_polygon:
+                fill_color = QColor(255, 255, 0, 70)
+
+            if len(polygon.points) >= 3:
+                qpoly = QPolygonF()
+                for px, py in polygon.points:
+                    widget_pt = self._scale_to_widget(QPoint(int(px), int(py)))
+                    qpoly.append(QPointF(widget_pt.x(), widget_pt.y()))
+
+                painter.setBrush(fill_color)
+                painter.drawPolygon(qpoly)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+
+                # Draw vertex dots
+                for px, py in polygon.points:
+                    widget_pt = self._scale_to_widget(QPoint(int(px), int(py)))
+                    painter.drawEllipse(
+                        widget_pt, POLYGON_VERTEX_RADIUS, POLYGON_VERTEX_RADIUS
+                    )
+
+                # Draw label text
+                first_pt = self._scale_to_widget(
+                    QPoint(int(polygon.points[0][0]), int(polygon.points[0][1]))
+                )
+                text = f"{polygon.label}"
+                if polygon.confidence >= 0:
+                    text += f" ({polygon.confidence:.2f})"
+                font_metrics = painter.fontMetrics()
+                text_width = font_metrics.horizontalAdvance(text)
+                text_height = font_metrics.height()
+                bg_rect = QRect(
+                    QPoint(first_pt.x(), first_pt.y() - text_height),
+                    QPoint(first_pt.x() + text_width, first_pt.y()),
+                )
+                painter.fillRect(bg_rect, QColor(0, 0, 0, 150))
+                painter.drawText(first_pt, text)
+
+        # 繪製進行中的 Polygon
+        if self.current_polygon_points and self.drawing_mode == DrawingMode.POLYGON:
+            painter.setPen(ColorPen.RED)
+            # Draw lines between existing points
+            for i in range(len(self.current_polygon_points) - 1):
+                painter.drawLine(
+                    self.current_polygon_points[i],
+                    self.current_polygon_points[i + 1],
+                )
+
+            # Draw vertex dots
+            for i, pt in enumerate(self.current_polygon_points):
+                if i == 0:
+                    # First point: green "close" indicator
+                    painter.setPen(QPen(QColor(0, 255, 0), 2))
+                    painter.drawEllipse(
+                        pt,
+                        POLYGON_CLOSE_THRESHOLD,
+                        POLYGON_CLOSE_THRESHOLD,
+                    )
+                    painter.setPen(ColorPen.RED)
+                painter.drawEllipse(pt, POLYGON_VERTEX_RADIUS, POLYGON_VERTEX_RADIUS)
+
+            # Rubber band line from last point to cursor
+            if self.current_mouse_pos and self.current_polygon_points:
+                painter.setPen(QPen(QColor(255, 0, 0, 128), 1, Qt.PenStyle.DashLine))
+                painter.drawLine(self.current_polygon_points[-1], self.current_mouse_pos)
+
         if self.drawing and self.drawing_mode == DrawingMode.BBOX:
             painter.setPen(ColorPen.RED)  # 繪製中的 Bounding Box 用紅色
             rect = QRect(self.start_pos, self.end_pos)
@@ -714,7 +817,37 @@ class ImageWidget(QWidget):
             self.on_mouse_press_callback(event)
 
         if event.button() == Qt.MouseButton.LeftButton:
-            if self.drawing_mode in [DrawingMode.MASK_DRAW, DrawingMode.MASK_ERASE]:
+            if self.drawing_mode == DrawingMode.POLYGON:
+                pos = event.pos()
+                # Check if near first point to close polygon
+                if (
+                    len(self.current_polygon_points) >= 3
+                    and self._distanceBetweenPoints(
+                        pos, self.current_polygon_points[0]
+                    )
+                    < POLYGON_CLOSE_THRESHOLD
+                ):
+                    # Close polygon - convert widget coords to original
+                    points = []
+                    for pt in self.current_polygon_points:
+                        orig = self._scale_to_original(pt)
+                        points.append((float(orig.x()), float(orig.y())))
+                    self.polygons.append(
+                        Polygon(
+                            points,
+                            self.app_state.last_used_label,
+                            1.0,
+                        )
+                    )
+                    self.idx_focus_polygon = len(self.polygons) - 1
+                    self.current_polygon_points = []
+                    g_param.user_labeling = True
+                else:
+                    # Add vertex
+                    self.current_polygon_points.append(pos)
+                self.update()
+                return
+            elif self.drawing_mode in [DrawingMode.MASK_DRAW, DrawingMode.MASK_ERASE]:
                 self.start_pos = event.pos()
                 self.end_pos = event.pos()
                 self.drawing = True
@@ -788,7 +921,21 @@ class ImageWidget(QWidget):
                             break
 
         elif event.button() == Qt.MouseButton.RightButton:  # 刪除
-            if self.drawing_mode == DrawingMode.BBOX:
+            if self.drawing_mode == DrawingMode.POLYGON:
+                if self.current_polygon_points:
+                    # Cancel in-progress polygon
+                    self.current_polygon_points = []
+                    self.update()
+                else:
+                    # Delete existing polygon under cursor
+                    pos = event.pos()
+                    for polygon in reversed(self.polygons):
+                        if self._isPointInPolygon(pos, polygon):
+                            self.polygons.remove(polygon)
+                            self.idx_focus_polygon = -1
+                            self.update()
+                            break
+            elif self.drawing_mode == DrawingMode.BBOX:
                 pos = event.pos()
                 for bbox in reversed(self.bboxes):  # 從後面開始找，避免 index 錯誤
                     # 將原始影像座標轉換為視窗座標
@@ -807,6 +954,11 @@ class ImageWidget(QWidget):
 
     def mouseMoveEvent(self, event):
         self.current_mouse_pos = event.pos()
+        if self.drawing_mode == DrawingMode.POLYGON:
+            # Rubber band update for polygon drawing
+            if self.current_polygon_points:
+                self.update()
+            return
         if self.drawing_mode in [DrawingMode.MASK_DRAW, DrawingMode.MASK_ERASE]:
             if self.drawing:
                 scaled_pos = self._scale_to_original(event.pos())
@@ -1014,6 +1166,70 @@ class ImageWidget(QWidget):
         for bbox in self.bboxes:
             bbox.color_pen = ColorPen.GREEN
         g_param.user_labeling = True
+        self.update()
+
+    def _distanceBetweenPoints(self, p1: QPoint, p2: QPoint) -> float:
+        dx = p1.x() - p2.x()
+        dy = p1.y() - p2.y()
+        return (dx * dx + dy * dy) ** 0.5
+
+    def _isPointInPolygon(self, pos: QPoint, polygon: Polygon) -> bool:
+        """Check if a widget-coordinate point is inside a polygon."""
+        if len(polygon.points) < 3:
+            return False
+        # Convert polygon points to widget coords for comparison
+        poly_points = []
+        for px, py in polygon.points:
+            wpt = self._scale_to_widget(QPoint(int(px), int(py)))
+            poly_points.append((float(wpt.x()), float(wpt.y())))
+        np_poly = np.array(poly_points, dtype=np.float32)
+        result = cv2.pointPolygonTest(np_poly, (float(pos.x()), float(pos.y())), False)
+        return result >= 0
+
+    def generatePolygonsFromBboxes(self):
+        """Use SAM model to generate polygons from existing bboxes."""
+        if not self.app_state.sam_model:
+            QMessageBox.critical(self, "Error", "SAM3 model not loaded")
+            return
+        if not self.bboxes:
+            QMessageBox.information(self, "Info", "No bboxes to generate polygons from")
+            return
+        if not file_h.current_image_path():
+            return
+
+        # Build bbox list for SAM prompt
+        bbox_prompts = []
+        for bbox in self.bboxes:
+            x1 = bbox.x
+            y1 = bbox.y
+            x2 = bbox.x + bbox.width
+            y2 = bbox.y + bbox.height
+            bbox_prompts.append([x1, y1, x2, y2])
+
+        try:
+            results = self.app_state.sam_model(
+                file_h.current_image_path(), bboxes=bbox_prompts
+            )
+            for idx, result in enumerate(results):
+                if result.masks is not None and result.masks.xy is not None:
+                    for mask_xy in result.masks.xy:
+                        points = [(float(x), float(y)) for x, y in mask_xy]
+                        if len(points) >= 3:
+                            self.polygons.append(
+                                Polygon(
+                                    points,
+                                    self.bboxes[idx].label,
+                                    float(
+                                        result.boxes.conf[0]
+                                        if result.boxes is not None
+                                        and result.boxes.conf is not None
+                                        else -1.0
+                                    ),
+                                )
+                            )
+            self.app_state._trigger_callback("sam_completed")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"SAM inference failed: {e}")
         self.update()
 
     def wheelEvent(self, event):

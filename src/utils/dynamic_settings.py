@@ -11,6 +11,7 @@ log = getUniqueLogger(__file__)
 
 class Settings(BaseModel):
     model_path: Optional[str] = None
+    sam3_model_path: Optional[str] = None
     folder_path: Optional[str] = None
     file_index: Optional[int] = 0
     categories: Optional[dict] = Field(default_factory=dict)

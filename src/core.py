@@ -28,6 +28,11 @@ class AppState:
         # Convert settings
         self.convert_format = "yolo"  # 轉換格式，目前只有 "yolo"
         self.yolo_obb_format = False  # 是否使用 YOLO OBB 格式（包含旋轉角度）
+        self.yolo_seg_format = False  # 是否使用 YOLO Segmentation 格式
+
+        # SAM model management
+        self.sam_model = None
+        self.use_sam = False
 
         # Callbacks for UI updates
         self._callbacks: dict[str, list[Callable]] = {
@@ -36,6 +41,8 @@ class AppState:
             "model_loaded": [],
             "detection_completed": [],
             "status_message": [],
+            "sam_loaded": [],
+            "sam_completed": [],
         }
 
     def register_callback(self, event: str, callback: Callable):
@@ -88,6 +95,28 @@ class AppState:
             return True, message
         except Exception as e:
             message = f"Failed to load model: {e}"
+            return False, message
+
+    def load_sam_model(self, model_path: str) -> tuple[bool, str]:
+        """
+        Load a SAM model.
+
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        try:
+            from ultralytics import SAM
+
+            if self.sam_model:
+                del self.sam_model
+            self.sam_model = SAM(model_path)
+            self.use_sam = True
+            message = f"SAM model loaded: {model_path}"
+            self._trigger_callback("sam_loaded", model_path)
+            self._trigger_callback("status_message", message)
+            return True, message
+        except Exception as e:
+            message = f"Failed to load SAM model: {e}"
             return False, message
 
     def set_last_used_label(self, label: str):

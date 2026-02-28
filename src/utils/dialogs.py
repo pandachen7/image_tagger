@@ -128,7 +128,18 @@ class ConvertSettingsDialog(QDialog):
             "適用於 YOLOv8 OBB 訓練"
         )
 
+        # Segmentation 格式選項
+        self.seg_checkbox = QCheckBox(
+            "使用 Segmentation 格式 (Use Segmentation format for polygon masks)"
+        )
+        self.seg_checkbox.setToolTip(
+            "啟用後，將輸出多邊形分割座標\n"
+            "格式: class_id x1 y1 x2 y2 ... xN yN (歸一化座標)\n"
+            "適用於 YOLO Segmentation 訓練"
+        )
+
         yolo_layout.addWidget(self.obb_checkbox)
+        yolo_layout.addWidget(self.seg_checkbox)
         yolo_group.setLayout(yolo_layout)
         main_layout.addWidget(yolo_group)
 
@@ -158,9 +169,13 @@ class ConvertSettingsDialog(QDialog):
             # 設定 OBB 選項
             self.obb_checkbox.setChecked(self.app_state.yolo_obb_format)
 
+            # 設定 Segmentation 選項
+            self.seg_checkbox.setChecked(self.app_state.yolo_seg_format)
+
     def save_settings(self):
         """儲存設定到 app_state"""
         if self.app_state:
             self.app_state.convert_format = self.format_combo.currentData()
             self.app_state.yolo_obb_format = self.obb_checkbox.isChecked()
+            self.app_state.yolo_seg_format = self.seg_checkbox.isChecked()
         self.accept()
