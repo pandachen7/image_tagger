@@ -1,4 +1,4 @@
-import torch
+import torch  # torch必須比pyqt還早, 以免索引出錯
 
 from src.object_tagger import main
 
