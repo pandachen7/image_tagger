@@ -14,7 +14,7 @@ class Config(BaseModel):
     save_folder: str = "./output"
 
 
-def load_config(yaml_file: str = "cfg/config.yaml") -> Config:
+def load_config(yaml_file: str = "cfg/system.yaml") -> Config:
     with open("cfg/system.yaml", "r", encoding="utf-8") as f:
         data = yaml.load(f)
     return Config(**data)
