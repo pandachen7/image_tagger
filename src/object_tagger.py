@@ -251,9 +251,9 @@ class MainWindow(QMainWindow):
         self.select_sam_model_action.triggered.connect(self.select_sam_model)
         self.ai_menu.addAction(self.select_sam_model_action)
 
-        self.run_sam_action = QAction("&Run SAM (Bbox→Polygon)", self)
+        self.run_sam_action = QAction("&Run SAM (Text→Polygon)", self)
         self.run_sam_action.triggered.connect(
-            self.image_widget.generatePolygonsFromBboxes
+            self.image_widget.generatePolygonsFromText
         )
         self.ai_menu.addAction(self.run_sam_action)
 
@@ -640,7 +640,7 @@ class MainWindow(QMainWindow):
             self.polygon_mode_action.setChecked(True)
             self.image_widget.set_drawing_mode(DrawingMode.POLYGON)
         elif event.key() == Qt.Key.Key_G:
-            self.image_widget.generatePolygonsFromBboxes()
+            self.image_widget.generatePolygonsFromText()
 
         elif event.key() in [
             Qt.Key.Key_1,

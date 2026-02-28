@@ -30,8 +30,9 @@ class AppState:
         self.yolo_obb_format = False  # 是否使用 YOLO OBB 格式（包含旋轉角度）
         self.yolo_seg_format = False  # 是否使用 YOLO Segmentation 格式
 
-        # SAM model management
-        self.sam_model = None
+        # SAM model management (SAM3SemanticPredictor)
+        self.sam_predictor = None  # feature extractor
+        self.sam_inference = None  # inference predictor
         self.use_sam = False
 
         # Callbacks for UI updates
@@ -99,24 +100,33 @@ class AppState:
 
     def load_sam_model(self, model_path: str) -> tuple[bool, str]:
         """
-        Load a SAM model.
+        Load a SAM3 model using SAM3SemanticPredictor.
 
         Returns:
             tuple: (success: bool, message: str)
         """
         try:
-            from ultralytics import SAM
+            from ultralytics.models.sam import SAM3SemanticPredictor
 
-            if self.sam_model:
-                del self.sam_model
-            self.sam_model = SAM(model_path)
+            if self.sam_predictor:
+                del self.sam_predictor
+            if self.sam_inference:
+                del self.sam_inference
+
+            overrides = dict(
+                conf=0.50, task="segment", mode="predict", model=model_path, verbose=False
+            )
+            self.sam_predictor = SAM3SemanticPredictor(overrides=overrides)
+            self.sam_inference = SAM3SemanticPredictor(overrides=overrides)
+            self.sam_inference.setup_model()
             self.use_sam = True
             message = f"SAM model loaded: {model_path}"
             self._trigger_callback("sam_loaded", model_path)
             self._trigger_callback("status_message", message)
             return True, message
         except Exception as e:
-            message = f"Failed to load SAM model: {e}"
+            
+            message = f"Failed to load SAM model ({model_path}): {e}"
             return False, message
 
     def set_last_used_label(self, label: str):

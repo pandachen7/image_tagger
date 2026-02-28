@@ -1186,47 +1186,45 @@ class ImageWidget(QWidget):
         result = cv2.pointPolygonTest(np_poly, (float(pos.x()), float(pos.y())), False)
         return result >= 0
 
-    def generatePolygonsFromBboxes(self):
-        """Use SAM model to generate polygons from existing bboxes."""
-        if not self.app_state.sam_model:
+    def generatePolygonsFromText(self):
+        """Use SAM3 model to generate polygons from preset labels via text prompts."""
+        if not self.app_state.sam_predictor:
             QMessageBox.critical(self, "Error", "SAM3 model not loaded")
             return
-        if not self.bboxes:
-            QMessageBox.information(self, "Info", "No bboxes to generate polygons from")
+        if not self.app_state.preset_labels:
+            QMessageBox.information(self, "Info", "No preset labels configured")
             return
         if not file_h.current_image_path():
             return
 
-        # Build bbox list for SAM prompt
-        bbox_prompts = []
-        for bbox in self.bboxes:
-            x1 = bbox.x
-            y1 = bbox.y
-            x2 = bbox.x + bbox.width
-            y2 = bbox.y + bbox.height
-            bbox_prompts.append([x1, y1, x2, y2])
-
         try:
-            results = self.app_state.sam_model(
-                file_h.current_image_path(), bboxes=bbox_prompts
-            )
-            for idx, result in enumerate(results):
-                if result.masks is not None and result.masks.xy is not None:
-                    for mask_xy in result.masks.xy:
-                        points = [(float(x), float(y)) for x, y in mask_xy]
-                        if len(points) >= 3:
-                            self.polygons.append(
-                                Polygon(
-                                    points,
-                                    self.bboxes[idx].label,
-                                    float(
-                                        result.boxes.conf[0]
-                                        if result.boxes is not None
-                                        and result.boxes.conf is not None
-                                        else -1.0
-                                    ),
+            # Extract features from image once
+            image_path = file_h.current_image_path()
+            self.app_state.sam_predictor.set_image(image_path)
+            src_shape = (self.pixmap.height(), self.pixmap.width())
+
+            # Run inference for each label text using shared features
+            labels = list(set(self.app_state.preset_labels.values()))
+            for label in labels:
+                masks, boxes = self.app_state.sam_inference.inference_features(
+                    self.app_state.sam_predictor.features,
+                    src_shape=src_shape,
+                    text=[label],
+                )
+                if masks is not None:
+                    masks_np = masks.cpu().numpy()
+                    for mask in masks_np:
+                        mask_uint8 = (mask * 255).astype(np.uint8)
+                        contours, _ = cv2.findContours(
+                            mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                        )
+                        if contours:
+                            largest = max(contours, key=cv2.contourArea)
+                            points = [(float(pt[0][0]), float(pt[0][1])) for pt in largest]
+                            if len(points) >= 3:
+                                self.polygons.append(
+                                    Polygon(points, label, -1.0)
                                 )
-                            )
             self.app_state._trigger_callback("sam_completed")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"SAM inference failed: {e}")
