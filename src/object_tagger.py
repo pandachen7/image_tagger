@@ -25,7 +25,11 @@ from ruamel.yaml import YAML
 from src.config import cfg
 from src.core import AppState
 from src.image_widget import DrawingMode, ImageWidget
-from src.utils.dialogs import CategorySettingsDialog, ConvertSettingsDialog, TextPromptsDialog
+from src.utils.dialogs import (
+    CategorySettingsDialog,
+    ConvertSettingsDialog,
+    TextPromptsDialog,
+)
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
 from src.utils.func import getMaskPath, getXmlPath
@@ -320,8 +324,13 @@ class MainWindow(QMainWindow):
                 "Model Not Found",
                 "以下模型檔案不存在:\n" + "\n".join(missing_models),
             )
-        # Set active model type (YOLO takes priority if both exist)
-        if self.app_state.model_path:
+        # Restore last active model from settings, fallback to priority logic
+        if settings.active_model == ModelType.SAM3 and self.app_state.sam_model_path:
+            self.app_state.active_model_type = ModelType.SAM3
+        elif settings.active_model == ModelType.YOLO and self.app_state.model_path:
+            self.app_state.active_model_type = ModelType.YOLO
+            self.app_state.auto_detect = True
+        elif self.app_state.model_path:
             self.app_state.active_model_type = ModelType.YOLO
             self.app_state.auto_detect = True
         elif self.app_state.sam_model_path:
@@ -391,6 +400,7 @@ class MainWindow(QMainWindow):
             self.use_yolo_action.setChecked(True)
         elif self.app_state.active_model_type == ModelType.SAM3:
             self.use_sam_action.setChecked(True)
+        settings.active_model = self.app_state.active_model_type
         save_settings()
 
     def resetStates(self):
@@ -767,9 +777,7 @@ class MainWindow(QMainWindow):
         dialog = TextPromptsDialog(self)
         if dialog.exec():
             save_settings()
-            self.statusbar.showMessage(
-                f"Text prompts: {settings.text_prompts}"
-            )
+            self.statusbar.showMessage(f"Text prompts: {settings.text_prompts}")
 
     def show_convert_settings(self):
         """顯示轉換設定對話框"""

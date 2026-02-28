@@ -18,6 +18,7 @@ class Settings(BaseModel):
     text_prompts: Optional[list] = Field(
         default_factory=lambda: ["person", "cat", "dog", "car"]
     )
+    active_model: Optional[str] = None
 
 
 def load_settings(file_path="cfg/settings.yaml"):
