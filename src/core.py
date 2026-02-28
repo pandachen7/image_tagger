@@ -23,7 +23,6 @@ class AppState:
         self.sam_model_path: Optional[str] = None
         self._yolo_model = None
         self._sam_predictor = None
-        self._sam_inference = None
 
         # Labels management
         self.preset_labels: dict[str, str] = {}
@@ -98,11 +97,10 @@ class AppState:
                     task="segment",
                     mode="predict",
                     model=self.sam_model_path,
+                    half=True,
                     verbose=False,
                 )
                 self._sam_predictor = SAM3SemanticPredictor(overrides=overrides)
-                self._sam_inference = SAM3SemanticPredictor(overrides=overrides)
-                self._sam_inference.setup_model()
             return self._sam_predictor is not None
         return False
 
@@ -132,12 +130,13 @@ class AppState:
         import cv2
         import numpy as np
 
-        self._sam_predictor.set_image(image_path)
+        predictor = self._sam_predictor
+        predictor.set_image(image_path)
         labels = list(set(self.preset_labels.values()))
         bboxes, polygons = [], []
         for label in labels:
-            masks, boxes = self._sam_inference.inference_features(
-                self._sam_predictor.features, src_shape=src_shape, text=[label]
+            masks, boxes = predictor.inference_features(
+                predictor.features, src_shape=src_shape, text=[label]
             )
             if masks is not None:
                 masks_np = masks.cpu().numpy()
