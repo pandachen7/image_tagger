@@ -21,7 +21,7 @@ class CategorySettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Edit Categories, 這是給VOC轉yolo用的")
-        self.categories = settings.categories
+        self.categories = settings.class_names.categories
 
         self.table_widget = QTableWidget()
         self.table_widget.setColumnCount(2)
@@ -83,7 +83,7 @@ class CategorySettingsDialog(QDialog):
                 index_str = index_item.text()
                 if name and index_str.isdigit():
                     categories[name] = int(index_str)
-        settings.categories = categories
+        settings.class_names.categories = categories
         self.accept()
 
 
@@ -95,7 +95,7 @@ class TextPromptsDialog(QDialog):
         self.setWindowTitle("Text Prompts (SAM3)")
         self.setMinimumWidth(350)
 
-        self.prompts = list(settings.text_prompts or [])
+        self.prompts = list(settings.class_names.text_prompts or [])
 
         self.list_widget = QTableWidget()
         self.list_widget.setColumnCount(1)
@@ -150,7 +150,7 @@ class TextPromptsDialog(QDialog):
             item = self.list_widget.item(row, 0)
             if item and item.text().strip():
                 prompts.append(item.text().strip())
-        settings.text_prompts = prompts
+        settings.class_names.text_prompts = prompts
         self.accept()
 
 

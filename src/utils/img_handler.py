@@ -103,7 +103,7 @@ class Inferencer:
     def infer_sam3(self, image_path, src_shape) -> tuple[list, list]:
         """SAM3 inference. Returns (list of Bbox, list of Polygon)."""
         self._sam_predictor.set_image(image_path)
-        labels = list(set(settings.text_prompts or []))
+        labels = list(set(settings.class_names.text_prompts or []))
         bboxes, polygons = [], []
         t1 = time.time()
         masks, boxes = self._sam_predictor.inference_features(
@@ -118,7 +118,7 @@ class Inferencer:
                     mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                 )
                 if contours:
-                    tolerance = settings.polygon_tolerance or 0.002
+                    tolerance = settings.models.polygon_tolerance or 0.002
                     for poly_pts in mask_to_polygon(contours, tolerance):
                         points = [(float(x), float(y)) for x, y in poly_pts]
                         polygons.append(Polygon(points, label, -1.0))

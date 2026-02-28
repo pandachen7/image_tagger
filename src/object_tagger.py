@@ -309,16 +309,16 @@ class MainWindow(QMainWindow):
         # Store model paths only (lazy load on first inference)
         # Verify model files exist before assigning
         missing_models = []
-        if settings.sam3_model_path:
-            if Path(settings.sam3_model_path).is_file():
-                inferencer.sam_model_path = settings.sam3_model_path
+        if settings.models.sam3_model_path:
+            if Path(settings.models.sam3_model_path).is_file():
+                inferencer.sam_model_path = settings.models.sam3_model_path
             else:
-                missing_models.append(f"SAM3: {settings.sam3_model_path}")
-        if settings.model_path:
-            if Path(settings.model_path).is_file():
-                inferencer.model_path = settings.model_path
+                missing_models.append(f"SAM3: {settings.models.sam3_model_path}")
+        if settings.models.model_path:
+            if Path(settings.models.model_path).is_file():
+                inferencer.model_path = settings.models.model_path
             else:
-                missing_models.append(f"YOLO: {settings.model_path}")
+                missing_models.append(f"YOLO: {settings.models.model_path}")
         if missing_models:
             QMessageBox.warning(
                 self,
@@ -326,9 +326,9 @@ class MainWindow(QMainWindow):
                 "以下模型檔案不存在:\n" + "\n".join(missing_models),
             )
         # Restore last active model from settings, fallback to priority logic
-        if settings.active_model == ModelType.SAM3 and inferencer.sam_model_path:
+        if settings.models.active_model == ModelType.SAM3 and inferencer.sam_model_path:
             inferencer.active_model_type = ModelType.SAM3
-        elif settings.active_model == ModelType.YOLO and inferencer.model_path:
+        elif settings.models.active_model == ModelType.YOLO and inferencer.model_path:
             inferencer.active_model_type = ModelType.YOLO
             self.app_state.auto_detect = True
         elif inferencer.model_path:
@@ -336,7 +336,7 @@ class MainWindow(QMainWindow):
             self.app_state.auto_detect = True
         elif inferencer.sam_model_path:
             inferencer.active_model_type = ModelType.SAM3
-        self.choose_folder(settings.folder_path, settings.file_index)
+        self.choose_folder(settings.file_system.folder_path, settings.file_system.file_index)
 
         try:
             with open("cfg/system.yaml", "r", encoding="utf-8") as f:
@@ -401,7 +401,7 @@ class MainWindow(QMainWindow):
             self.use_yolo_action.setChecked(True)
         elif model_type == ModelType.SAM3:
             self.use_sam_action.setChecked(True)
-        settings.active_model = model_type
+        settings.models.active_model = model_type
         save_settings()
         self.statusbar.showMessage(f"Active model: {model_type}")
 
@@ -415,7 +415,7 @@ class MainWindow(QMainWindow):
             self, "Open YOLO Model File", "", "Model Files (*.pt)"
         )
         if model_path:
-            settings.model_path = model_path
+            settings.models.model_path = model_path
             self._set_model(ModelType.YOLO, model_path)
 
     def select_sam_model(self):
@@ -423,7 +423,7 @@ class MainWindow(QMainWindow):
             self, "Open SAM3 Model File", "", "Model Files (*.pt)"
         )
         if model_path:
-            settings.sam3_model_path = model_path
+            settings.models.sam3_model_path = model_path
             self._set_model(ModelType.SAM3, model_path)
 
     def cycle_view_mode(self):
@@ -475,8 +475,8 @@ class MainWindow(QMainWindow):
         """
         folder_path = QFileDialog.getExistingDirectory(self, "Open Folder")  # PyQt6
         self.choose_folder(folder_path)
-        settings.folder_path = folder_path
-        settings.file_index = 0
+        settings.file_system.folder_path = folder_path
+        settings.file_system.file_index = 0
 
     def choose_folder(self, folder_path: str, file_index: int = 0):
         """
@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
                 f"[{file_h.current_index + 1} / {len(file_h.image_files)}] "
                 f"Image: {file_h.current_image_path()}"
             )
-            settings.file_index = file_h.current_index
+            settings.file_system.file_index = file_h.current_index
             save_settings()
 
     def update_frame(self):
@@ -777,7 +777,7 @@ class MainWindow(QMainWindow):
         dialog = TextPromptsDialog(self)
         if dialog.exec():
             save_settings()
-            self.statusbar.showMessage(f"Text prompts: {settings.text_prompts}")
+            self.statusbar.showMessage(f"Text prompts: {settings.class_names.text_prompts}")
 
     def show_convert_settings(self):
         """顯示轉換設定對話框"""

@@ -1,20 +1,32 @@
-model_path:
-sam3_model_path:
-folder_path:
-file_index: 0
-categories:
-  leo_cat: 0
-  ferret: 1
-  civet: 2
-  cat: 3
-  bicycle: 4
-  bird: 5
-  bus: 6
-  car: 7
-  dog: 8
-  motorbike: 9
-  motor: 9
-  motorcycle: 9
-  person: 10
-  pottedplant: 11
-  truck: 12
+file_system:
+  folder_path:
+  file_index: 0
+
+models:
+  active_model:
+  model_path:
+  sam3_model_path:
+  polygon_tolerance: 0.002
+
+class_names:
+  categories:
+    leo_cat: 0
+    ferret: 1
+    civet: 2
+    cat: 3
+    bicycle: 4
+    bird: 5
+    bus: 6
+    car: 7
+    dog: 8
+    motorbike: 9
+    motor: 9
+    motorcycle: 9
+    person: 10
+    pottedplant: 11
+    truck: 12
+  text_prompts:
+  - person
+  - cat
+  - dog
+  - car

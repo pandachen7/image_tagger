@@ -158,11 +158,11 @@ class FileHandler:
 
         for object_element in root.findall("object"):
             label_name = object_element.find("name").text
-            if label_name not in settings.categories:
+            if label_name not in settings.class_names.categories:
                 log.w(f"Warning: Label '{label_name}' not in categories,")
                 continue  # Skip to the next object if label is not in categories
 
-            category_id = settings.categories.get(label_name)
+            category_id = settings.class_names.categories.get(label_name)
             if category_id is None or not isinstance(category_id, int):
                 log.w(
                     f"Warning: Category ID not found for label '{label_name}', skipping"
@@ -253,11 +253,11 @@ class FileHandler:
 
         for object_element in root.findall("object"):
             label_name = object_element.find("name").text
-            if label_name not in settings.categories:
+            if label_name not in settings.class_names.categories:
                 log.w(f"Warning: Label '{label_name}' not in categories")
                 continue
 
-            category_id = settings.categories.get(label_name)
+            category_id = settings.class_names.categories.get(label_name)
             if category_id is None or not isinstance(category_id, int):
                 log.w(
                     f"Warning: Category ID not found for label '{label_name}', skipping"

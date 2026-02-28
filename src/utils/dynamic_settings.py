@@ -9,17 +9,29 @@ yaml = YAML()
 log = getUniqueLogger(__file__)
 
 
-class Settings(BaseModel):
-    model_path: Optional[str] = None
-    sam3_model_path: Optional[str] = None
+class FileSystemSettings(BaseModel):
     folder_path: Optional[str] = None
     file_index: Optional[int] = 0
+
+
+class ModelsSettings(BaseModel):
+    active_model: Optional[str] = None
+    model_path: Optional[str] = None
+    sam3_model_path: Optional[str] = None
+    polygon_tolerance: Optional[float] = 0.002
+
+
+class ClassNamesSettings(BaseModel):
     categories: Optional[dict] = Field(default_factory=dict)
     text_prompts: Optional[list] = Field(
         default_factory=lambda: ["person", "cat", "dog", "car"]
     )
-    active_model: Optional[str] = None
-    polygon_tolerance: Optional[float] = 0.002
+
+
+class Settings(BaseModel):
+    file_system: FileSystemSettings = Field(default_factory=FileSystemSettings)
+    models: ModelsSettings = Field(default_factory=ModelsSettings)
+    class_names: ClassNamesSettings = Field(default_factory=ClassNamesSettings)
 
 
 def load_settings(file_path="cfg/settings.yaml"):
