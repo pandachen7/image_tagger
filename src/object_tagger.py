@@ -32,6 +32,7 @@ from src.utils.dialogs import (
 )
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
+from src.utils.img_handler import inferencer
 from src.utils.func import getMaskPath, getXmlPath
 from src.utils.global_param import g_param
 from src.utils.loglo import getUniqueLogger
@@ -278,14 +279,14 @@ class MainWindow(QMainWindow):
         self.use_yolo_action = QAction("Use YOLO", self)
         self.use_yolo_action.setCheckable(True)
         self.use_yolo_action.triggered.connect(
-            lambda: self.app_state.set_active_model(ModelType.YOLO)
+            lambda: self._set_model(ModelType.YOLO)
         )
         self.model_action_group.addAction(self.use_yolo_action)
 
         self.use_sam_action = QAction("Use SAM3", self)
         self.use_sam_action.setCheckable(True)
         self.use_sam_action.triggered.connect(
-            lambda: self.app_state.set_active_model(ModelType.SAM3)
+            lambda: self._set_model(ModelType.SAM3)
         )
         self.model_action_group.addAction(self.use_sam_action)
 
@@ -310,12 +311,12 @@ class MainWindow(QMainWindow):
         missing_models = []
         if settings.sam3_model_path:
             if Path(settings.sam3_model_path).is_file():
-                self.app_state.sam_model_path = settings.sam3_model_path
+                inferencer.sam_model_path = settings.sam3_model_path
             else:
                 missing_models.append(f"SAM3: {settings.sam3_model_path}")
         if settings.model_path:
             if Path(settings.model_path).is_file():
-                self.app_state.model_path = settings.model_path
+                inferencer.model_path = settings.model_path
             else:
                 missing_models.append(f"YOLO: {settings.model_path}")
         if missing_models:
@@ -325,16 +326,16 @@ class MainWindow(QMainWindow):
                 "以下模型檔案不存在:\n" + "\n".join(missing_models),
             )
         # Restore last active model from settings, fallback to priority logic
-        if settings.active_model == ModelType.SAM3 and self.app_state.sam_model_path:
-            self.app_state.active_model_type = ModelType.SAM3
-        elif settings.active_model == ModelType.YOLO and self.app_state.model_path:
-            self.app_state.active_model_type = ModelType.YOLO
+        if settings.active_model == ModelType.SAM3 and inferencer.sam_model_path:
+            inferencer.active_model_type = ModelType.SAM3
+        elif settings.active_model == ModelType.YOLO and inferencer.model_path:
+            inferencer.active_model_type = ModelType.YOLO
             self.app_state.auto_detect = True
-        elif self.app_state.model_path:
-            self.app_state.active_model_type = ModelType.YOLO
+        elif inferencer.model_path:
+            inferencer.active_model_type = ModelType.YOLO
             self.app_state.auto_detect = True
-        elif self.app_state.sam_model_path:
-            self.app_state.active_model_type = ModelType.SAM3
+        elif inferencer.sam_model_path:
+            inferencer.active_model_type = ModelType.SAM3
         self.choose_folder(settings.folder_path, settings.file_index)
 
         try:
@@ -361,7 +362,6 @@ class MainWindow(QMainWindow):
         self.app_state.register_callback(
             "auto_detect_changed", self._on_auto_detect_changed
         )
-        self.app_state.register_callback("model_changed", self._on_model_changed)
         self.app_state.register_callback("status_message", self.statusbar.showMessage)
 
         # Set image widget callbacks
@@ -379,9 +379,9 @@ class MainWindow(QMainWindow):
         """Sync UI components with app_state."""
         self.auto_save_action.setChecked(self.app_state.auto_save)
         self.auto_detect_action.setChecked(self.app_state.auto_detect)
-        if self.app_state.active_model_type == ModelType.YOLO:
+        if inferencer.active_model_type == ModelType.YOLO:
             self.use_yolo_action.setChecked(True)
-        elif self.app_state.active_model_type == ModelType.SAM3:
+        elif inferencer.active_model_type == ModelType.SAM3:
             self.use_sam_action.setChecked(True)
 
     def _on_auto_save_changed(self, enabled: bool):
@@ -394,14 +394,16 @@ class MainWindow(QMainWindow):
         if enabled:
             self.image_widget.runInference()
 
-    def _on_model_changed(self):
-        """Callback when active model changes."""
-        if self.app_state.active_model_type == ModelType.YOLO:
+    def _set_model(self, model_type: str, model_path: str = None):
+        """Set active model and sync UI."""
+        inferencer.set_active_model(model_type, model_path)
+        if model_type == ModelType.YOLO:
             self.use_yolo_action.setChecked(True)
-        elif self.app_state.active_model_type == ModelType.SAM3:
+        elif model_type == ModelType.SAM3:
             self.use_sam_action.setChecked(True)
-        settings.active_model = self.app_state.active_model_type
+        settings.active_model = model_type
         save_settings()
+        self.statusbar.showMessage(f"Active model: {model_type}")
 
     def resetStates(self):
         g_param.auto_save_counter = 0
@@ -413,18 +415,16 @@ class MainWindow(QMainWindow):
             self, "Open YOLO Model File", "", "Model Files (*.pt)"
         )
         if model_path:
-            self.app_state.set_active_model(ModelType.YOLO, model_path)
             settings.model_path = model_path
-            self.use_yolo_action.setChecked(True)
+            self._set_model(ModelType.YOLO, model_path)
 
     def select_sam_model(self):
         model_path, _ = QFileDialog.getOpenFileName(
             self, "Open SAM3 Model File", "", "Model Files (*.pt)"
         )
         if model_path:
-            self.app_state.set_active_model(ModelType.SAM3, model_path)
             settings.sam3_model_path = model_path
-            self.use_sam_action.setChecked(True)
+            self._set_model(ModelType.SAM3, model_path)
 
     def cycle_view_mode(self):
         """Cycle view mode: ALL -> BBOX -> SEG -> ALL"""

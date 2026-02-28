@@ -27,6 +27,7 @@ from src.utils.const import (
     VIDEO_EXTS,
 )
 from src.utils.file_handler import file_h
+from src.utils.img_handler import inferencer
 from src.utils.func import getXmlPath
 from src.utils.global_param import g_param
 from src.utils.loglo import getUniqueLogger
@@ -349,11 +350,12 @@ class ImageWidget(QWidget):
 
     def runInference(self):
         """Run inference using the active model (YOLO or SAM3)."""
-        if self.app_state.active_model_type == ModelType.NONE:
+        if inferencer.active_model_type == ModelType.NONE:
             return
         if not file_h.current_image_path():
             return
-        if not self.app_state.ensure_loaded():
+        model_type = inferencer.active_model_type
+        if not inferencer.ensure_loaded(model_type):
             return
 
         self.bboxes = []
@@ -362,11 +364,11 @@ class ImageWidget(QWidget):
         if cfg.show_fps:
             t1 = time.time()
 
-        if self.app_state.active_model_type == ModelType.YOLO:
-            self.bboxes = self.app_state.infer_yolo(self.cv_img)
-        elif self.app_state.active_model_type == ModelType.SAM3:
+        if model_type == ModelType.YOLO:
+            self.bboxes = inferencer.infer_yolo(self.cv_img)
+        elif model_type == ModelType.SAM3:
             src_shape = (self.pixmap.height(), self.pixmap.width())
-            bboxes, polygons = self.app_state.infer_sam3(
+            bboxes, polygons = inferencer.infer_sam3(
                 file_h.current_image_path(), src_shape
             )
             self.bboxes = bboxes

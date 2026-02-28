@@ -4,14 +4,7 @@ This module decouples the ImageWidget from MainWindow by providing
 a centralized state management system.
 """
 
-import time
-from typing import Callable, Optional
-
-from src.utils.dynamic_settings import settings
-from src.utils.loglo import getUniqueLogger
-from src.utils.model import Bbox, ModelType, Polygon
-
-logger = getUniqueLogger(__file__)
+from typing import Callable
 
 
 class AppState:
@@ -21,13 +14,6 @@ class AppState:
         # Auto save/detect flags
         self.auto_save = False
         self.auto_detect = False
-
-        # Unified model management
-        self.active_model_type: str = ModelType.NONE
-        self.model_path: Optional[str] = None
-        self.sam_model_path: Optional[str] = None
-        self._yolo_model = None
-        self._sam_predictor = None
 
         # Labels management
         self.preset_labels: dict[str, str] = {}
@@ -42,8 +28,6 @@ class AppState:
         self._callbacks: dict[str, list[Callable]] = {
             "auto_save_changed": [],
             "auto_detect_changed": [],
-            "model_changed": [],
-            "inference_completed": [],
             "status_message": [],
         }
 
@@ -74,99 +58,6 @@ class AppState:
             "status_message", f"Auto detect: {'on' if self.auto_detect else 'off'}"
         )
 
-    def set_active_model(self, model_type: str, model_path: str = None):
-        """Set the active model type and optionally its path."""
-        self.active_model_type = model_type
-        if model_path:
-            if model_type == ModelType.YOLO:
-                self.model_path = model_path
-            elif model_type == ModelType.SAM3:
-                self.sam_model_path = model_path
-        self._trigger_callback("model_changed")
-        self._trigger_callback("status_message", f"Active model: {model_type}")
-
-    def ensure_loaded(self) -> bool:
-        """Lazy-load the active model. Returns True if ready."""
-        if self.active_model_type == ModelType.YOLO:
-            if self._yolo_model is None and self.model_path:
-                from ultralytics import YOLO
-
-                self._yolo_model = YOLO(self.model_path)
-            return self._yolo_model is not None
-        elif self.active_model_type == ModelType.SAM3:
-            if self._sam_predictor is None and self.sam_model_path:
-                from ultralytics.models.sam import SAM3SemanticPredictor
-
-                overrides = dict(
-                    conf=0.25,  # sam3沒有設定conf的意義
-                    imgsz=630,  # 設愈高, VRAM容易不夠, 建議14倍數的630
-                    task="segment",
-                    mode="predict",
-                    model=self.sam_model_path,
-                    half=True,
-                    verbose=False,
-                )
-                self._sam_predictor = SAM3SemanticPredictor(overrides=overrides)
-            return self._sam_predictor is not None
-        return False
-
-    def infer_yolo(self, cv_img) -> list:
-        """YOLO inference. Returns list of Bbox."""
-        results = self._yolo_model.predict(cv_img, verbose=False)
-        bboxes = []
-        for result in results:
-            if result.boxes is not None:
-                for box in result.boxes:
-                    b = box.xyxy[0]
-                    label = self._yolo_model.names[int(box.cls)]
-                    bboxes.append(
-                        Bbox(
-                            int(b[0]),
-                            int(b[1]),
-                            int(b[2] - b[0]),
-                            int(b[3] - b[1]),
-                            label,
-                            float(box.conf),
-                        )
-                    )
-        return bboxes
-
-    def infer_sam3(self, image_path, src_shape) -> tuple[list, list]:
-        """SAM3 inference. Returns (list of Bbox, list of Polygon)."""
-        import cv2
-        import numpy as np
-
-        predictor = self._sam_predictor
-        predictor.set_image(image_path)
-        labels = list(set(settings.text_prompts or []))
-        bboxes, polygons = [], []
-        t1 = time.time()
-        masks, boxes = predictor.inference_features(
-            predictor.features, src_shape=src_shape, text=labels
-        )
-        if masks is not None:
-            masks_np = masks.cpu().numpy()
-            for i, mask in enumerate(masks_np):
-                label = labels[i] if i < len(labels) else labels[-1]
-                mask_uint8 = (mask * 255).astype(np.uint8)
-                contours, _ = cv2.findContours(
-                    mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-                )
-                if contours:
-                    largest = max(contours, key=cv2.contourArea)
-                    points = [(float(pt[0][0]), float(pt[0][1])) for pt in largest]
-                    if len(points) >= 3:
-                        polygons.append(Polygon(points, label, -1.0))
-        if boxes is not None:
-            boxes_np = boxes.cpu().numpy()
-            for i, box in enumerate(boxes_np):
-                label = labels[i] if i < len(labels) else labels[-1]
-                x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
-                if (x2 - x1) > 0 and (y2 - y1) > 0:
-                    bboxes.append(Bbox(x1, y1, x2 - x1, y2 - y1, label, -1.0))
-        logger.d(f"SAM3 inference time: {time.time() - t1}")
-        return bboxes, polygons
-
     def set_last_used_label(self, label: str):
         """Set the last used label."""
         self.last_used_label = label.strip()
@@ -175,10 +66,3 @@ class AppState:
         """Get a label by its key from preset labels."""
         return self.preset_labels.get(key, self.last_used_label)
 
-    def is_model_loaded(self) -> bool:
-        """Check if the active model is loaded."""
-        if self.active_model_type == ModelType.YOLO:
-            return self._yolo_model is not None
-        elif self.active_model_type == ModelType.SAM3:
-            return self._sam_predictor is not None
-        return False
