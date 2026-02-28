@@ -7,6 +7,7 @@ a centralized state management system.
 import time
 from typing import Callable, Optional
 
+from src.utils.dynamic_settings import settings
 from src.utils.loglo import getUniqueLogger
 from src.utils.model import Bbox, ModelType, Polygon
 
@@ -98,7 +99,7 @@ class AppState:
 
                 overrides = dict(
                     conf=0.25,  # sam3沒有設定conf的意義
-                    imgsz=1036,  # 設愈高, VRAM容易不夠
+                    imgsz=630,  # 設愈高, VRAM容易不夠, 建議14倍數的630
                     task="segment",
                     mode="predict",
                     model=self.sam_model_path,
@@ -136,34 +137,33 @@ class AppState:
         import numpy as np
 
         predictor = self._sam_predictor
-        from src.utils.dynamic_settings import settings
-
         predictor.set_image(image_path)
         labels = list(set(settings.text_prompts or []))
         bboxes, polygons = [], []
         t1 = time.time()
-        for label in labels:
-            masks, boxes = predictor.inference_features(
-                predictor.features, src_shape=src_shape, text=[label]
-            )
-            if masks is not None:
-                masks_np = masks.cpu().numpy()
-                for mask in masks_np:
-                    mask_uint8 = (mask * 255).astype(np.uint8)
-                    contours, _ = cv2.findContours(
-                        mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-                    )
-                    if contours:
-                        largest = max(contours, key=cv2.contourArea)
-                        points = [(float(pt[0][0]), float(pt[0][1])) for pt in largest]
-                        if len(points) >= 3:
-                            polygons.append(Polygon(points, label, -1.0))
-            if boxes is not None:
-                boxes_np = boxes.cpu().numpy()
-                for box in boxes_np:
-                    x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
-                    if (x2 - x1) > 0 and (y2 - y1) > 0:
-                        bboxes.append(Bbox(x1, y1, x2 - x1, y2 - y1, label, -1.0))
+        masks, boxes = predictor.inference_features(
+            predictor.features, src_shape=src_shape, text=labels
+        )
+        if masks is not None:
+            masks_np = masks.cpu().numpy()
+            for i, mask in enumerate(masks_np):
+                label = labels[i] if i < len(labels) else labels[-1]
+                mask_uint8 = (mask * 255).astype(np.uint8)
+                contours, _ = cv2.findContours(
+                    mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                )
+                if contours:
+                    largest = max(contours, key=cv2.contourArea)
+                    points = [(float(pt[0][0]), float(pt[0][1])) for pt in largest]
+                    if len(points) >= 3:
+                        polygons.append(Polygon(points, label, -1.0))
+        if boxes is not None:
+            boxes_np = boxes.cpu().numpy()
+            for i, box in enumerate(boxes_np):
+                label = labels[i] if i < len(labels) else labels[-1]
+                x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
+                if (x2 - x1) > 0 and (y2 - y1) > 0:
+                    bboxes.append(Bbox(x1, y1, x2 - x1, y2 - y1, label, -1.0))
         logger.d(f"SAM3 inference time: {time.time() - t1}")
         return bboxes, polygons
 
