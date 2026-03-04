@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from ruamel.yaml import YAML
 
-from src.utils.loglo import getUniqueLogger
+from src.utils.logger import getUniqueLogger
 
 yaml = YAML()
 log = getUniqueLogger(__file__)

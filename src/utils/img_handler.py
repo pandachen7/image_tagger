@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 from src.utils.dynamic_settings import settings
-from src.utils.loglo import getUniqueLogger
+from src.utils.logger import getUniqueLogger
 from src.utils.model import Bbox, ModelType, Polygon
 
 log = getUniqueLogger(__file__)

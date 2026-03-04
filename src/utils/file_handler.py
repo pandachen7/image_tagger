@@ -9,7 +9,7 @@ import cv2
 from src.core import AppState
 from src.utils.const import ALL_EXTS
 from src.utils.dynamic_settings import settings
-from src.utils.loglo import getUniqueLogger
+from src.utils.logger import getUniqueLogger
 from src.utils.model import Bbox, Polygon, ShowImageCmd
 
 log = getUniqueLogger(__file__)

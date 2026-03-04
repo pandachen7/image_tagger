@@ -36,7 +36,7 @@ from src.utils.file_handler import file_h
 from src.utils.img_handler import inferencer
 from src.utils.func import getMaskPath, getXmlPath
 from src.utils.global_param import g_param
-from src.utils.loglo import getUniqueLogger
+from src.utils.logger import getUniqueLogger
 from src.utils.model import FileType, ModelType, PlayState, ShowImageCmd, ViewMode
 
 log = getUniqueLogger(__file__)
