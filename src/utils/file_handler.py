@@ -170,6 +170,9 @@ class FileHandler:
                 continue
 
             bndbox_element = object_element.find("bndbox")
+            if bndbox_element is None:
+                log.w(f"Warning: No bndbox element for '{label_name}' in {xml_path}, skipping")
+                continue
             xmin = int(bndbox_element.find("xmin").text)
             ymin = int(bndbox_element.find("ymin").text)
             xmax = int(bndbox_element.find("xmax").text)
