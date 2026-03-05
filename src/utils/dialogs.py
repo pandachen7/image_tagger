@@ -1,5 +1,4 @@
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
     QDoubleSpinBox,
@@ -231,28 +230,23 @@ class ConvertSettingsDialog(QDialog):
         yolo_group = QGroupBox("YOLO 選項 (YOLO Options)")
         yolo_layout = QVBoxLayout()
 
-        # OBB 格式選項
-        self.obb_checkbox = QCheckBox(
-            "使用 OBB 格式 (Use OBB format for rotated bounding boxes)"
+        # 輸出模式選擇
+        mode_layout = QFormLayout()
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem(
+            "BBox - 標準邊界框 (class_id cx cy w h)", "bbox"
         )
-        self.obb_checkbox.setToolTip(
-            "啟用後，將輸出旋轉邊界框的四個角點座標\n"
-            "格式: class_id x1 y1 x2 y2 x3 y3 x4 y4 (左上右上右下左下)\n"
-            "適用於 YOLOv8 OBB 訓練"
+        self.mode_combo.addItem(
+            "Segmentation - 多邊形分割 (class_id x1 y1 ... xN yN)", "seg"
         )
+        self.mode_combo.addItem(
+            "OBB - 旋轉邊界框 (class_id x1 y1 x2 y2 x3 y3 x4 y4)", "obb"
+        )
+        # Disable OBB option
+        self.mode_combo.model().item(2).setEnabled(False)
 
-        # Segmentation 格式選項
-        self.seg_checkbox = QCheckBox(
-            "使用 Segmentation 格式 (Use Segmentation format for polygon masks)"
-        )
-        self.seg_checkbox.setToolTip(
-            "啟用後，將輸出多邊形分割座標\n"
-            "格式: class_id x1 y1 x2 y2 ... xN yN (歸一化座標)\n"
-            "適用於 YOLO Segmentation 訓練"
-        )
-
-        yolo_layout.addWidget(self.obb_checkbox)
-        yolo_layout.addWidget(self.seg_checkbox)
+        mode_layout.addRow(QLabel("輸出模式 (Output Mode):"), self.mode_combo)
+        yolo_layout.addLayout(mode_layout)
         yolo_group.setLayout(yolo_layout)
         main_layout.addWidget(yolo_group)
 
@@ -279,16 +273,14 @@ class ConvertSettingsDialog(QDialog):
             if index >= 0:
                 self.format_combo.setCurrentIndex(index)
 
-            # 設定 OBB 選項
-            self.obb_checkbox.setChecked(self.app_state.yolo_obb_format)
-
-            # 設定 Segmentation 選項
-            self.seg_checkbox.setChecked(self.app_state.yolo_seg_format)
+            # 設定輸出模式
+            index = self.mode_combo.findData(self.app_state.yolo_output_mode)
+            if index >= 0:
+                self.mode_combo.setCurrentIndex(index)
 
     def save_settings(self):
         """儲存設定到 app_state"""
         if self.app_state:
             self.app_state.convert_format = self.format_combo.currentData()
-            self.app_state.yolo_obb_format = self.obb_checkbox.isChecked()
-            self.app_state.yolo_seg_format = self.seg_checkbox.isChecked()
+            self.app_state.yolo_output_mode = self.mode_combo.currentData()
         self.accept()

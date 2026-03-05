@@ -21,8 +21,7 @@ class AppState:
 
         # Convert settings
         self.convert_format = "yolo"
-        self.yolo_obb_format = False
-        self.yolo_seg_format = False
+        self.yolo_output_mode = "bbox"  # "bbox", "seg", "obb"
 
         # Callbacks for UI updates
         self._callbacks: dict[str, list[Callable]] = {

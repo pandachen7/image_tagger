@@ -129,15 +129,15 @@ class FileHandler:
         if output_folder is None:
             output_folder = folder_path  # 預設輸出到同一個資料夾
 
-        use_seg = app_state.yolo_seg_format if app_state else False
+        output_mode = app_state.yolo_output_mode if app_state else "bbox"
         ct = 0
         for xml_file in Path(folder_path).glob("*.xml"):
-            if use_seg:
+            if output_mode == "seg":
                 self.convert_voc_xml_to_yolo_seg_txt(xml_file, output_folder, app_state)
             else:
                 self.convert_voc_xml_to_yolo_txt(xml_file, output_folder, app_state)
             ct += 1
-        log.i(f"converted {ct} xml files (seg={use_seg})")
+        log.i(f"converted {ct} xml files (mode={output_mode})")
 
     def convert_voc_xml_to_yolo_txt(self, xml_path, output_folder, app_state=None):
         """
@@ -183,8 +183,8 @@ class FileHandler:
             angle = float(angle_element.text) if angle_element is not None else 0.0
 
             # 判斷是否使用 OBB 格式
-            use_obb = app_state.yolo_obb_format if app_state else False
-            if use_obb and angle != 0:
+            output_mode = app_state.yolo_output_mode if app_state else "bbox"
+            if output_mode == "obb" and angle != 0:
                 # OBB 格式：輸出四個角點的歸一化座標
                 # 計算 bbox 的中心點和寬高
                 bbox_width = xmax - xmin
