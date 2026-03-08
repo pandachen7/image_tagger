@@ -10,7 +10,9 @@
       "Bash(cd /d/ws/image_tagger && python -c \"import sys; print\\(sys.executable\\)\" 2>&1)",
       "Bash(echo OK:*)",
       "mcp__ide__getDiagnostics",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(python:*)"
     ]
   }
 }

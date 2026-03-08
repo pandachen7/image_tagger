@@ -1,3 +1,5 @@
+# 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
+# 更新日期: 2026-03-08
 import shutil
 import sys
 from pathlib import Path
@@ -139,9 +141,18 @@ class MainWindow(QMainWindow):
         self.drawing_mode_group = QActionGroup(self)
         self.drawing_mode_group.setExclusive(True)
 
+        # 選取模式（預設）
+        self.select_mode_action = QAction("Select", self)
+        self.select_mode_action.setCheckable(True)
+        self.select_mode_action.setChecked(True)
+        self.select_mode_action.triggered.connect(
+            lambda: self.image_widget.set_drawing_mode(DrawingMode.SELECT)
+        )
+        self.drawing_toolbar.addAction(self.select_mode_action)
+        self.drawing_mode_group.addAction(self.select_mode_action)
+
         self.bbox_mode_action = QAction("BBox", self)
         self.bbox_mode_action.setCheckable(True)
-        self.bbox_mode_action.setChecked(True)
         self.bbox_mode_action.triggered.connect(
             lambda: self.image_widget.set_drawing_mode(DrawingMode.BBOX)
         )
@@ -653,28 +664,48 @@ class MainWindow(QMainWindow):
         if self.play_state == PlayState.PLAY:
             self.timer.start(self.refresh_interval)  # 重新啟動定時器
 
-    def updateFocusOrLastBbox(self):
-        """
-        更新focus或最後使用的標籤
-        """
+    def updateFocusedAnnotation(self):
+        """更新選取中的bbox或polygon的標籤名稱"""
+        iw = self.image_widget
+        label = self.app_state.last_used_label
+
+        # 優先處理SELECT模式下的選取物件
+        if iw.select_type == "polygon" and 0 <= iw.idx_focus_polygon < len(iw.polygons):
+            iw.polygons[iw.idx_focus_polygon].label = label
+            iw.update()
+            return
+        if iw.select_type == "bbox" and 0 <= iw.idx_focus_bbox < len(iw.bboxes):
+            iw.bboxes[iw.idx_focus_bbox].label = label
+            iw.update()
+            return
+
+        # 非SELECT模式：更新focus的bbox或最後一個
         idx = (
-            self.image_widget.idx_focus_bbox
-            if self.image_widget.idx_focus_bbox >= 0
-            and self.image_widget.idx_focus_bbox < len(self.image_widget.bboxes)
+            iw.idx_focus_bbox
+            if 0 <= iw.idx_focus_bbox < len(iw.bboxes)
             else -1
         )
-        if self.image_widget.bboxes:
-            self.image_widget.bboxes[idx].label = self.app_state.last_used_label
-            self.image_widget.update()
+        if iw.bboxes:
+            iw.bboxes[idx].label = label
+            iw.update()
 
     def promptInputLabel(self):
-        # 彈出輸入框，讓使用者輸入標籤
+        """彈出輸入框，讓使用者輸入標籤名稱"""
+        iw = self.image_widget
+        current_label = self.app_state.last_used_label
+
+        # 取得目前選取物件的label作為預設值
+        if iw.select_type == "polygon" and 0 <= iw.idx_focus_polygon < len(iw.polygons):
+            current_label = iw.polygons[iw.idx_focus_polygon].label
+        elif iw.select_type == "bbox" and 0 <= iw.idx_focus_bbox < len(iw.bboxes):
+            current_label = iw.bboxes[iw.idx_focus_bbox].label
+
         label, ok = QInputDialog.getText(
-            self, "Input", "Enter label name:", text=self.app_state.last_used_label
+            self, "Input", "Enter label name:", text=current_label
         )
         if ok and label.strip():
             self.app_state.set_last_used_label(label)
-            self.updateFocusOrLastBbox()
+            self.updateFocusedAnnotation()
 
     def deletePairOfImgXml(self):
         """
@@ -715,6 +746,11 @@ class MainWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_D:
             self.app_state.toggle_auto_detect()
         elif event.key() == Qt.Key.Key_Delete:
+            # SELECT模式下先嘗試刪除選取的標註
+            if self.image_widget.drawing_mode == DrawingMode.SELECT:
+                if self.image_widget.deleteSelectedAnnotation():
+                    self.statusbar.showMessage("已刪除選取的標註")
+                    return
             self.deletePairOfImgXml()
         elif event.key() == Qt.Key.Key_Space:
             self.toggle_play_pause()
@@ -744,7 +780,7 @@ class MainWindow(QMainWindow):
             self.app_state.last_used_label = self.app_state.get_label_by_key(
                 str(key_val)
             )
-            self.updateFocusOrLastBbox()
+            self.updateFocusedAnnotation()
             self.statusBar().showMessage(f"labels: {self.app_state.preset_labels}")
 
     def closeEvent(self, event):
