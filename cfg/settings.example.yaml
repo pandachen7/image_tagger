@@ -7,6 +7,7 @@ models:
   model_path:
   sam3_model_path:
   polygon_tolerance: 0.002
+  sam3_label_mode: seg  # "seg", "bbox", "all"
 
 class_names:
   categories:

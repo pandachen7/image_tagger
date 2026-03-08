@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 
 from src.config import cfg
 from src.core import AppState
+from src.utils.dynamic_settings import settings
 from src.utils.const import (
     CORNER_SIZE,
     POLYGON_CLOSE_THRESHOLD,
@@ -416,8 +417,15 @@ class ImageWidget(QWidget):
             bboxes, polygons = inferencer.infer_sam3(
                 file_h.current_image_path(), src_shape
             )
-            self.bboxes = bboxes
-            self.polygons = polygons
+            # 根據 sam3_label_mode 過濾結果
+            mode = settings.models.sam3_label_mode or "seg"
+            if mode == "seg":
+                self.polygons = polygons
+            elif mode == "bbox":
+                self.bboxes = bboxes
+            else:  # "all"
+                self.bboxes = bboxes
+                self.polygons = polygons
 
         if cfg.show_fps:
             self.list_fps.append(1 / (time.time() - t1))

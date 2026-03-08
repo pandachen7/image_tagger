@@ -19,6 +19,7 @@ class ModelsSettings(BaseModel):
     model_path: Optional[str] = None
     sam3_model_path: Optional[str] = None
     polygon_tolerance: Optional[float] = 0.002
+    sam3_label_mode: Optional[str] = "seg"  # "seg", "bbox", "all"
 
 
 class ClassNamesSettings(BaseModel):
