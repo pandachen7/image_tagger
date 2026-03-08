@@ -5,3 +5,4 @@ ultralytics
 ruamel.yaml
 python-dotenv
 pydantic
+orjson
