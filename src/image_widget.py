@@ -633,43 +633,44 @@ class ImageWidget(QWidget):
                     text,
                 )
 
-        # 繪製選中 bbox 的旋轉控制點
+        # 繪製選中 bbox 的控制點
         if _bboxes_to_draw and self.idx_focus_bbox != -1 and 0 <= self.idx_focus_bbox < len(self.bboxes):
             focused_bbox = self.bboxes[self.idx_focus_bbox]
 
-            # 計算中心點和旋轉控制點位置
-            center_x = focused_bbox.x + focused_bbox.width / 2
-            center_y = focused_bbox.y + focused_bbox.height / 2
-            center_widget = self._scale_to_widget(QPoint(int(center_x), int(center_y)))
+            # OBB啟用時繪製旋轉控制點
+            if cfg.enable_obb:
+                center_x = focused_bbox.x + focused_bbox.width / 2
+                center_y = focused_bbox.y + focused_bbox.height / 2
+                center_widget = self._scale_to_widget(QPoint(int(center_x), int(center_y)))
 
-            handle_pos_original = self._getRotationHandlePos(focused_bbox)
-            handle_pos_widget = self._scale_to_widget(handle_pos_original)
+                handle_pos_original = self._getRotationHandlePos(focused_bbox)
+                handle_pos_widget = self._scale_to_widget(handle_pos_original)
 
-            # 繪製虛線（從 bbox 上邊中點到旋轉控制點）
-            angle_rad = math.radians(focused_bbox.angle)
-            top_center_offset_x = 0
-            top_center_offset_y = -focused_bbox.height / 2
-            rotated_top_x = top_center_offset_x * math.cos(
-                angle_rad
-            ) - top_center_offset_y * math.sin(angle_rad)
-            rotated_top_y = top_center_offset_x * math.sin(
-                angle_rad
-            ) + top_center_offset_y * math.cos(angle_rad)
-            top_center_original = QPoint(
-                int(center_x + rotated_top_x), int(center_y + rotated_top_y)
-            )
-            top_center_widget = self._scale_to_widget(top_center_original)
+                # 繪製虛線（從 bbox 上邊中點到旋轉控制點）
+                angle_rad = math.radians(focused_bbox.angle)
+                top_center_offset_x = 0
+                top_center_offset_y = -focused_bbox.height / 2
+                rotated_top_x = top_center_offset_x * math.cos(
+                    angle_rad
+                ) - top_center_offset_y * math.sin(angle_rad)
+                rotated_top_y = top_center_offset_x * math.sin(
+                    angle_rad
+                ) + top_center_offset_y * math.cos(angle_rad)
+                top_center_original = QPoint(
+                    int(center_x + rotated_top_x), int(center_y + rotated_top_y)
+                )
+                top_center_widget = self._scale_to_widget(top_center_original)
 
-            dashed_pen = QPen(QColor(255, 255, 0), 1, Qt.PenStyle.DashLine)
-            painter.setPen(dashed_pen)
-            painter.drawLine(top_center_widget, handle_pos_widget)
+                dashed_pen = QPen(QColor(255, 255, 0), 1, Qt.PenStyle.DashLine)
+                painter.setPen(dashed_pen)
+                painter.drawLine(top_center_widget, handle_pos_widget)
 
-            # 繪製旋轉控制點圓圈
-            painter.setPen(QPen(QColor(255, 255, 0), 2))
-            painter.setBrush(QColor(255, 255, 255, 200))
-            painter.drawEllipse(
-                handle_pos_widget, ROTATION_HANDLE_RADIUS, ROTATION_HANDLE_RADIUS
-            )
+                # 繪製旋轉控制點圓圈
+                painter.setPen(QPen(QColor(255, 255, 0), 2))
+                painter.setBrush(QColor(255, 255, 255, 200))
+                painter.drawEllipse(
+                    handle_pos_widget, ROTATION_HANDLE_RADIUS, ROTATION_HANDLE_RADIUS
+                )
 
             # SELECT模式下繪製角落拖曳方塊
             if self.drawing_mode == DrawingMode.SELECT:
@@ -916,7 +917,7 @@ class ImageWidget(QWidget):
                 # 若已選取bbox，檢查旋轉控制點與角落
                 if self.select_type == "bbox" and 0 <= self.idx_focus_bbox < len(self.bboxes):
                     bbox = self.bboxes[self.idx_focus_bbox]
-                    if self._isOnRotationHandle(pos, bbox):
+                    if cfg.enable_obb and self._isOnRotationHandle(pos, bbox):
                         self.selected_bbox = bbox
                         self.selected_bbox.color_pen = ColorPen.YELLOW
                         self.rotating = True
@@ -1015,8 +1016,8 @@ class ImageWidget(QWidget):
                 self.fill_mask(event.pos())
             elif self.drawing_mode == DrawingMode.BBOX:
                 for idx_focus, bbox in enumerate(self.bboxes):
-                    # 先檢查旋轉控制點
-                    if self._isOnRotationHandle(event.pos(), bbox):
+                    # OBB啟用時才檢查旋轉控制點
+                    if cfg.enable_obb and self._isOnRotationHandle(event.pos(), bbox):
                         self.selected_bbox = bbox
                         self.selected_bbox.color_pen = ColorPen.YELLOW
                         self.idx_focus_bbox = idx_focus
@@ -1137,8 +1138,8 @@ class ImageWidget(QWidget):
         cursor_changed = False
         if not self.resizing and not self.drawing and not self.rotating:
             for bbox in self.bboxes:
-                # 檢查旋轉控制點
-                if self._isOnRotationHandle(event.pos(), bbox):
+                # OBB啟用時才檢查旋轉控制點
+                if cfg.enable_obb and self._isOnRotationHandle(event.pos(), bbox):
                     self.setCursor(Qt.CursorShape.CrossCursor)
                     cursor_changed = True
                     break

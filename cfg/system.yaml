@@ -29,3 +29,6 @@ save_folder: ./output
 
 # 是否啟用 Draw / Erase / Fill 遮罩工具
 enable_mask_tools: false
+
+# 是否啟用旋轉 (OBB) 功能
+enable_obb: false
