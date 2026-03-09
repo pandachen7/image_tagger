@@ -26,3 +26,6 @@ show_fps: false
 
 # save img and labels to this folder (relative path of original img)
 save_folder: ./output
+
+# 是否啟用 Draw / Erase / Fill 遮罩工具
+enable_mask_tools: false

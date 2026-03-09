@@ -159,29 +159,32 @@ class MainWindow(QMainWindow):
         self.drawing_toolbar.addAction(self.bbox_mode_action)
         self.drawing_mode_group.addAction(self.bbox_mode_action)
 
+        # Mask 工具 (Draw / Erase / Fill)，由 cfg.enable_mask_tools 控制
         self.draw_mode_action = QAction("Draw", self)
         self.draw_mode_action.setCheckable(True)
         self.draw_mode_action.triggered.connect(
             lambda: self.image_widget.set_drawing_mode(DrawingMode.MASK_DRAW)
         )
-        self.drawing_toolbar.addAction(self.draw_mode_action)
-        self.drawing_mode_group.addAction(self.draw_mode_action)
 
         self.erase_mode_action = QAction("Erase", self)
         self.erase_mode_action.setCheckable(True)
         self.erase_mode_action.triggered.connect(
             lambda: self.image_widget.set_drawing_mode(DrawingMode.MASK_ERASE)
         )
-        self.drawing_toolbar.addAction(self.erase_mode_action)
-        self.drawing_mode_group.addAction(self.erase_mode_action)
 
         self.fill_mode_action = QAction("Fill", self)
         self.fill_mode_action.setCheckable(True)
         self.fill_mode_action.triggered.connect(
             lambda: self.image_widget.set_drawing_mode(DrawingMode.MASK_FILL)
         )
-        self.drawing_toolbar.addAction(self.fill_mode_action)
-        self.drawing_mode_group.addAction(self.fill_mode_action)
+
+        if cfg.enable_mask_tools:
+            self.drawing_toolbar.addAction(self.draw_mode_action)
+            self.drawing_mode_group.addAction(self.draw_mode_action)
+            self.drawing_toolbar.addAction(self.erase_mode_action)
+            self.drawing_mode_group.addAction(self.erase_mode_action)
+            self.drawing_toolbar.addAction(self.fill_mode_action)
+            self.drawing_mode_group.addAction(self.fill_mode_action)
 
         self.polygon_mode_action = QAction("Polygon", self)
         self.polygon_mode_action.setCheckable(True)
@@ -191,15 +194,15 @@ class MainWindow(QMainWindow):
         self.drawing_toolbar.addAction(self.polygon_mode_action)
         self.drawing_mode_group.addAction(self.polygon_mode_action)
 
-        self.drawing_toolbar.addSeparator()
-
-        self.brush_size_slider = QSlider(Qt.Orientation.Vertical)
-        self.brush_size_slider.setRange(1, 100)
-        self.brush_size_slider.setValue(20)
-        self.brush_size_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.brush_size_slider.valueChanged.connect(self.image_widget.set_brush_size)
-        self.drawing_toolbar.addWidget(QLabel("Brush Size"))
-        self.drawing_toolbar.addWidget(self.brush_size_slider)
+        if cfg.enable_mask_tools:
+            self.drawing_toolbar.addSeparator()
+            self.brush_size_slider = QSlider(Qt.Orientation.Vertical)
+            self.brush_size_slider.setRange(1, 100)
+            self.brush_size_slider.setValue(20)
+            self.brush_size_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.brush_size_slider.valueChanged.connect(self.image_widget.set_brush_size)
+            self.drawing_toolbar.addWidget(QLabel("Brush Size"))
+            self.drawing_toolbar.addWidget(self.brush_size_slider)
         # ^Drawing Mode Toolbar
 
         # 退出

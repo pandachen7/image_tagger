@@ -12,6 +12,7 @@ class Config(BaseModel):
     auto_save_per_second: float = -1
     show_fps: bool = False
     save_folder: str = "./output"
+    enable_mask_tools: bool = False  # 是否啟用 Draw / Erase / Fill 功能
 
 
 def load_config(yaml_file: str = "cfg/system.yaml") -> Config:
