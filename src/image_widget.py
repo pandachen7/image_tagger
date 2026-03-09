@@ -326,24 +326,26 @@ class ImageWidget(QWidget):
         self.selected_bbox_indices = set()
         self.selected_polygon_indices = set()
 
-        # 檢查bbox是否與框選範圍相交
-        for i, bbox in enumerate(self.bboxes):
-            bbox_rect = QRect(
-                self._scale_to_widget(QPoint(bbox.x, bbox.y)),
-                self._scale_to_widget(
-                    QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
-                ),
-            )
-            if sel_rect.intersects(bbox_rect):
-                self.selected_bbox_indices.add(i)
+        # 檢查bbox是否與框選範圍相交（僅在view_mode可見時）
+        if self.view_mode in (ViewMode.BBOX, ViewMode.ALL):
+            for i, bbox in enumerate(self.bboxes):
+                bbox_rect = QRect(
+                    self._scale_to_widget(QPoint(bbox.x, bbox.y)),
+                    self._scale_to_widget(
+                        QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
+                    ),
+                )
+                if sel_rect.intersects(bbox_rect):
+                    self.selected_bbox_indices.add(i)
 
-        # 檢查polygon頂點是否在框選範圍內
-        for i, polygon in enumerate(self.polygons):
-            for px, py in polygon.points:
-                wpt = self._scale_to_widget(QPoint(int(px), int(py)))
-                if sel_rect.contains(wpt):
-                    self.selected_polygon_indices.add(i)
-                    break
+        # 檢查polygon頂點是否在框選範圍內（僅在view_mode可見時）
+        if self.view_mode in (ViewMode.SEG, ViewMode.ALL):
+            for i, polygon in enumerate(self.polygons):
+                for px, py in polygon.points:
+                    wpt = self._scale_to_widget(QPoint(int(px), int(py)))
+                    if sel_rect.contains(wpt):
+                        self.selected_polygon_indices.add(i)
+                        break
 
         if self.selected_bbox_indices or self.selected_polygon_indices:
             self.select_type = "multi"
@@ -1026,19 +1028,24 @@ class ImageWidget(QWidget):
             if self.drawing_mode == DrawingMode.SELECT:
                 pos = event.pos()
 
+                # 根據view_mode決定哪些標籤類型可被選取
+                can_select_bbox = self.view_mode in (ViewMode.BBOX, ViewMode.ALL)
+                can_select_polygon = self.view_mode in (ViewMode.SEG, ViewMode.ALL)
+
                 # 1. 檢查所有polygon的頂點（直接拖曳，不需先選取）
-                for idx, poly in enumerate(self.polygons):
-                    vtx_idx = self._isNearPolygonVertex(pos, poly)
-                    if vtx_idx >= 0:
-                        self.idx_focus_polygon = idx
-                        self.idx_focus_bbox = -1
-                        self.select_type = "polygon"
-                        self.dragging_vertex_idx = vtx_idx
-                        self.update()
-                        return
+                if can_select_polygon:
+                    for idx, poly in enumerate(self.polygons):
+                        vtx_idx = self._isNearPolygonVertex(pos, poly)
+                        if vtx_idx >= 0:
+                            self.idx_focus_polygon = idx
+                            self.idx_focus_bbox = -1
+                            self.select_type = "polygon"
+                            self.dragging_vertex_idx = vtx_idx
+                            self.update()
+                            return
 
                 # 2. 檢查所有bbox的旋轉控制點與角落（直接操作，不需先選取）
-                for idx, bbox in enumerate(self.bboxes):
+                for idx, bbox in enumerate(self.bboxes) if can_select_bbox else []:
                     if cfg.enable_obb and self._isOnRotationHandle(pos, bbox):
                         self.idx_focus_bbox = idx
                         self.idx_focus_polygon = -1
@@ -1081,22 +1088,24 @@ class ImageWidget(QWidget):
                         return
 
                 # 3. 嘗試選取bbox（點擊內部）
-                for idx, bbox in enumerate(self.bboxes):
-                    if self._isInBboxArea(pos, bbox):
-                        self.idx_focus_bbox = idx
-                        self.idx_focus_polygon = -1
-                        self.select_type = "bbox"
-                        self.update()
-                        return
+                if can_select_bbox:
+                    for idx, bbox in enumerate(self.bboxes):
+                        if self._isInBboxArea(pos, bbox):
+                            self.idx_focus_bbox = idx
+                            self.idx_focus_polygon = -1
+                            self.select_type = "bbox"
+                            self.update()
+                            return
 
                 # 4. 嘗試選取polygon（含邊緣padding範圍）
-                for idx, polygon in enumerate(self.polygons):
-                    if self._isPointInPolygon(pos, polygon):
-                        self.idx_focus_polygon = idx
-                        self.idx_focus_bbox = -1
-                        self.select_type = "polygon"
-                        self.update()
-                        return
+                if can_select_polygon:
+                    for idx, polygon in enumerate(self.polygons):
+                        if self._isPointInPolygon(pos, polygon):
+                            self.idx_focus_polygon = idx
+                            self.idx_focus_bbox = -1
+                            self.select_type = "polygon"
+                            self.update()
+                            return
 
                 # 5. 沒有點到任何物件，開始框選（或取消選取）
                 self.idx_focus_bbox = -1
@@ -1236,7 +1245,7 @@ class ImageWidget(QWidget):
         # SELECT模式: 滑鼠hover時顯示對應cursor
         if self.drawing_mode == DrawingMode.SELECT:
             cursor_changed = False
-            if not self.resizing and not self.rotating:
+            if not self.resizing and not self.rotating and self.view_mode in (ViewMode.BBOX, ViewMode.ALL):
                 for bbox in self.bboxes:
                     if cfg.enable_obb and self._isOnRotationHandle(event.pos(), bbox):
                         self.setCursor(Qt.CursorShape.CrossCursor)
