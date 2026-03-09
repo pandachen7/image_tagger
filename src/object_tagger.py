@@ -775,7 +775,8 @@ class MainWindow(QMainWindow):
                 if self.image_widget.deleteSelectedAnnotation():
                     self.statusbar.showMessage("已刪除選取的標註")
                     return
-            self.deletePairOfImgXml()
+            # 不要刪除img和xml
+            # self.deletePairOfImgXml()
         elif event.key() == Qt.Key.Key_Space:
             self.toggle_play_pause()
         elif event.key() == Qt.Key.Key_L:
