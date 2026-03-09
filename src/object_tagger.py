@@ -668,11 +668,22 @@ class MainWindow(QMainWindow):
             self.timer.start(self.refresh_interval)  # 重新啟動定時器
 
     def updateFocusedAnnotation(self):
-        """更新選取中的bbox或polygon的標籤名稱"""
+        """更新選取中的bbox或polygon的標籤名稱（支援多選）"""
         iw = self.image_widget
         label = self.app_state.last_used_label
 
-        # 優先處理SELECT模式下的選取物件
+        # 多選：更新所有選取的項目
+        if iw.select_type == "multi":
+            for i in iw.selected_bbox_indices:
+                if 0 <= i < len(iw.bboxes):
+                    iw.bboxes[i].label = label
+            for i in iw.selected_polygon_indices:
+                if 0 <= i < len(iw.polygons):
+                    iw.polygons[i].label = label
+            iw.update()
+            return
+
+        # 單選
         if iw.select_type == "polygon" and 0 <= iw.idx_focus_polygon < len(iw.polygons):
             iw.polygons[iw.idx_focus_polygon].label = label
             iw.update()
@@ -693,12 +704,22 @@ class MainWindow(QMainWindow):
             iw.update()
 
     def promptInputLabel(self):
-        """彈出輸入框，讓使用者輸入標籤名稱"""
+        """彈出輸入框，讓使用者輸入標籤名稱（支援多選）"""
         iw = self.image_widget
         current_label = self.app_state.last_used_label
 
         # 取得目前選取物件的label作為預設值
-        if iw.select_type == "polygon" and 0 <= iw.idx_focus_polygon < len(iw.polygons):
+        if iw.select_type == "multi":
+            # 多選時取第一個選取項目的label
+            if iw.selected_bbox_indices:
+                first_idx = min(iw.selected_bbox_indices)
+                if 0 <= first_idx < len(iw.bboxes):
+                    current_label = iw.bboxes[first_idx].label
+            elif iw.selected_polygon_indices:
+                first_idx = min(iw.selected_polygon_indices)
+                if 0 <= first_idx < len(iw.polygons):
+                    current_label = iw.polygons[first_idx].label
+        elif iw.select_type == "polygon" and 0 <= iw.idx_focus_polygon < len(iw.polygons):
             current_label = iw.polygons[iw.idx_focus_polygon].label
         elif iw.select_type == "bbox" and 0 <= iw.idx_focus_bbox < len(iw.bboxes):
             current_label = iw.bboxes[iw.idx_focus_bbox].label

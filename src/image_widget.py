@@ -1,5 +1,5 @@
 # 圖片畫布元件：負責繪製影像、bbox、polygon、mask，以及滑鼠互動（繪製、選取、拖曳、旋轉）
-# 更新日期: 2026-03-08
+# 更新日期: 2026-03-09
 import math
 import time
 import xml.etree.ElementTree as ET
@@ -20,19 +20,20 @@ from PyQt6.QtWidgets import (
 
 from src.config import cfg
 from src.core import AppState
-from src.utils.dynamic_settings import settings
 from src.utils.const import (
     CORNER_SIZE,
     POLYGON_CLOSE_THRESHOLD,
+    POLYGON_SELECT_PADDING,
     POLYGON_VERTEX_RADIUS,
     ROTATION_HANDLE_DISTANCE,
     ROTATION_HANDLE_RADIUS,
     VIDEO_EXTS,
 )
+from src.utils.dynamic_settings import settings
 from src.utils.file_handler import file_h
-from src.utils.img_handler import inferencer
 from src.utils.func import getXmlPath
 from src.utils.global_param import g_param
+from src.utils.img_handler import inferencer
 from src.utils.logger import getUniqueLogger
 from src.utils.model import Bbox, ColorPen, FileType, ModelType, Polygon, ViewMode
 
@@ -72,6 +73,7 @@ def cv_mat_to_qimage(cv_mat: np.ndarray) -> QImage:
 class ImageWidget(QWidget):
     def __init__(self, app_state: AppState):
         super().__init__()
+        self.setMouseTracking(True)  # 即使沒按住按鍵也能追蹤滑鼠移動
         self.app_state = app_state
         self.image_label = QLabel()
         self.pixmap = None
@@ -103,8 +105,14 @@ class ImageWidget(QWidget):
         self.idx_focus_polygon: int = -1
 
         # SELECT mode state
-        self.select_type: str | None = None  # 'bbox' or 'polygon'
+        self.select_type: str | None = None  # 'bbox', 'polygon', 'multi'
         self.dragging_vertex_idx: int = -1  # 拖曳中的polygon頂點index
+
+        # 框選 (multi-select) state
+        self.selected_bbox_indices: set[int] = set()
+        self.selected_polygon_indices: set[int] = set()
+        self.selection_rect_start: QPoint | None = None  # 框選起點
+        self.dragging_selection: bool = False
 
         self.view_mode = ViewMode.ALL
         self.list_fps = []
@@ -310,27 +318,77 @@ class ImageWidget(QWidget):
                 return i
         return -1
 
+    def _finalizeRectSelection(self):
+        """框選結束，找出框內的bbox和polygon"""
+        if not self.selection_rect_start or not self.current_mouse_pos:
+            return
+        sel_rect = QRect(self.selection_rect_start, self.current_mouse_pos).normalized()
+        self.selected_bbox_indices = set()
+        self.selected_polygon_indices = set()
+
+        # 檢查bbox是否與框選範圍相交
+        for i, bbox in enumerate(self.bboxes):
+            bbox_rect = QRect(
+                self._scale_to_widget(QPoint(bbox.x, bbox.y)),
+                self._scale_to_widget(
+                    QPoint(bbox.x + bbox.width, bbox.y + bbox.height)
+                ),
+            )
+            if sel_rect.intersects(bbox_rect):
+                self.selected_bbox_indices.add(i)
+
+        # 檢查polygon頂點是否在框選範圍內
+        for i, polygon in enumerate(self.polygons):
+            for px, py in polygon.points:
+                wpt = self._scale_to_widget(QPoint(int(px), int(py)))
+                if sel_rect.contains(wpt):
+                    self.selected_polygon_indices.add(i)
+                    break
+
+        if self.selected_bbox_indices or self.selected_polygon_indices:
+            self.select_type = "multi"
+        else:
+            self.select_type = None
+
     def deleteSelectedAnnotation(self) -> bool:
-        """刪除當前選取的bbox或polygon
+        """刪除當前選取的bbox或polygon（支援多選）
 
         Returns:
             bool: 是否有刪除
         """
-        if self.select_type == "bbox" and 0 <= self.idx_focus_bbox < len(self.bboxes):
+        deleted = False
+
+        # 多選刪除（從後往前刪以避免index偏移）
+        if self.select_type == "multi":
+            for i in sorted(self.selected_bbox_indices, reverse=True):
+                if 0 <= i < len(self.bboxes):
+                    self.bboxes.pop(i)
+                    deleted = True
+            for i in sorted(self.selected_polygon_indices, reverse=True):
+                if 0 <= i < len(self.polygons):
+                    self.polygons.pop(i)
+                    deleted = True
+            self.selected_bbox_indices = set()
+            self.selected_polygon_indices = set()
+            self.select_type = None
+        # 單選刪除
+        elif self.select_type == "bbox" and 0 <= self.idx_focus_bbox < len(self.bboxes):
             self.bboxes.pop(self.idx_focus_bbox)
             self.idx_focus_bbox = -1
             self.select_type = None
-            g_param.user_labeling = True
-            self.update()
-            return True
-        elif self.select_type == "polygon" and 0 <= self.idx_focus_polygon < len(self.polygons):
+            deleted = True
+        elif self.select_type == "polygon" and 0 <= self.idx_focus_polygon < len(
+            self.polygons
+        ):
             self.polygons.pop(self.idx_focus_polygon)
             self.idx_focus_polygon = -1
             self.select_type = None
+            deleted = True
+
+        if deleted:
             g_param.user_labeling = True
             self.update()
-            return True
-        return False
+        return deleted
 
     def loadBboxFromXml(self, xml_path) -> bool:
         """
@@ -379,13 +437,9 @@ class ImageWidget(QWidget):
                         if points:
                             conf_elem = polygon_elem.find("confidence")
                             poly_conf = (
-                                float(conf_elem.text)
-                                if conf_elem is not None
-                                else -1.0
+                                float(conf_elem.text) if conf_elem is not None else -1.0
                             )
-                            self.polygons.append(
-                                Polygon(points, name, poly_conf)
-                            )
+                            self.polygons.append(Polygon(points, name, poly_conf))
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to parse XML: {e}")
 
@@ -447,6 +501,8 @@ class ImageWidget(QWidget):
         # 離開SELECT模式時清除選取狀態
         if mode != DrawingMode.SELECT:
             self.select_type = None
+            self.selected_bbox_indices = set()
+            self.selected_polygon_indices = set()
 
     def set_brush_size(self, size: int):
         self.brush_size = size
@@ -505,12 +561,15 @@ class ImageWidget(QWidget):
         self.update()  # 觸發 paintEvent
 
     def clearBboxes(self):
-        # 重置 Bounding Box 與 Polygon 資訊
+        """重置 Bounding Box 與 Polygon 資訊"""
         self.bboxes = []
         self.idx_focus_bbox = -1
         self.polygons = []
         self.current_polygon_points = []
         self.idx_focus_polygon = -1
+        self.select_type = None
+        self.selected_bbox_indices = set()
+        self.selected_polygon_indices = set()
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -541,9 +600,15 @@ class ImageWidget(QWidget):
             )
 
         # 繪製 Bounding Box (filtered by view mode)
-        _bboxes_to_draw = self.bboxes if self.view_mode in (ViewMode.BBOX, ViewMode.ALL) else []
-        for bbox in _bboxes_to_draw:
-            painter.setPen(bbox.color_pen)
+        _bboxes_to_draw = (
+            self.bboxes if self.view_mode in (ViewMode.BBOX, ViewMode.ALL) else []
+        )
+        for bbox_idx, bbox in enumerate(_bboxes_to_draw):
+            # 多選中的bbox用黃色顯示
+            if bbox_idx in self.selected_bbox_indices:
+                painter.setPen(ColorPen.YELLOW)
+            else:
+                painter.setPen(bbox.color_pen)
 
             if bbox.angle != 0:
                 # 繪製旋轉的 bounding box
@@ -634,14 +699,20 @@ class ImageWidget(QWidget):
                 )
 
         # 繪製選中 bbox 的控制點
-        if _bboxes_to_draw and self.idx_focus_bbox != -1 and 0 <= self.idx_focus_bbox < len(self.bboxes):
+        if (
+            _bboxes_to_draw
+            and self.idx_focus_bbox != -1
+            and 0 <= self.idx_focus_bbox < len(self.bboxes)
+        ):
             focused_bbox = self.bboxes[self.idx_focus_bbox]
 
             # OBB啟用時繪製旋轉控制點
             if cfg.enable_obb:
                 center_x = focused_bbox.x + focused_bbox.width / 2
                 center_y = focused_bbox.y + focused_bbox.height / 2
-                center_widget = self._scale_to_widget(QPoint(int(center_x), int(center_y)))
+                center_widget = self._scale_to_widget(
+                    QPoint(int(center_x), int(center_y))
+                )
 
                 handle_pos_original = self._getRotationHandlePos(focused_bbox)
                 handle_pos_widget = self._scale_to_widget(handle_pos_original)
@@ -681,7 +752,10 @@ class ImageWidget(QWidget):
                         QPoint(focused_bbox.x, focused_bbox.y),
                         QPoint(focused_bbox.x + focused_bbox.width, focused_bbox.y),
                         QPoint(focused_bbox.x, focused_bbox.y + focused_bbox.height),
-                        QPoint(focused_bbox.x + focused_bbox.width, focused_bbox.y + focused_bbox.height),
+                        QPoint(
+                            focused_bbox.x + focused_bbox.width,
+                            focused_bbox.y + focused_bbox.height,
+                        ),
                     ]
                 else:
                     rot_corners = self._getRotatedCorners(focused_bbox)
@@ -697,12 +771,21 @@ class ImageWidget(QWidget):
                 painter.setBrush(Qt.BrushStyle.NoBrush)
 
         # 繪製 Polygons (filtered by view mode)
-        _polygons_to_draw = self.polygons if self.view_mode in (ViewMode.SEG, ViewMode.ALL) else []
+        _polygons_to_draw = (
+            self.polygons if self.view_mode in (ViewMode.SEG, ViewMode.ALL) else []
+        )
         for poly_idx, polygon in enumerate(_polygons_to_draw):
-            painter.setPen(polygon.color_pen)
+            # 多選中的polygon用黃色
+            if poly_idx in self.selected_polygon_indices:
+                painter.setPen(ColorPen.YELLOW)
+            else:
+                painter.setPen(polygon.color_pen)
             # Semi-transparent fill
             fill_color = QColor(0, 255, 0, 50)
-            if poly_idx == self.idx_focus_polygon:
+            if (
+                poly_idx == self.idx_focus_polygon
+                or poly_idx in self.selected_polygon_indices
+            ):
                 fill_color = QColor(255, 255, 0, 70)
 
             if len(polygon.points) >= 3:
@@ -716,13 +799,18 @@ class ImageWidget(QWidget):
                 painter.setBrush(Qt.BrushStyle.NoBrush)
 
                 # Draw vertex dots (SELECT模式下選取的polygon用大圓點)
-                if poly_idx == self.idx_focus_polygon and self.drawing_mode == DrawingMode.SELECT:
+                if (
+                    poly_idx == self.idx_focus_polygon
+                    and self.drawing_mode == DrawingMode.SELECT
+                ):
                     painter.setPen(QPen(QColor(255, 255, 0), 2))
                     painter.setBrush(QColor(255, 255, 255, 200))
                     for px, py in polygon.points:
                         widget_pt = self._scale_to_widget(QPoint(int(px), int(py)))
                         painter.drawEllipse(
-                            widget_pt, POLYGON_VERTEX_RADIUS * 2, POLYGON_VERTEX_RADIUS * 2
+                            widget_pt,
+                            POLYGON_VERTEX_RADIUS * 2,
+                            POLYGON_VERTEX_RADIUS * 2,
                         )
                     painter.setBrush(Qt.BrushStyle.NoBrush)
                 else:
@@ -775,24 +863,54 @@ class ImageWidget(QWidget):
             # Rubber band line from last point to cursor
             if self.current_mouse_pos and self.current_polygon_points:
                 painter.setPen(QPen(QColor(255, 0, 0, 128), 1, Qt.PenStyle.DashLine))
-                painter.drawLine(self.current_polygon_points[-1], self.current_mouse_pos)
+                painter.drawLine(
+                    self.current_polygon_points[-1], self.current_mouse_pos
+                )
 
+        # BBOX兩點模式：繪製中的黃色矩形預覽
         if self.drawing and self.drawing_mode == DrawingMode.BBOX:
-            painter.setPen(ColorPen.RED)  # 繪製中的 Bounding Box 用紅色
+            painter.setPen(ColorPen.YELLOW)
             rect = QRect(self.start_pos, self.end_pos)
             painter.drawRect(rect)
 
-            # 顯示繪製中的 bbox 解析度
-            if self.start_pos and self.end_pos:
-                orig_start = self._scale_to_original(self.start_pos)
-                orig_end = self._scale_to_original(self.end_pos)
-                w = abs(orig_end.x() - orig_start.x())
-                h = abs(orig_end.y() - orig_start.y())
-                text = f"{w}x{h}={w * h}"
+        # SELECT模式：繪製框選矩形（淡藍色）
+        if (
+            self.dragging_selection
+            and self.selection_rect_start
+            and self.current_mouse_pos
+        ):
+            sel_pen = QPen(QColor(100, 150, 255), 1, Qt.PenStyle.DashLine)
+            painter.setPen(sel_pen)
+            painter.setBrush(QColor(100, 150, 255, 40))
+            sel_rect = QRect(
+                self.selection_rect_start, self.current_mouse_pos
+            ).normalized()
+            painter.drawRect(sel_rect)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        # SELECT模式：顯示選取的bbox或resize中的bbox尺寸資訊
+        if self.drawing_mode == DrawingMode.SELECT:
+            info_bbox = None
+            info_pos = None
+            if self.resizing and self.selected_bbox and self.current_mouse_pos:
+                info_bbox = self.selected_bbox
+                info_pos = self.current_mouse_pos
+            elif self.select_type == "bbox" and 0 <= self.idx_focus_bbox < len(
+                self.bboxes
+            ):
+                info_bbox = self.bboxes[self.idx_focus_bbox]
+                # 顯示在bbox右下角
+                info_pos = self._scale_to_widget(
+                    QPoint(
+                        info_bbox.x + info_bbox.width, info_bbox.y + info_bbox.height
+                    )
+                )
+            if info_bbox and info_pos:
+                text = f"{info_bbox.width}x{info_bbox.height}={info_bbox.width * info_bbox.height}"
                 font_metrics = painter.fontMetrics()
                 text_width = font_metrics.horizontalAdvance(text)
                 text_height = font_metrics.height()
-                text_pos = self.end_pos + QPoint(15, 15)
+                text_pos = info_pos + QPoint(5, 5)
                 bg_rect = QRect(
                     text_pos,
                     QPoint(text_pos.x() + text_width + 4, text_pos.y() + text_height),
@@ -802,23 +920,6 @@ class ImageWidget(QWidget):
                 painter.drawText(
                     text_pos + QPoint(2, text_height - font_metrics.descent()), text
                 )
-
-        # 如果正在調整大小, 也顯示解析度
-        if self.resizing and self.selected_bbox and self.current_mouse_pos:
-            text = f"{self.selected_bbox.width}x{self.selected_bbox.height}={self.selected_bbox.width * self.selected_bbox.height}"
-            font_metrics = painter.fontMetrics()
-            text_width = font_metrics.horizontalAdvance(text)
-            text_height = font_metrics.height()
-            text_pos = self.current_mouse_pos + QPoint(15, 15)
-            bg_rect = QRect(
-                text_pos,
-                QPoint(text_pos.x() + text_width + 4, text_pos.y() + text_height),
-            )
-            painter.fillRect(bg_rect, QColor(0, 0, 0, 150))
-            painter.setPen(QColor(255, 255, 255))
-            painter.drawText(
-                text_pos + QPoint(2, text_height - font_metrics.descent()), text
-            )
 
     def draw_on_mask(self, pos: QPoint):
         if self.last_pos is None:
@@ -905,19 +1006,23 @@ class ImageWidget(QWidget):
             if self.drawing_mode == DrawingMode.SELECT:
                 pos = event.pos()
 
-                # 若已選取polygon，檢查是否拖曳頂點
-                if self.select_type == "polygon" and 0 <= self.idx_focus_polygon < len(self.polygons):
-                    poly = self.polygons[self.idx_focus_polygon]
+                # 1. 檢查所有polygon的頂點（直接拖曳，不需先選取）
+                for idx, poly in enumerate(self.polygons):
                     vtx_idx = self._isNearPolygonVertex(pos, poly)
                     if vtx_idx >= 0:
+                        self.idx_focus_polygon = idx
+                        self.idx_focus_bbox = -1
+                        self.select_type = "polygon"
                         self.dragging_vertex_idx = vtx_idx
                         self.update()
                         return
 
-                # 若已選取bbox，檢查旋轉控制點與角落
-                if self.select_type == "bbox" and 0 <= self.idx_focus_bbox < len(self.bboxes):
-                    bbox = self.bboxes[self.idx_focus_bbox]
+                # 2. 檢查所有bbox的旋轉控制點與角落（直接操作，不需先選取）
+                for idx, bbox in enumerate(self.bboxes):
                     if cfg.enable_obb and self._isOnRotationHandle(pos, bbox):
+                        self.idx_focus_bbox = idx
+                        self.idx_focus_polygon = -1
+                        self.select_type = "bbox"
                         self.selected_bbox = bbox
                         self.selected_bbox.color_pen = ColorPen.YELLOW
                         self.rotating = True
@@ -933,24 +1038,29 @@ class ImageWidget(QWidget):
 
                     corner = self._isInCorner(pos, bbox)
                     if corner:
+                        self.idx_focus_bbox = idx
+                        self.idx_focus_polygon = -1
+                        self.select_type = "bbox"
                         self.selected_bbox = bbox
                         self.selected_bbox.color_pen = ColorPen.YELLOW
                         self.resizing_corner = corner
                         self.original_bbox = (bbox.x, bbox.y, bbox.width, bbox.height)
                         self.start_pos = self._scale_to_original(pos)
                         if bbox.angle != 0:
-                            corners = self._getRotatedCorners(bbox)
+                            rot_corners = self._getRotatedCorners(bbox)
                             corner_map = {
-                                "top_left": 2, "top_right": 3,
-                                "bottom_right": 0, "bottom_left": 1,
+                                "top_left": 2,
+                                "top_right": 3,
+                                "bottom_right": 0,
+                                "bottom_left": 1,
                             }
                             fixed_idx = corner_map.get(corner, 0)
-                            self.fixed_corner_pos = corners[fixed_idx]
+                            self.fixed_corner_pos = rot_corners[fixed_idx]
                         self.resizing = True
                         self.update()
                         return
 
-                # 嘗試選取bbox
+                # 3. 嘗試選取bbox（點擊內部）
                 for idx, bbox in enumerate(self.bboxes):
                     if self._isInBboxArea(pos, bbox):
                         self.idx_focus_bbox = idx
@@ -959,7 +1069,7 @@ class ImageWidget(QWidget):
                         self.update()
                         return
 
-                # 嘗試選取polygon
+                # 4. 嘗試選取polygon（含邊緣padding範圍）
                 for idx, polygon in enumerate(self.polygons):
                     if self._isPointInPolygon(pos, polygon):
                         self.idx_focus_polygon = idx
@@ -968,10 +1078,14 @@ class ImageWidget(QWidget):
                         self.update()
                         return
 
-                # 沒有點到任何物件，取消選取
+                # 5. 沒有點到任何物件，開始框選（或取消選取）
                 self.idx_focus_bbox = -1
                 self.idx_focus_polygon = -1
                 self.select_type = None
+                self.selected_bbox_indices = set()
+                self.selected_polygon_indices = set()
+                self.selection_rect_start = pos
+                self.dragging_selection = False
                 self.update()
                 return
 
@@ -980,9 +1094,7 @@ class ImageWidget(QWidget):
                 # Check if near first point to close polygon
                 if (
                     len(self.current_polygon_points) >= 3
-                    and self._distanceBetweenPoints(
-                        pos, self.current_polygon_points[0]
-                    )
+                    and self._distanceBetweenPoints(pos, self.current_polygon_points[0])
                     < POLYGON_CLOSE_THRESHOLD
                 ):
                     # Close polygon - convert widget coords to original
@@ -1015,70 +1127,27 @@ class ImageWidget(QWidget):
             elif self.drawing_mode == DrawingMode.MASK_FILL:
                 self.fill_mask(event.pos())
             elif self.drawing_mode == DrawingMode.BBOX:
-                for idx_focus, bbox in enumerate(self.bboxes):
-                    # OBB啟用時才檢查旋轉控制點
-                    if cfg.enable_obb and self._isOnRotationHandle(event.pos(), bbox):
-                        self.selected_bbox = bbox
-                        self.selected_bbox.color_pen = ColorPen.YELLOW
-                        self.idx_focus_bbox = idx_focus
-                        self.rotating = True
-                        self.original_angle = bbox.angle
-
-                        # 計算滑鼠相對於 bbox 中心的角度
-                        pos_original = self._scale_to_original(event.pos())
-                        center_x = bbox.x + bbox.width / 2
-                        center_y = bbox.y + bbox.height / 2
-                        dx = pos_original.x() - center_x
-                        dy = pos_original.y() - center_y
-                        self.rotation_start_angle = math.degrees(math.atan2(dy, dx))
-
-                        self.update()
-                        break
-
-                    corner = self._isInCorner(event.pos(), bbox)
-                    if corner:
-                        self.selected_bbox = bbox
-                        self.selected_bbox.color_pen = ColorPen.YELLOW
-                        self.idx_focus_bbox = idx_focus
-                        self.resizing_corner = corner
-                        self.original_bbox = (
-                            bbox.x,
-                            bbox.y,
-                            bbox.width,
-                            bbox.height,
-                        )  # 儲存原始大小
-                        self.start_pos = self._scale_to_original(
-                            event.pos()
-                        )  # 紀錄原始座標
-
-                        # 計算固定的對角點位置（用於旋轉bbox的resize）
-                        if bbox.angle != 0:
-                            corners = self._getRotatedCorners(bbox)
-                            corner_map = {
-                                "top_left": 2,  # 固定 bottom_right
-                                "top_right": 3,  # 固定 bottom_left
-                                "bottom_right": 0,  # 固定 top_left
-                                "bottom_left": 1,  # 固定 top_right
-                            }
-                            fixed_idx = corner_map.get(corner, 0)
-                            self.fixed_corner_pos = corners[fixed_idx]
-
-                        self.resizing = True
-                        self.update()
-                        break
-                else:  # 接在forloop無break之時
+                # BBOX模式：純粹兩點建立，不處理resize/rotate
+                if self.drawing:
+                    # 第二次click：建立bbox
+                    self.end_pos = event.pos()
+                    self.drawing = False
+                    self._finalizeBbox()
+                else:
+                    # 第一次click：記錄起點
                     self.start_pos = event.pos()
                     self.end_pos = event.pos()
                     self.drawing = True
-                    for idx_focus, bbox in enumerate(self.bboxes):
-                        if self._isInBboxArea(event.pos(), bbox):
-                            self.selected_bbox = bbox
-                            self.selected_bbox.color_pen = ColorPen.YELLOW
-                            self.idx_focus_bbox = idx_focus
-                            self.update()
-                            break
 
-        elif event.button() == Qt.MouseButton.RightButton:  # 刪除
+        elif event.button() == Qt.MouseButton.RightButton:
+            # BBOX兩點模式：右鍵取消進行中的繪製
+            if self.drawing_mode == DrawingMode.BBOX and self.drawing:
+                self.drawing = False
+                self.start_pos = None
+                self.end_pos = None
+                self.update()
+                return
+
             if self.drawing_mode == DrawingMode.POLYGON:
                 if self.current_polygon_points:
                     # Cancel in-progress polygon
@@ -1113,13 +1182,23 @@ class ImageWidget(QWidget):
     def mouseMoveEvent(self, event):
         self.current_mouse_pos = event.pos()
 
+        # SELECT模式: 框選拖曳
+        if (
+            self.drawing_mode == DrawingMode.SELECT
+            and self.selection_rect_start is not None
+        ):
+            if self._distanceBetweenPoints(self.selection_rect_start, event.pos()) > 5:
+                self.dragging_selection = True
+            self.update()
+            return
+
         # SELECT模式: polygon頂點拖曳
         if self.drawing_mode == DrawingMode.SELECT and self.dragging_vertex_idx >= 0:
             if 0 <= self.idx_focus_polygon < len(self.polygons):
                 orig_pos = self._scale_to_original(event.pos())
-                self.polygons[self.idx_focus_polygon].points[self.dragging_vertex_idx] = (
-                    float(orig_pos.x()), float(orig_pos.y())
-                )
+                self.polygons[self.idx_focus_polygon].points[
+                    self.dragging_vertex_idx
+                ] = (float(orig_pos.x()), float(orig_pos.y()))
                 self.update()
                 return
 
@@ -1134,32 +1213,31 @@ class ImageWidget(QWidget):
                 self.draw_on_mask(scaled_pos)
             return
 
-        # BBOX mode logic
-        cursor_changed = False
-        if not self.resizing and not self.drawing and not self.rotating:
-            for bbox in self.bboxes:
-                # OBB啟用時才檢查旋轉控制點
-                if cfg.enable_obb and self._isOnRotationHandle(event.pos(), bbox):
-                    self.setCursor(Qt.CursorShape.CrossCursor)
-                    cursor_changed = True
-                    break
-                corner = self._isInCorner(event.pos(), bbox)
-                if corner in ["top_left", "bottom_right"]:
-                    self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-                    cursor_changed = True
-                    break
-                elif corner in ["top_right", "bottom_left"]:
-                    self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-                    cursor_changed = True
-                    break
-        if not cursor_changed and not self.resizing and not self.rotating:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+        # SELECT模式: 滑鼠hover時顯示對應cursor
+        if self.drawing_mode == DrawingMode.SELECT:
+            cursor_changed = False
+            if not self.resizing and not self.rotating:
+                for bbox in self.bboxes:
+                    if cfg.enable_obb and self._isOnRotationHandle(event.pos(), bbox):
+                        self.setCursor(Qt.CursorShape.CrossCursor)
+                        cursor_changed = True
+                        break
+                    corner = self._isInCorner(event.pos(), bbox)
+                    if corner in ["top_left", "bottom_right"]:
+                        self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+                        cursor_changed = True
+                        break
+                    elif corner in ["top_right", "bottom_left"]:
+                        self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+                        cursor_changed = True
+                        break
+            if not cursor_changed and not self.resizing and not self.rotating:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
 
-        if self.drawing:  # BBOX drawing
-            # 繪製的話, 就讓之前有被選取的bbox先恢復原樣
-            if self.selected_bbox:
-                self.selected_bbox.color_pen = ColorPen.GREEN
-            self.end_pos = event.pos()
+        if self.drawing and self.drawing_mode == DrawingMode.BBOX:
+            # BBOX兩點模式：只在滑鼠按鍵未按住時（第一點已釋放後移動）才顯示預覽
+            if not (event.buttons() & Qt.MouseButton.LeftButton):
+                self.end_pos = event.pos()
         elif self.resizing:
             pos = self._scale_to_original(event.pos())
 
@@ -1269,6 +1347,16 @@ class ImageWidget(QWidget):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            # SELECT模式: 框選結束
+            if self.selection_rect_start is not None:
+                if self.dragging_selection:
+                    self._finalizeRectSelection()
+                # 不論有無拖曳都要重置框選狀態
+                self.selection_rect_start = None
+                self.dragging_selection = False
+                self.update()
+                return
+
             # SELECT模式: polygon頂點拖曳結束
             if self.dragging_vertex_idx >= 0:
                 self.dragging_vertex_idx = -1
@@ -1290,52 +1378,55 @@ class ImageWidget(QWidget):
                 self.rotation_start_angle = None
 
             elif self.drawing:
-                self.drawing = False
-                # 取得座標 (視窗座標)
-
-                x1, y1 = self.start_pos.x(), self.start_pos.y()
-                x2, y2 = self.end_pos.x(), self.end_pos.y()
-
-                # x1與y1永遠都是最小
-                if x2 < x1:
-                    x1, x2 = x2, x1
-                if y2 < y1:
-                    y1, y2 = y2, y1
-
-                # 取得寬高 (視窗座標)
-                width = abs(x2 - x1)
-                height = abs(y2 - y1)
-
-                # 檢查寬高是否大於最小限制
-                if width < cfg.minimal_bbox_length or height < cfg.minimal_bbox_length:
-                    # 範圍太小
-                    self.completeMouseAction()
+                if self.drawing_mode == DrawingMode.BBOX:
+                    # BBOX兩點模式：release不建立bbox，等待第二次click
                     return
-
-                # 將視窗座標轉換為原始影像座標
-                x1_original, y1_original = (
-                    self._scale_to_original(QPoint(x1, y1)).x(),
-                    self._scale_to_original(QPoint(x1, y1)).y(),
-                )
-                width_original, height_original = int(
-                    width * self.pixmap.width() / self.scaled_width
-                ), int(height * self.pixmap.height() / self.scaled_height)
-                # 建立 Bbox 物件 (使用原始影像座標)
-                self.bboxes.append(
-                    Bbox(
-                        min(x1_original, x1_original + width_original),
-                        min(y1_original, y1_original + height_original),
-                        width_original,
-                        height_original,
-                        self.app_state.last_used_label,
-                        1.0,
-                    )
-                )
-
-                # 框已成形, focus到最後一個框, 以顯示旋轉控制點
-                self.idx_focus_bbox = len(self.bboxes) - 1
+                self.drawing = False
 
             self.completeMouseAction()
+
+    def _finalizeBbox(self):
+        """從start_pos和end_pos建立Bbox物件（兩點模式）"""
+        if not self.start_pos or not self.end_pos:
+            self.completeMouseAction()
+            return
+
+        x1, y1 = self.start_pos.x(), self.start_pos.y()
+        x2, y2 = self.end_pos.x(), self.end_pos.y()
+
+        # x1與y1永遠都是最小
+        if x2 < x1:
+            x1, x2 = x2, x1
+        if y2 < y1:
+            y1, y2 = y2, y1
+
+        # 取得寬高 (視窗座標)
+        width = abs(x2 - x1)
+        height = abs(y2 - y1)
+
+        # 檢查寬高是否大於最小限制
+        if width < cfg.minimal_bbox_length or height < cfg.minimal_bbox_length:
+            self.completeMouseAction()
+            return
+
+        # 將視窗座標轉換為原始影像座標
+        x1_original = self._scale_to_original(QPoint(x1, y1)).x()
+        y1_original = self._scale_to_original(QPoint(x1, y1)).y()
+        width_original = int(width * self.pixmap.width() / self.scaled_width)
+        height_original = int(height * self.pixmap.height() / self.scaled_height)
+
+        self.bboxes.append(
+            Bbox(
+                min(x1_original, x1_original + width_original),
+                min(y1_original, y1_original + height_original),
+                width_original,
+                height_original,
+                self.app_state.last_used_label,
+                1.0,
+            )
+        )
+        self.idx_focus_bbox = len(self.bboxes) - 1
+        self.completeMouseAction()
 
     def completeMouseAction(self):
         self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -1350,7 +1441,15 @@ class ImageWidget(QWidget):
         return (dx * dx + dy * dy) ** 0.5
 
     def _isPointInPolygon(self, pos: QPoint, polygon: Polygon) -> bool:
-        """Check if a widget-coordinate point is inside a polygon."""
+        """檢查widget座標的點是否在polygon內部或邊緣附近（含padding範圍）
+
+        Args:
+            pos: widget座標
+            polygon: Polygon物件
+
+        Returns:
+            bool: 是否在polygon選取範圍內
+        """
         if len(polygon.points) < 3:
             return False
         # Convert polygon points to widget coords for comparison
@@ -1359,8 +1458,9 @@ class ImageWidget(QWidget):
             wpt = self._scale_to_widget(QPoint(int(px), int(py)))
             poly_points.append((float(wpt.x()), float(wpt.y())))
         np_poly = np.array(poly_points, dtype=np.float32)
-        result = cv2.pointPolygonTest(np_poly, (float(pos.x()), float(pos.y())), False)
-        return result >= 0
+        # measureDist=True 回傳有符號距離：正值=內部, 0=邊上, 負值=外部(距離邊緣的距離)
+        dist = cv2.pointPolygonTest(np_poly, (float(pos.x()), float(pos.y())), True)
+        return dist >= -POLYGON_SELECT_PADDING
 
     def set_view_mode(self, mode):
         self.view_mode = mode

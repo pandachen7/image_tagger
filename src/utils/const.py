@@ -7,6 +7,7 @@ ROTATION_HANDLE_DISTANCE = 30  # 旋轉控制點距離 bbox 頂部的距離
 # Polygon 相關常數
 POLYGON_CLOSE_THRESHOLD = 10  # px distance to close polygon
 POLYGON_VERTEX_RADIUS = 4
+POLYGON_SELECT_PADDING = 5  # px 距離polygon邊緣的選取範圍
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff")
 VIDEO_EXTS = (".mp4", ".avi", ".mov", ".wmv", ".mkv", ".webm")
