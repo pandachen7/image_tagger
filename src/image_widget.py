@@ -888,6 +888,26 @@ class ImageWidget(QWidget):
             painter.drawRect(sel_rect)
             painter.setBrush(Qt.BrushStyle.NoBrush)
 
+            # 框選範圍的寬高與面積（原始pixel座標）
+            orig_start = self._scale_to_original(sel_rect.topLeft())
+            orig_end = self._scale_to_original(sel_rect.bottomRight())
+            sel_w = abs(orig_end.x() - orig_start.x())
+            sel_h = abs(orig_end.y() - orig_start.y())
+            sel_text = f"{sel_w}x{sel_h}={sel_w * sel_h}"
+            fm = painter.fontMetrics()
+            sel_text_w = fm.horizontalAdvance(sel_text)
+            sel_text_h = fm.height()
+            sel_text_pos = sel_rect.bottomRight() + QPoint(5, 5)
+            sel_bg = QRect(
+                sel_text_pos,
+                QPoint(sel_text_pos.x() + sel_text_w + 4, sel_text_pos.y() + sel_text_h),
+            )
+            painter.fillRect(sel_bg, QColor(0, 0, 0, 150))
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(
+                sel_text_pos + QPoint(2, sel_text_h - fm.descent()), sel_text
+            )
+
         # SELECT模式：顯示選取的bbox或resize中的bbox尺寸資訊
         if self.drawing_mode == DrawingMode.SELECT:
             info_bbox = None
