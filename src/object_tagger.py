@@ -787,7 +787,11 @@ class MainWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_G:
             self.image_widget.runInference()
         elif event.key() == Qt.Key.Key_V:
-            self.cycle_view_mode()
+            self.select_mode_action.setChecked(True)
+            self.image_widget.set_drawing_mode(DrawingMode.SELECT)
+        elif event.key() == Qt.Key.Key_B:
+            self.bbox_mode_action.setChecked(True)
+            self.image_widget.set_drawing_mode(DrawingMode.BBOX)
 
         elif event.key() in [
             Qt.Key.Key_1,

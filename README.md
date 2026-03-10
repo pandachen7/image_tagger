@@ -142,6 +142,8 @@ ultralytics的官網也有提供範例, 有興趣就到官網看看
   - `a`: toggle auto save
   - `d`: toggle auto detect
   - `l`: 彈出視窗, 輸入label名
+  - `v`: 切換到 Select 選取模式
+  - `b`: 切換到 Bbox 繪製模式
   - `p`: 切換到 Polygon 繪製模式
   - `g`: 執行 SAM (Bbox→Polygon)
   - `數字鍵0~9`: 切換預設的label, 只會針對最後一個label做變更
