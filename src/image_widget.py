@@ -505,6 +505,7 @@ class ImageWidget(QWidget):
             self.select_type = None
             self.selected_bbox_indices = set()
             self.selected_polygon_indices = set()
+        self.update()
 
     def set_brush_size(self, size: int):
         self.brush_size = size
