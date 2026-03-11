@@ -1,5 +1,5 @@
 # 圖片畫布元件：負責繪製影像、bbox、polygon、mask，以及滑鼠互動（繪製、選取、拖曳、旋轉）
-# 更新日期: 2026-03-09
+# 更新日期: 2026-03-11
 import math
 import time
 import xml.etree.ElementTree as ET
@@ -943,6 +943,27 @@ class ImageWidget(QWidget):
                 painter.drawText(
                     text_pos + QPoint(2, text_height - font_metrics.descent()), text
                 )
+
+        # 右下角顯示 bbox / polygon 數量
+        n_bbox = len(self.bboxes)
+        n_poly = len(self.polygons)
+        if n_bbox or n_poly:
+            parts = []
+            if n_bbox:
+                parts.append(f"bbox:{n_bbox}")
+            if n_poly:
+                parts.append(f"polygon:{n_poly}")
+            count_text = "  ".join(parts)
+            fm = painter.fontMetrics()
+            tw = fm.horizontalAdvance(count_text)
+            th = fm.height()
+            margin = 6
+            tx = self.width() - tw - margin * 2
+            ty = self.height() - th - margin
+            bg = QRect(tx - 2, ty, tw + margin, th + 2)
+            painter.fillRect(bg, QColor(0, 0, 0, 140))
+            painter.setPen(QColor(220, 220, 220))
+            painter.drawText(tx + 1, ty + th - fm.descent(), count_text)
 
     def draw_on_mask(self, pos: QPoint):
         if self.last_pos is None:
