@@ -14,6 +14,7 @@ class Config(BaseModel):
     save_folder: str = "./output"
     enable_mask_tools: bool = False  # 是否啟用 Draw / Erase / Fill 功能
     enable_obb: bool = False  # 是否啟用旋轉 (OBB) 功能
+    enable_sam3: bool = False  # 是否啟用 SAM3 模型
 
 
 def load_config(yaml_file: str = "cfg/system.yaml") -> Config:

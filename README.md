@@ -54,10 +54,7 @@ cuda available一定為True
 Ref.  
 https://www.notion.so/PyTorch-30936ed5d3d680ceb0e1ed1dc8c2c7bf?source=copy_link
 
-### [Optional] 關於SAM3
-由於SAM3是需要申請下載權限, 因此請到  
-https://huggingface.co/facebook/sam3  
-跑流程並下載 `sam3.pt`, 然後到設定檔設定model路徑`sam3_model_path`  
+
 
 # 簡易Use Case
 1. Menu: File -> Open Folder, 開啟一個需要圖片畫框的資料夾
@@ -128,18 +125,13 @@ ultralytics的官網也有提供範例, 有興趣就到官網看看
   - 顯示有多少檔案, 目前在第N個檔案
   - 按下數字鍵後, 會顯示數字對應的label名
 
-## Polygon Segmentation (多邊形分割)
+## Polygon Segmentation (多邊形segment)
 - 按 `P` 或點選左側工具列的 Polygon 按鈕進入多邊形繪製模式
 - 左鍵點擊新增頂點, 靠近第一個點時會自動封閉多邊形
 - 右鍵: 繪製中取消, 或刪除已有的多邊形
 - 儲存時, polygon 資訊會寫入 VOC XML 中的 `<polygon>` 元素
 - 轉換時, 可在 Convert -> Settings 勾選 "Use Segmentation format" 輸出 YOLO Seg 格式
 
-## SAM3 Auto-Segmentation (自動分割)
-- Menu: Ai -> Select SAM Model, 選擇 SAM model 檔案 (如 `sam2.1_b.pt`)
-- SAM model 需自行從 Ultralytics 下載
-- 先用 BBox 模式畫好框, 再按 `G` 或 Menu: Ai -> Run SAM, 自動產生多邊形
-- SAM 會根據每個 bbox 產生對應的 polygon mask
 
 ## 快捷鍵
   - `q`: quit
@@ -150,11 +142,7 @@ ultralytics的官網也有提供範例, 有興趣就到官網看看
   - `v`: 切換到 Select 選取模式
   - `b`: 切換到 Bbox 繪製模式
   - `p`: 切換到 Polygon 繪製模式
-  - `g`: 執行 SAM (Bbox→Polygon)
   - `數字鍵0~9`: 切換預設的label, 只會針對最後一個label做變更
   - `Page Up/Down` or `方向鍵左/右`: 切換檔案
   - `Home/End`: 切換到最 前/後 檔案
   - `space空白鍵`: play/pause video
-
-### TODO
-- 顯示目前多少bbox

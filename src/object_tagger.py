@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-03-08
+# 更新日期: 2026-03-12
 import shutil
 import sys
 from pathlib import Path
@@ -310,7 +310,8 @@ class MainWindow(QMainWindow):
         self.model_action_group.addAction(self.use_sam_action)
 
         self.ai_menu.addAction(self.use_yolo_action)
-        self.ai_menu.addAction(self.use_sam_action)
+        if cfg.enable_sam3:
+            self.ai_menu.addAction(self.use_sam_action)
         self.ai_menu.addSeparator()
 
         self.select_model_action = QAction("Select &YOLO Model...", self)
@@ -320,7 +321,8 @@ class MainWindow(QMainWindow):
         self.select_sam_model_action.triggered.connect(self.select_sam_model)
 
         self.ai_menu.addAction(self.select_model_action)
-        self.ai_menu.addAction(self.select_sam_model_action)
+        if cfg.enable_sam3:
+            self.ai_menu.addAction(self.select_sam_model_action)
         self.ai_menu.addSeparator()
         self.ai_menu.addAction(self.detect_action)
         self.ai_menu.addAction(self.auto_detect_action)
@@ -328,7 +330,7 @@ class MainWindow(QMainWindow):
         # Store model paths only (lazy load on first inference)
         # Verify model files exist before assigning
         missing_models = []
-        if settings.models.sam3_model_path:
+        if cfg.enable_sam3 and settings.models.sam3_model_path:
             if Path(settings.models.sam3_model_path).is_file():
                 inferencer.sam_model_path = settings.models.sam3_model_path
             else:
@@ -345,7 +347,7 @@ class MainWindow(QMainWindow):
                 "以下模型檔案不存在:\n" + "\n".join(missing_models),
             )
         # Restore last active model from settings, fallback to priority logic
-        if settings.models.active_model == ModelType.SAM3 and inferencer.sam_model_path:
+        if cfg.enable_sam3 and settings.models.active_model == ModelType.SAM3 and inferencer.sam_model_path:
             inferencer.active_model_type = ModelType.SAM3
         elif settings.models.active_model == ModelType.YOLO and inferencer.model_path:
             inferencer.active_model_type = ModelType.YOLO
@@ -353,7 +355,7 @@ class MainWindow(QMainWindow):
         elif inferencer.model_path:
             inferencer.active_model_type = ModelType.YOLO
             self.app_state.auto_detect = True
-        elif inferencer.sam_model_path:
+        elif cfg.enable_sam3 and inferencer.sam_model_path:
             inferencer.active_model_type = ModelType.SAM3
         self.choose_folder(settings.file_system.folder_path, settings.file_system.file_index)
 
