@@ -1,3 +1,5 @@
+# YOLO 訓練腳本, 支援 detect/segment 模式
+# updated: 2026-04-02
 import os
 import time
 from datetime import datetime, timedelta
@@ -13,7 +15,9 @@ data_config_path = os.path.expanduser("~/datasets/img/liyu_lake_split/data.yaml"
 # - 如果您想從頭開始訓練，可以使用 .yaml 配置文件，例如 'yolov8n.yaml'
 # - 但通常建議使用預訓練權重 .pt 進行遷移學習. 例如設定yolo版本來訓練 e.g. yolo12m.pt
 # - 選擇上次中斷的last.pt的路徑以繼續訓練
+# - 若要訓練 segmentation, 請改用 seg 模型, e.g. yolo12m-seg.pt
 model_info = "yolo12m.pt"
+# model_info = "yolo12m-seg.pt"
 # model_info = "runs/detect/train3/weights/last.pt"
 model = YOLO(model_info)
 
@@ -24,7 +28,8 @@ print(f"使用數據集配置: {data_config_path}")
 # device=0 代表使用第一張 GPU
 results = model.train(
     data=data_config_path,
-    mode="detect",  # 這裡是指object detection(detect), 其他還有segmentation(segment), classification(classify)等等
+    # task 由模型架構決定: detect模型(.pt)→偵測, seg模型(-seg.pt)→分割
+    # mode="detect" 非標準參數, 已移除; 若需指定可用 task="detect" 或 task="segment"
     epochs=600,
     patience=50,  # 早停和保存
     save=True,

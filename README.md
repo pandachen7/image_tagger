@@ -1,148 +1,80 @@
-本專案可對影像, 影片畫框(bbox / polygon)  
-用於作出object detection的影像訓練dataset  
-可使用ultralytics的model來自動偵測, 或是表現VOC的框的資訊
+# Image Tagger
+
+對影像、影片畫框 (BBox / Polygon)，產出 object detection 或 segmentation 的訓練 dataset。
+支援 Ultralytics YOLO / SAM3 自動偵測，並可將 VOC 標註轉為 YOLO 格式。
 
 ![system gui](./asset/system_gui.png)
 
+## Quick Start
 
-# 安裝相關
-安裝pytorch的延伸package, 都一定要先裝pytorch的cuda版本; 不然幾乎都是先自動安裝cpu版的, 所以會跑很慢
+> 詳細安裝步驟請見 [安裝指南](./docs/installation.md)
 
-windows可使用pip來安裝pytorch CUDA版, 詳細可看  
-https://pytorch.org/get-started/locally/  
-選一個比你電腦的CUDA版本還低的pytorch就行  
-**NOTE: 如果之前有裝pytorch, 安裝前把所有pytorch的package都清乾淨, 尤其是 torchvision 很容易被遺忘, 沒清乾淨直接裝的話版本配不上一定出錯**  
-如果是新開一個venv虛擬環境, 基本上就會是乾淨的環境, 建議直接建立一個新的venv  
 ```bash
-# 範例CUDA 12.4
+# 1. 安裝 PyTorch CUDA 版 (範例 CUDA 12.4, 請依自己的環境調整)
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-```
-之後安裝requirements即可
-```bash
+
+# 2. 安裝其他相依套件
 pip install -r requirements.txt
+
+# 3. 啟動
+python main.py
 ```
 
-如果PyQt6出現相關錯誤, 可試試
+## 基本使用流程
+
 ```
-sudo apt-get install -y libxcb-cursor-dev
+開啟資料夾 → AI 自動偵測 (或手動畫框) → 儲存 VOC XML → 轉成 YOLO 格式 → 訓練模型
 ```
 
-### 有時候電腦好端端的就突然不能平行加速
-如果有GPU的情況下1秒只有1~2張, 那肯定是沒用到GPU, 可從`nvidia-smi`這個指令來查看是否將model讀入到VRAM中 e.g.  
-![alt text](asset/nvidia-smi.png)  
-上圖中, 右上角的`CUDA Version: 13.0`, 表示你能使用的最高CUDA版本  
-上圖中的 `439MiB` 就是目前用了多少的VRAM, 而yolo至少要幾百MB  
-所以如果讀取model infer(推測)時還是0, 那通常沒有用到GPU  
+1. **File → Open Folder** 開啟含有圖片的資料夾
+2. **Ai → Use YOLO → Detect** 自動偵測物件（首次會自動下載預設模型）
+3. 手動微調框的位置、名稱後，**File → Save** 儲存為 VOC XML
+4. **Convert → Edit Categories** 設定 class name → 數字編號 的對應關係
+5. **Convert → VOC to YOLO** 將 XML 批次轉成 YOLO `.txt` 標籤檔
+6. 使用轉出的 dataset 訓練模型
 
-常見的問題在於安裝了某個pkg後(尤其是用`-U` upgrade), 把你的torch換成CPU版的  
-這時你就要用`pip list`或跑
-```sh
-python tools/cuda_info.py
-```
-來看看你的torch版本與使用狀態, 例如以下才會是可用CUDA的torch版
-```
-torch version: 2.10.0+cu126
-cuda available: True
-cuda version: 12.6
-cudnn version: 91002
-```
-torch後面一定有個cu配版本, 而不是寫cpu  
-cuda available一定為True  
-這裡的cuda version表示該lib對應的cuda版本, 只要你的nvidia driver夠新通常都能用  
-可用`mvidia-smi`確認右上角的CUDA能接受的最高版本
+> 每個步驟的詳細操作說明請見 [使用教學](./docs/usage.md)
+> 訓練相關（dataset 結構、data.yaml、segment 訓練）請見 [訓練指南](./docs/training.md)
 
-Ref.  
-https://www.notion.so/PyTorch-30936ed5d3d680ceb0e1ed1dc8c2c7bf?source=copy_link
+## 功能總覽
 
-
-
-# 簡易Use Case
-1. Menu: File -> Open Folder, 開啟一個需要圖片畫框的資料夾
-2. Menu: Ai -> Use YOLO, 然後 Menu: Ai -> Detect, 可自動下載預設model並偵測影像, 應可偵測人物, 貓, 車等物體. 可使用`Auto Detect`來自動偵測
-3. Save: 將框調整過後即可存成VOC格式的.xml檔案, 或使用`Auto Save`來自動儲存(注意原先的xml檔案會被覆蓋). 注意儲存的圖片跟xml會在`output`子資料夾, 避免與處理中的folder的影像或影片混淆
-4. Menu: Convert -> Edit Categories  編輯映射的分類, 可自行設定編號, 讓VOC的物件名稱轉成yolo的數字編號, 如下  
-![categories](./asset/categories.png)  
-這樣就會把所有的VOC的class名稱轉成統一對應特定編號, 這樣訓練yolo model才有一致性
-5. Menu: Convert -> VOC to YOLO  將xml檔案轉成yolo可訓練的標籤檔(但對應的yolo數字編號需先設定, 請看第4項)
-6. 即可透過顯卡或雲端服務來訓練yolo模型. 如果是想用ultralytics來訓練, 可以參考以下設定檔 `data.yaml`
-```
-train: ../train/images
-val: ../train/images
-# test: ../test/images
-
-nc: 3
-names: 
-  0: person
-  1: cat
-  2: dog
-```
-ultralytics一定要有train跟val, 如果懶得分也可以全塞在同一個資料夾, test則是可用於測試效果  
-以上的路徑的樹狀結構會像是  
-```
-./
-└─train
-    ├─images (全部要訓練的jpg都在這)
-    └─labels (一定要跟jpg配對的.txt標籤檔都在這)
-data.yaml
-```
-ultralytics的官網也有提供範例, 有興趣就到官網看看  
-會許又出了新版的model也說不定  
-
-# 功能一覽
-## 畫框
-- 讀取.pt model, 可偵測影像並畫框
-  - Menu: Ai -> Use default model 自動從網路上下載yolov8n.pt並使用, 可快速體驗影像偵測功能
-  - Menu: Ai -> Select Model 可選擇.pt model, 必須是`Ultralytics` lib能夠使用的model
-  - Menu: Ai -> Detect 可偵測影像並畫框
-  - Menu: Ai -> Auto Detect 自動偵測並畫框, 下方有快捷鍵. 注意如果圖片有讀取到同名的.xml且有bbox, 就不會偵測並覆蓋.xml的bbox
-- 如果圖檔旁有同名的VOC標籤檔, **則優先作為框的資訊**
-- 如果沒有上述兩種方法, 則需要手動按左鍵畫框, 信心值為100%
-- 按右鍵可以刪除框, 但必須為該模式之下(意指bbox模式只能按右鍵刪bbox). 框重疊時, 後來畫的框會先被刪
-- 畫完框, 框角可以調整大小, 每次focus的框都會暫時變黃色
-- 按下小寫的`L`來設定框的名稱, 只對之前focus的框做更改
-  - Menu: Edit -> Edit Label 也能改框名
-- 預設label種類名稱[設定檔](./config/settings.yaml), 按下數字鍵可以直接切換label名稱, 只對之前focus的框做更改
-
-## FileSystem相關
-- 開啟資料夾來瀏覽影像或影片
-  - Menu: File -> Open Folder
-  - Menu: File -> Open File By Index   可選取該資料夾的第N個影像或影片
-- 儲存相關
-  - Menu: File -> Save  儲存框的資訊. 下方有快捷鍵
-  - Menu: File -> Auto Save  會在瀏覽下一個檔案前將畫框資訊儲存, 注意沒有框也會存, 這是為了因應背景的訓練. 下方有快捷鍵
-- 轉換相關
-  - Menu: Convert -> VOC to YOLO  將xml檔案轉成yolo可訓練的標籤檔(但對應的編號需先設定)
-- 滾輪可預覽上/下一個檔案
-- 關於影片撥放
-  - 讀取影片檔案, 並且可對每個frame畫框, 可用Ai偵測畫框, 但沒有對應VOC標籤檔的功能
-  - 使用空白鍵play/pause
-  - 有影片播放進度條
-  - 可調整速度
-  - 按下滑鼠鍵會停止撥放
-  - 如果自動儲存開啟, 則按下play後也會自動儲存, 儲存的檔名將會是"[原檔名]_frame[N], 並且圖片跟xml都會抽出
-  - 在設定檔cfg.yaml中, 可設定每N秒儲存一筆, 設-1則關閉此功能
-- 狀態欄
-  - 顯示有多少檔案, 目前在第N個檔案
-  - 按下數字鍵後, 會顯示數字對應的label名
-
-## Polygon Segmentation (多邊形segment)
-- 按 `P` 或點選左側工具列的 Polygon 按鈕進入多邊形繪製模式
-- 左鍵點擊新增頂點, 靠近第一個點時會自動封閉多邊形
-- 右鍵: 繪製中取消, 或刪除已有的多邊形
-- 儲存時, polygon 資訊會寫入 VOC XML 中的 `<polygon>` 元素
-- 轉換時, 可在 Convert -> Settings 勾選 "Use Segmentation format" 輸出 YOLO Seg 格式
-
+| 功能 | 說明 |
+|------|------|
+| YOLO 自動偵測 | 載入 `.pt` 模型，一鍵偵測並畫框 |
+| SAM3 語義分割 | 透過文字描述自動產生 polygon / bbox |
+| 手動 BBox | 左鍵拖曳畫框，角落可調整大小 |
+| 手動 Polygon | 左鍵點擊頂點，靠近起點自動封閉 |
+| Mask 工具 | Draw / Erase / Fill 遮罩繪製 |
+| VOC → YOLO 轉換 | 支援 BBox、Seg、OBB 三種輸出格式 |
+| 影片標註 | 逐幀標註，支援自動抽幀儲存 |
 
 ## 快捷鍵
-  - `q`: quit
-  - `s`: save, 用於儲存幾張背景時很好用
-  - `a`: toggle auto save
-  - `d`: toggle auto detect
-  - `l`: 彈出視窗, 輸入label名
-  - `v`: 切換到 Select 選取模式
-  - `b`: 切換到 Bbox 繪製模式
-  - `p`: 切換到 Polygon 繪製模式
-  - `數字鍵0~9`: 切換預設的label, 只會針對最後一個label做變更
-  - `Page Up/Down` or `方向鍵左/右`: 切換檔案
-  - `Home/End`: 切換到最 前/後 檔案
-  - `space空白鍵`: play/pause video
+
+| 按鍵 | 功能 |
+|------|------|
+| `q` | 離開 |
+| `s` | 儲存 |
+| `a` | 切換 Auto Save |
+| `d` | 切換 Auto Detect |
+| `l` | 編輯選取框的 label 名稱 |
+| `v` | Select 選取模式 |
+| `b` | BBox 繪製模式 |
+| `p` | Polygon 繪製模式 |
+| `0-9` | 快速切換預設 label |
+| `PgUp/PgDn` 或 `←/→` | 上/下一個檔案 |
+| `Home/End` | 第一個/最後一個檔案 |
+| `Space` | 影片 Play/Pause |
+| 滾輪 | 預覽上/下一個檔案 |
+
+## 設定檔
+
+| 檔案 | 用途 |
+|------|------|
+| `cfg/system.yaml` | 系統設定：預設 label、啟用 SAM3/Mask/OBB 等開關 |
+| `cfg/settings.yaml` | 執行期設定：模型路徑、categories 對應、text prompts |
+
+## 文件目錄
+
+- [安裝指南](./docs/installation.md) — 環境建置、PyTorch CUDA、常見問題排除
+- [使用教學](./docs/usage.md) — 各項功能的詳細操作方式
+- [訓練指南](./docs/training.md) — 從標註到訓練 YOLO 模型的完整流程

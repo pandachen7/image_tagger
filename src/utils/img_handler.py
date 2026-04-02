@@ -1,3 +1,5 @@
+# 管理 YOLO/SAM3 模型推論, 包含 mask 轉 polygon 功能
+# updated: 2026-04-02
 import time
 from typing import Optional
 
@@ -103,7 +105,8 @@ class Inferencer:
     def infer_sam3(self, image_path, src_shape) -> tuple[list, list]:
         """SAM3 inference. Returns (list of Bbox, list of Polygon)."""
         self._sam_predictor.set_image(image_path)
-        labels = list(set(settings.class_names.text_prompts or []))
+        # 使用 dict.fromkeys 保序去重, 避免 set() 順序不確定導致標籤錯亂
+        labels = list(dict.fromkeys(settings.class_names.text_prompts or []))
         bboxes, polygons = [], []
         t1 = time.time()
         masks, boxes = self._sam_predictor.inference_features(
@@ -113,7 +116,7 @@ class Inferencer:
             masks_np = masks.cpu().numpy()
             for i, mask in enumerate(masks_np):
                 label = labels[i] if i < len(labels) else labels[-1]
-                mask_uint8 = (mask * 255).astype(np.uint8)
+                mask_uint8 = (np.squeeze(mask) * 255).astype(np.uint8)
                 contours, _ = cv2.findContours(
                     mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                 )
