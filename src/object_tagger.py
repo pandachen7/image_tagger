@@ -807,8 +807,6 @@ class MainWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_P:
             self.polygon_mode_action.setChecked(True)
             self.image_widget.set_drawing_mode(DrawingMode.POLYGON)
-        elif event.key() == Qt.Key.Key_G:
-            self.manual_detect()
         elif event.key() == Qt.Key.Key_V:
             self.select_mode_action.setChecked(True)
             self.image_widget.set_drawing_mode(DrawingMode.SELECT)

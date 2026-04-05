@@ -56,7 +56,6 @@ python main.py
 | `s` | 儲存 |
 | `a` | 切換 Auto Save |
 | `d` | 執行偵測 (Detect) |
-| `g` | 執行偵測 (Detect) |
 | `l` | 編輯選取框的 label 名稱 |
 | `v` | Select 選取模式 |
 | `b` | BBox 繪製模式 |
