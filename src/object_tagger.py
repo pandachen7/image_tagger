@@ -68,7 +68,7 @@ class MainWindow(QMainWindow):
         self.auto_save_action.setCheckable(True)
         self.auto_save_action.triggered.connect(self.app_state.toggle_auto_save)
 
-        self.save_mask_action = QAction("Save &Mask", self)
+        self.save_mask_action = QAction("Save Mask", self)
         self.save_mask_action.triggered.connect(self.saveMask)
 
         # 自動使用偵測 (GPU不好速度就會慢)
@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
         self.auto_detect_action.triggered.connect(self.app_state.toggle_auto_detect)
 
         # 檔案相關動作
-        self.open_folder_action = QAction("&Open Folder", self)
+        self.open_folder_action = QAction("Open Folder", self)
         self.open_folder_action.triggered.connect(self.open_folder)
 
         # 狀態列
@@ -206,20 +206,20 @@ class MainWindow(QMainWindow):
         # ^Drawing Mode Toolbar
 
         # 退出
-        self.quit_action = QAction("&Quit", self)
+        self.quit_action = QAction("Quit", self)
         self.quit_action.triggered.connect(self.close)
 
         # 偵測
-        self.detect_action = QAction("&Detect", self)
-        self.detect_action.triggered.connect(self.image_widget.runInference)
+        self.detect_action = QAction("Detect", self)
+        self.detect_action.triggered.connect(self.manual_detect)
 
         # 主選單
         self.menu = self.menuBar()
         self.file_menu = self.menu.addMenu("File")
         self.edit_menu = self.menu.addMenu("Edit")
         self.ai_menu = self.menu.addMenu("Ai")
-        self.convert_menu = self.menu.addMenu("&Convert")
-        self.view_menu = self.menu.addMenu("&View")
+        self.convert_menu = self.menu.addMenu("Convert")
+        self.view_menu = self.menu.addMenu("View")
         # self.help_menu = self.menu.addMenu("&Help")
 
         # View mode actions
@@ -252,20 +252,20 @@ class MainWindow(QMainWindow):
         self.view_menu.addAction(self.view_bbox_action)
         self.view_menu.addAction(self.view_seg_action)
 
-        self.edit_categories_action = QAction("&Edit Categories", self)
+        self.edit_categories_action = QAction("Edit Categories", self)
         self.edit_categories_action.triggered.connect(self.edit_categories)
 
-        self.convert_settings_action = QAction("&Settings", self)
+        self.convert_settings_action = QAction("Settings", self)
         self.convert_settings_action.triggered.connect(self.show_convert_settings)
 
-        self.convert_voc_yolo_action = QAction("&VOC to YOLO", self)
+        self.convert_voc_yolo_action = QAction("VOC to YOLO", self)
         self.convert_voc_yolo_action.triggered.connect(self.convert_voc_to_yolo)
 
         self.convert_menu.addAction(self.edit_categories_action)
         self.convert_menu.addAction(self.convert_settings_action)
         self.convert_menu.addAction(self.convert_voc_yolo_action)
 
-        self.open_file_by_index_action = QAction("Open File by &Index", self)
+        self.open_file_by_index_action = QAction("Open File by Index", self)
         self.open_file_by_index_action.triggered.connect(self.open_file_by_index)
 
         self.file_menu.addAction(self.open_folder_action)
@@ -278,16 +278,16 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.quit_action)
 
         # 變更標籤
-        self.edit_label_action = QAction("&Edit Label", self)
+        self.edit_label_action = QAction("Edit Label", self)
         self.edit_label_action.triggered.connect(self.promptInputLabel)
 
         self.edit_menu.addAction(self.edit_label_action)
 
-        self.edit_text_prompts_action = QAction("&Text Prompts", self)
+        self.edit_text_prompts_action = QAction("Text Prompts", self)
         self.edit_text_prompts_action.triggered.connect(self.edit_text_prompts)
         self.edit_menu.addAction(self.edit_text_prompts_action)
 
-        self.edit_param_action = QAction("&Param", self)
+        self.edit_param_action = QAction("Param", self)
         self.edit_param_action.triggered.connect(self.edit_param)
         self.edit_menu.addAction(self.edit_param_action)
 
@@ -314,10 +314,10 @@ class MainWindow(QMainWindow):
             self.ai_menu.addAction(self.use_sam_action)
         self.ai_menu.addSeparator()
 
-        self.select_model_action = QAction("Select &YOLO Model...", self)
+        self.select_model_action = QAction("Select YOLO Model...", self)
         self.select_model_action.triggered.connect(self.select_model)
 
-        self.select_sam_model_action = QAction("Select &SAM3 Model...", self)
+        self.select_sam_model_action = QAction("Select SAM3 Model...", self)
         self.select_sam_model_action.triggered.connect(self.select_sam_model)
 
         self.ai_menu.addAction(self.select_model_action)
@@ -346,6 +346,10 @@ class MainWindow(QMainWindow):
                 "Model Not Found",
                 "以下模型檔案不存在:\n" + "\n".join(missing_models),
             )
+        # Fallback: 沒有任何 YOLO 模型時，使用預設模型（ultralytics 會自動下載）
+        if not inferencer.model_path:
+            inferencer.model_path = "yolo26s.pt"
+            settings.models.model_path = "yolo26s.pt"
         # Restore last active model from settings, fallback to priority logic
         if cfg.enable_sam3 and settings.models.active_model == ModelType.SAM3 and inferencer.sam_model_path:
             inferencer.active_model_type = ModelType.SAM3
@@ -425,6 +429,23 @@ class MainWindow(QMainWindow):
         settings.models.active_model = model_type
         save_settings()
         self.statusbar.showMessage(f"Active model: {model_type}")
+
+    def manual_detect(self):
+        """手動偵測，提供狀態回饋"""
+        if inferencer.active_model_type == ModelType.NONE:
+            self.statusbar.showMessage("Detect: no model selected (use Ai menu)")
+            return
+        if not file_h.current_image_path():
+            self.statusbar.showMessage("Detect: no image loaded")
+            return
+        if not inferencer.ensure_loaded(inferencer.active_model_type):
+            self.statusbar.showMessage(
+                f"Detect: failed to load {inferencer.active_model_type} model"
+            )
+            return
+        self.image_widget.runInference()
+        nb = len(self.image_widget.bboxes) + len(self.image_widget.polygons)
+        self.statusbar.showMessage(f"Detect ({inferencer.active_model_type}): {nb} annotations")
 
     def resetStates(self):
         g_param.auto_save_counter = 0
@@ -770,7 +791,7 @@ class MainWindow(QMainWindow):
         elif event.key() == Qt.Key.Key_A:
             self.app_state.toggle_auto_save()
         elif event.key() == Qt.Key.Key_D:
-            self.app_state.toggle_auto_detect()
+            self.manual_detect()
         elif event.key() == Qt.Key.Key_Delete:
             # SELECT模式下先嘗試刪除選取的標註
             if self.image_widget.drawing_mode == DrawingMode.SELECT:
@@ -787,7 +808,7 @@ class MainWindow(QMainWindow):
             self.polygon_mode_action.setChecked(True)
             self.image_widget.set_drawing_mode(DrawingMode.POLYGON)
         elif event.key() == Qt.Key.Key_G:
-            self.image_widget.runInference()
+            self.manual_detect()
         elif event.key() == Qt.Key.Key_V:
             self.select_mode_action.setChecked(True)
             self.image_widget.set_drawing_mode(DrawingMode.SELECT)

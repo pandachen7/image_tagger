@@ -27,7 +27,7 @@ python main.py
 ```
 
 1. **File → Open Folder** 開啟含有圖片的資料夾
-2. **Ai → Use YOLO → Detect** 自動偵測物件（首次會自動下載預設模型）
+2. **按 `d` 或 Ai → Detect** 自動偵測物件（首次會自動下載 `yolo26s.pt` 預設模型）
 3. 手動微調框的位置、名稱後，**File → Save** 儲存為 VOC XML
 4. **Convert → Edit Categories** 設定 class name → 數字編號 的對應關係
 5. **Convert → VOC to YOLO** 將 XML 批次轉成 YOLO `.txt` 標籤檔
@@ -55,7 +55,8 @@ python main.py
 | `q` | 離開 |
 | `s` | 儲存 |
 | `a` | 切換 Auto Save |
-| `d` | 切換 Auto Detect |
+| `d` | 執行偵測 (Detect) |
+| `g` | 執行偵測 (Detect) |
 | `l` | 編輯選取框的 label 名稱 |
 | `v` | Select 選取模式 |
 | `b` | BBox 繪製模式 |

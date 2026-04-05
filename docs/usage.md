@@ -29,10 +29,9 @@ python main.py
 
 ### YOLO 偵測
 
-1. **Ai → Use default model**：自動下載 `yolov8n.pt` 預設模型（適合快速體驗）
-2. **Ai → Select Model**：選擇自定義的 `.pt` 模型（必須是 Ultralytics 相容的模型）
-3. **Ai → Detect**：對目前的影像執行偵測
-4. **Ai → Auto Detect**（快捷鍵 `d`）：開啟後，切換檔案時自動偵測
+1. **快捷鍵 `d`** 或 **Ai → Detect**：對目前的影像執行偵測（首次會自動下載 `yolo26s.pt` 預設模型）
+2. **Ai → Select YOLO Model**：選擇自定義的 `.pt` 模型（必須是 Ultralytics 相容的模型）
+3. **Ai → Auto Detect**：開啟後，切換檔案時自動偵測
 
 > 如果圖片旁已有同名的 `.xml` 標籤檔且內含 bbox，Auto Detect 不會覆蓋，會優先使用 XML 的標註。
 
