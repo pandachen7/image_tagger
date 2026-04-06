@@ -8,123 +8,68 @@
 ## 整體流程
 
 ```
-標註圖片 → 儲存 VOC XML → 轉換為 YOLO txt → 整理 dataset 結構 → 編寫 data.yaml → 訓練
+標註圖片 → 儲存 VOC XML → Convert → VOC to YOLO（自動轉換 + 分割 + 產生 yaml）→ 訓練
 ```
 
 ---
 
 ## Step 1：標註並轉換
 
-請先完成 [使用教學](./usage.md) 中的標註與轉換步驟。
-轉換完成後，你會得到一堆 `.txt` 標籤檔，每個檔案對應一張圖片。
-
-**Detection 格式**（每行一個物件）：
-```
-class_id cx cy w h
-```
-
-**Segmentation 格式**（每行一個物件）：
-```
-class_id x1 y1 x2 y2 ... xN yN
-```
-
-> 所有座標都是 0~1 的正規化值。
+請先完成 [使用教學](./usage.md) 中的標註與儲存步驟。
 
 ---
 
-## Step 2：整理 Dataset 結構
+## Step 2：VOC to YOLO（轉換 + 分割 + 產生 yaml）
 
-Ultralytics 要求 images 和 labels 放在平行的資料夾中，且檔名必須一一對應。
+1. **Convert → Edit Categories**：設定 class name → class_id 的對應
+2. **Convert → VOC to YOLO**：選擇含有 VOC XML 的資料夾，在彈出的對話框中設定：
+   - **輸出模式**：BBox（Detection）或 Seg（Segmentation）
+   - **Train / Val 比例**：預設 100% train，可調整（如 80%/20%）
 
-> **Convert → VOC to YOLO** 現在會自動完成以下步驟：轉換標籤格式、依 train/val 比例移動檔案、產生 `dataset_YYYY_MMDD.yaml`。如果不需要手動整理，可以直接跳到 [Step 4](#step-4訓練)。
+工具會自動完成以下步驟：
+- 將 VOC XML 轉換為 YOLO `.txt`（所有座標為 0~1 正規化值）
+- 依比例將圖片和標籤移動到 `images/train`、`images/val` 和 `labels/train`、`labels/val`
+- 產生 `dataset_YYYY_MMDD_HHMMSS.yaml`
 
-### 最簡結構（全部當訓練集）
+**YOLO 標籤格式：**
 
-```
-my_dataset/
-├── data.yaml
-├── images/
-│   └── train/
-│       ├── 001.jpg
-│       ├── 002.jpg
-│       └── ...
-└── labels/
-    └── train/
-        ├── 001.txt
-        ├── 002.txt
-        └── ...
-```
+| 模式 | 格式 |
+|------|------|
+| Detection | `class_id cx cy w h` |
+| Segmentation | `class_id x1 y1 x2 y2 ... xN yN` |
 
-### 建議結構（含驗證集和測試集）
+**產生的 dataset 結構：**
 
 ```
 my_dataset/
-├── data.yaml
+├── dataset_2026_0406_153042.yaml
 ├── images/
 │   ├── train/
-│   │   ├── img001.jpg
-│   │   └── img002.jpg
-│   ├── val/
-│   │   ├── img003.jpg
-│   │   └── img004.jpg
-│   └── test/      # 選用
+│   └── val/       # 若 train 設為 100% 則不產生
 └── labels/
     ├── train/
-    │   ├── img001.txt
-    │   └── img002.txt
-    ├── val/
-    │   ├── img003.txt
-    │   └── img004.txt
-    └── test/      # 選用
+    └── val/
 ```
 
-專案內附 `src/for_training/split_dataset.py` 可自動拆分資料集。
-修改檔案開頭的設定即可：
-
-```python
-SOURCE_DATA_DIR = "~/datasets/img/my_annotated_data"   # 原始標註資料
-OUTPUT_DATA_DIR = "~/datasets/img/my_dataset_split"    # 拆分後的輸出
-SPLIT_RATIOS = [0.8, 0.1, 0.1]                        # train / valid / test
-```
-
-然後執行：
-```bash
-python src/for_training/split_dataset.py
-```
-
-> 注意：執行前需要在 `SOURCE_DATA_DIR/train/` 下準備好 `images/` 和 `labels/` 兩個子資料夾，以及根目錄要有 `data.yaml`。
-
----
-
-## Step 3：編寫 data.yaml
+**產生的 yaml 內容範例：**
 
 ```yaml
 path: /data/my_dataset
 train: images/train
-# val: images/val
+val: images/val        # 若無 val set 則不包含此行
 
-# 預設自動對應 label 路徑（相對於 path, 注意ultralytics無法直接設定）
-# train_labels: labels/train
-# val_labels: labels/val
-
-# 類別數量
 nc: 3
-
-# 類別名稱（編號必須與 Convert → Edit Categories 一致）
 names:
     0: person
     1: car
     2: dog
 ```
 
-> `names` 的編號要和你在 Image Tagger 的 **Edit Categories** 中設定的對應一致。
-> 例如你設了 `person → 0`，這裡就是 `0: person`。
-
-> 如果只想快速測試，`train` 和 `val` 可以指向同一個資料夾。
+> `names` 的編號來自 **Edit Categories** 中設定的 class_id。
 
 ---
 
-## Step 4：訓練
+## Step 3：訓練
 
 ### Object Detection
 
@@ -146,7 +91,7 @@ results = model.train(
 
 與 detection 的差別只有兩點：
 1. 模型要用 **seg 版本**（檔名含 `-seg`）
-2. 標籤檔要是 **polygon 格式**（Convert → Settings 選 Seg）
+2. 標籤檔要是 **polygon 格式**（轉換時選 Seg 模式）
 
 ```python
 from ultralytics import YOLO

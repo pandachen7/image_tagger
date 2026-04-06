@@ -128,11 +128,11 @@ SAM3 會根據文字描述自動產生 segmentation mask 並轉為 polygon。
      | Seg | `class_id x1 y1 x2 y2 ... xN yN` | Segmentation 訓練 |
      | OBB | `class_id x1 y1 x2 y2 x3 y3 x4 y4` | 旋轉框偵測（目前停用） |
 
-   - **Train / Val 比例**：預設 8:2，可調整為 10:0（不產生 val set），Train 至少為 5
+   - **Train / Val 比例**：預設 100% train，可調整（如 80%/20%），Train 最少 50%，設為 100% 則不產生 val set
 
    轉換完成後，工具會自動：
    - 將圖片和標籤依比例移動到 `images/train`、`images/val` 和 `labels/train`、`labels/val`
-   - 在資料夾根目錄產生 `dataset_YYYY_MMDD.yaml`，可直接用於 Ultralytics 訓練
+   - 在資料夾根目錄產生 `dataset_YYYY_MMDD_HHMMSS.yaml`，可直接用於 Ultralytics 訓練
 
 > 所有座標值都是正規化（0~1）的相對座標。
 

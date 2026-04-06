@@ -29,9 +29,9 @@ python main.py
 1. **File → Open Folder** 開啟含有圖片的資料夾
 2. **按 `d` 或 Ai → Detect** 自動偵測物件（首次會自動下載 `yolo26s.pt` 預設模型）
 3. 手動微調框的位置、名稱後，**File → Save** 儲存為 VOC XML
-4. **Convert → Edit Categories** 設定 class name → 數字編號 的對應關係
-5. **Convert → VOC to YOLO** 將 XML 批次轉成 YOLO `.txt` 標籤檔
-6. 使用轉出的 dataset 訓練模型
+4. **Convert → Edit Categories** 設定 class name → class_id 的對應關係
+5. **Convert → VOC to YOLO** 選擇資料夾 → 設定輸出模式與 train/val 比例 → 自動轉換、分割檔案並產生 `dataset.yaml`
+6. 使用產生的 `dataset.yaml` 訓練模型
 
 > 每個步驟的詳細操作說明請見 [使用教學](./docs/usage.md)
 > 訓練相關（dataset 結構、data.yaml、segment 訓練）請見 [訓練指南](./docs/training.md)
