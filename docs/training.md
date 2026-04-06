@@ -36,17 +36,20 @@ class_id x1 y1 x2 y2 ... xN yN
 
 Ultralytics 要求 images 和 labels 放在平行的資料夾中，且檔名必須一一對應。
 
+> **Convert → VOC to YOLO** 現在會自動完成以下步驟：轉換標籤格式、依 train/val 比例移動檔案、產生 `dataset_YYYY_MMDD.yaml`。如果不需要手動整理，可以直接跳到 [Step 4](#step-4訓練)。
+
 ### 最簡結構（全部當訓練集）
 
 ```
 my_dataset/
 ├── data.yaml
-└── train/
-    ├── images/
-    │   ├── 001.jpg
-    │   ├── 002.jpg
-    │   └── ...
-    └── labels/
+├── images/
+│   └── train/
+│       ├── 001.jpg
+│       ├── 002.jpg
+│       └── ...
+└── labels/
+    └── train/
         ├── 001.txt
         ├── 002.txt
         └── ...
@@ -57,15 +60,22 @@ my_dataset/
 ```
 my_dataset/
 ├── data.yaml
-├── train/
-│   ├── images/
-│   └── labels/
-├── valid/
-│   ├── images/
-│   └── labels/
-└── test/          # 選用
-    ├── images/
-    └── labels/
+├── images/
+│   ├── train/
+│   │   ├── img001.jpg
+│   │   └── img002.jpg
+│   ├── val/
+│   │   ├── img003.jpg
+│   │   └── img004.jpg
+│   └── test/      # 選用
+└── labels/
+    ├── train/
+    │   ├── img001.txt
+    │   └── img002.txt
+    ├── val/
+    │   ├── img003.txt
+    │   └── img004.txt
+    └── test/      # 選用
 ```
 
 專案內附 `src/for_training/split_dataset.py` 可自動拆分資料集。
@@ -89,19 +99,22 @@ python src/for_training/split_dataset.py
 ## Step 3：編寫 data.yaml
 
 ```yaml
-# 路徑為相對於 data.yaml 的位置
-train: ./train/images
-val: ./valid/images
-# test: ./test/images  # 選用
+path: /data/my_dataset
+train: images/train
+# val: images/val
+
+# 預設自動對應 label 路徑（相對於 path, 注意ultralytics無法直接設定）
+# train_labels: labels/train
+# val_labels: labels/val
 
 # 類別數量
 nc: 3
 
 # 類別名稱（編號必須與 Convert → Edit Categories 一致）
 names:
-  0: person
-  1: cat
-  2: dog
+    0: person
+    1: car
+    2: dog
 ```
 
 > `names` 的編號要和你在 Image Tagger 的 **Edit Categories** 中設定的對應一致。

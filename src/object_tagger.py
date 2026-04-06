@@ -1,7 +1,9 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
 # 更新日期: 2026-03-12
+import random
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -26,6 +28,7 @@ from ruamel.yaml import YAML
 
 from src.config import cfg
 from src.core import AppState
+from src.utils.const import IMAGE_EXTS
 from src.image_widget import DrawingMode, ImageWidget
 from src.utils.dialogs import (
     CategorySettingsDialog,
@@ -255,14 +258,10 @@ class MainWindow(QMainWindow):
         self.edit_categories_action = QAction("Edit Categories", self)
         self.edit_categories_action.triggered.connect(self.edit_categories)
 
-        self.convert_settings_action = QAction("Settings", self)
-        self.convert_settings_action.triggered.connect(self.show_convert_settings)
-
         self.convert_voc_yolo_action = QAction("VOC to YOLO", self)
         self.convert_voc_yolo_action.triggered.connect(self.convert_voc_to_yolo)
 
         self.convert_menu.addAction(self.edit_categories_action)
-        self.convert_menu.addAction(self.convert_settings_action)
         self.convert_menu.addAction(self.convert_voc_yolo_action)
 
         self.open_file_by_index_action = QAction("Open File by Index", self)
@@ -869,20 +868,87 @@ class MainWindow(QMainWindow):
 
     def convert_voc_to_yolo(self):
         """
-        將 VOC XML 格式的標註檔案轉換為 YOLO TXT 標籤檔
+        將 VOC XML 格式的標註檔案轉換為 YOLO TXT 標籤檔，
+        並依 train/val 比例整理成 dataset 結構 + 產生 data.yaml
         """
         folder_path = QFileDialog.getExistingDirectory(
             self, "Select folder containing VOC XML files"
         )
-        if folder_path:
-            output_folder = Path(
-                folder_path, YOLO_LABELS_FOLDER
-            )  # 在同資料夾下建立 yolo labels 資料夾
-            output_folder.mkdir(parents=True, exist_ok=True)
-            file_h.convertVocInFolder(folder_path, output_folder, self.app_state)
-            self.statusbar.showMessage(
-                f"VOC to YOLO conversion completed in folder: {output_folder}"
-            )
+        if not folder_path:
+            return
+
+        # 顯示轉換設定 dialog（含 split 比例）
+        dialog = ConvertSettingsDialog(self, self.app_state)
+        if not dialog.exec():
+            return
+
+        base = Path(folder_path)
+        train_ratio = dialog.train_ratio
+
+        # 1) 轉換 VOC XML → YOLO txt（先輸出到暫存 labels/ 下）
+        tmp_labels = base / YOLO_LABELS_FOLDER
+        tmp_labels.mkdir(parents=True, exist_ok=True)
+        file_h.convertVocInFolder(folder_path, tmp_labels, self.app_state)
+
+        # 2) 收集有對應 label 的圖片
+        image_files = sorted(
+            f for f in base.iterdir()
+            if f.is_file() and f.suffix.lower() in IMAGE_EXTS
+        )
+        paired = [
+            f for f in image_files
+            if (tmp_labels / f"{f.stem}.txt").exists()
+        ]
+        if not paired:
+            QMessageBox.warning(self, "Warning", "沒有找到成功轉換的圖片/標籤配對")
+            return
+
+        random.shuffle(paired)
+        split_idx = max(1, int(len(paired) * train_ratio))
+        train_files = paired[:split_idx]
+        val_files = paired[split_idx:] if split_idx < len(paired) else []
+
+        # 3) 建立目錄結構並移動檔案
+        for split_name, files in [("train", train_files), ("val", val_files)]:
+            if not files:
+                continue
+            img_dir = base / "images" / split_name
+            lbl_dir = base / "labels" / split_name
+            img_dir.mkdir(parents=True, exist_ok=True)
+            lbl_dir.mkdir(parents=True, exist_ok=True)
+            for img_path in files:
+                txt_path = tmp_labels / f"{img_path.stem}.txt"
+                shutil.move(str(img_path), str(img_dir / img_path.name))
+                shutil.move(str(txt_path), str(lbl_dir / txt_path.name))
+
+        # 清除暫存 labels/ (已搬空)
+        if tmp_labels.exists() and not any(tmp_labels.iterdir()):
+            tmp_labels.rmdir()
+
+        # 4) 產生 dataset yaml
+        categories = settings.class_names.categories  # {name: id}
+        # 反轉成 {id: name}，依 id 排序
+        id_to_name = dict(sorted(
+            ((v, k) for k, v in categories.items()),
+            key=lambda x: x[0],
+        ))
+
+        data_yaml = {"path": str(base.resolve())}
+        data_yaml["train"] = "images/train"
+        if val_files:
+            data_yaml["val"] = "images/val"
+        data_yaml["nc"] = len(id_to_name)
+        data_yaml["names"] = id_to_name
+
+        yaml_name = f"dataset_{datetime.now().strftime('%Y_%m%d_%H%M%S')}.yaml"
+        yaml_path = base / yaml_name
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            yaml.dump(data_yaml, f)
+
+        self.statusbar.showMessage(
+            f"轉換完成 — train: {len(train_files)}, val: {len(val_files)}, "
+            f"yaml: {yaml_name}"
+        )
 
     def edit_categories(self):
         dialog = CategorySettingsDialog(self)
@@ -903,12 +969,6 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage(
                 f"Polygon tolerance: {settings.models.polygon_tolerance}"
             )
-
-    def show_convert_settings(self):
-        """顯示轉換設定對話框"""
-        dialog = ConvertSettingsDialog(self, self.app_state)
-        if dialog.exec():
-            self.statusbar.showMessage("轉換設定已儲存")
 
     def cbWheelEvent(self, wheel_up):
         if self.app_state.auto_save or g_param.user_labeling:

@@ -118,18 +118,23 @@ SAM3 會根據文字描述自動產生 segmentation mask 並轉為 polygon。
    例如 `person → 0`、`cat → 1`、`dog → 2`。
    同一個物件的不同名稱可以對到同一個編號（如 `motor`、`motorbike`、`motorcycle` 都對到 `9`）。
 
-2. **Convert → Settings**：選擇輸出模式
+2. **Convert → VOC to YOLO**：選擇含 VOC XML 的資料夾後，會彈出設定對話框：
 
-   | 模式 | YOLO 格式 | 用途 |
-   |------|-----------|------|
-   | BBox | `class_id cx cy w h` | Object Detection 訓練 |
-   | Seg | `class_id x1 y1 x2 y2 ... xN yN` | Segmentation 訓練 |
-   | OBB | `class_id x1 y1 x2 y2 x3 y3 x4 y4` | 旋轉框偵測（目前停用） |
+   - **輸出模式**：
 
-3. **Convert → VOC to YOLO**：批次轉換所有 XML 為 YOLO `.txt`
+     | 模式 | YOLO 格式 | 用途 |
+     |------|-----------|------|
+     | BBox | `class_id cx cy w h` | Object Detection 訓練 |
+     | Seg | `class_id x1 y1 x2 y2 ... xN yN` | Segmentation 訓練 |
+     | OBB | `class_id x1 y1 x2 y2 x3 y3 x4 y4` | 旋轉框偵測（目前停用） |
+
+   - **Train / Val 比例**：預設 8:2，可調整為 10:0（不產生 val set），Train 至少為 5
+
+   轉換完成後，工具會自動：
+   - 將圖片和標籤依比例移動到 `images/train`、`images/val` 和 `labels/train`、`labels/val`
+   - 在資料夾根目錄產生 `dataset_YYYY_MMDD.yaml`，可直接用於 Ultralytics 訓練
 
 > 所有座標值都是正規化（0~1）的相對座標。
-> 轉換後的 `.txt` 檔會放在與 XML 相同的資料夾中。
 
 ---
 

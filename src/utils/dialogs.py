@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -25,7 +26,7 @@ class CategorySettingsDialog(QDialog):
 
         self.table_widget = QTableWidget()
         self.table_widget.setColumnCount(2)
-        self.table_widget.setHorizontalHeaderLabels(["Category Name", "Index"])
+        self.table_widget.setHorizontalHeaderLabels(["Category Name", "class_id (index)"])
         self.table_widget.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )
@@ -65,8 +66,17 @@ class CategorySettingsDialog(QDialog):
         self.table_widget.setItem(row_count, 0, name_item)
         self.table_widget.setItem(row_count, 1, index_item)
 
+    def _next_class_id(self) -> int:
+        """找出目前表格中最大的 class_id + 1"""
+        max_id = -1
+        for row in range(self.table_widget.rowCount()):
+            item = self.table_widget.item(row, 1)
+            if item and item.text().isdigit():
+                max_id = max(max_id, int(item.text()))
+        return max_id + 1
+
     def add_category(self):
-        self.add_row()
+        self.add_row("", str(self._next_class_id()))
 
     def delete_category(self):
         selected_row = self.table_widget.currentRow()
@@ -200,37 +210,18 @@ class TextPromptsDialog(QDialog):
 
 
 class ConvertSettingsDialog(QDialog):
-    """轉換設定對話框"""
+    """VOC → YOLO 轉換設定對話框（含 dataset split 比例）"""
 
     def __init__(self, parent=None, app_state: AppState = None):
         super().__init__(parent)
         self.app_state = app_state
         self.setWindowTitle("轉換設定 (Convert Settings)")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(420)
 
-        # 主佈局
         main_layout = QVBoxLayout(self)
 
-        # 格式選擇群組
-        format_group = QGroupBox("輸出格式 (Output Format)")
-        format_layout = QFormLayout()
-
-        # 格式選擇下拉選單
-        self.format_combo = QComboBox()
-        self.format_combo.addItem("YOLO", "yolo")  # 顯示文字, 資料值
-        # 將來可以在這裡添加更多格式
-        # self.format_combo.addItem("COCO", "coco")
-        # self.format_combo.addItem("Pascal VOC", "voc")
-
-        format_layout.addRow(QLabel("格式 (Format):"), self.format_combo)
-        format_group.setLayout(format_layout)
-        main_layout.addWidget(format_group)
-
-        # YOLO 選項群組
-        yolo_group = QGroupBox("YOLO 選項 (YOLO Options)")
-        yolo_layout = QVBoxLayout()
-
-        # 輸出模式選擇
+        # --- YOLO 輸出模式 ---
+        mode_group = QGroupBox("YOLO 輸出模式")
         mode_layout = QFormLayout()
         self.mode_combo = QComboBox()
         self.mode_combo.addItem(
@@ -242,45 +233,77 @@ class ConvertSettingsDialog(QDialog):
         self.mode_combo.addItem(
             "OBB - 旋轉邊界框 (class_id x1 y1 x2 y2 x3 y3 x4 y4)", "obb"
         )
-        # Disable OBB option
         self.mode_combo.model().item(2).setEnabled(False)
+        mode_layout.addRow("輸出模式:", self.mode_combo)
+        mode_group.setLayout(mode_layout)
+        main_layout.addWidget(mode_group)
 
-        mode_layout.addRow(QLabel("輸出模式 (Output Mode):"), self.mode_combo)
-        yolo_layout.addLayout(mode_layout)
-        yolo_group.setLayout(yolo_layout)
-        main_layout.addWidget(yolo_group)
+        # --- Train / Val split ---
+        split_group = QGroupBox("Train / Val 比例")
+        split_layout = QFormLayout()
 
-        # 按鈕
+        self.train_spin = QSpinBox()
+        self.train_spin.setRange(50, 100)
+        self.train_spin.setSuffix(" %")
+        self.train_spin.setSingleStep(5)
+        self.train_spin.setValue(100)
+        self.train_spin.valueChanged.connect(self._on_train_changed)
+
+        self.val_spin = QSpinBox()
+        self.val_spin.setRange(0, 50)
+        self.val_spin.setSuffix(" %")
+        self.val_spin.setValue(0)
+        self.val_spin.setReadOnly(True)
+
+        ratio_row = QHBoxLayout()
+        ratio_row.addWidget(QLabel("Train:"))
+        ratio_row.addWidget(self.train_spin)
+        ratio_row.addWidget(QLabel("Val:"))
+        ratio_row.addWidget(self.val_spin)
+        split_layout.addRow(ratio_row)
+
+        hint = QLabel(
+            "圖片會依比例移動到 images/train 和 images/val\n"
+            "Train 最少 50%，設為 100% 則不產生 val set"
+        )
+        hint.setStyleSheet("color: gray; font-size: 11px;")
+        split_layout.addRow(hint)
+
+        split_group.setLayout(split_layout)
+        main_layout.addWidget(split_group)
+
+        # --- 按鈕 ---
         button_layout = QHBoxLayout()
-        self.save_button = QPushButton("儲存 (Save)")
+        self.save_button = QPushButton("確定 (OK)")
         self.save_button.clicked.connect(self.save_settings)
         self.cancel_button = QPushButton("取消 (Cancel)")
         self.cancel_button.clicked.connect(self.reject)
-
         button_layout.addStretch()
         button_layout.addWidget(self.save_button)
         button_layout.addWidget(self.cancel_button)
         main_layout.addLayout(button_layout)
 
-        # 載入當前設定
         self.load_settings()
 
-    def load_settings(self):
-        """從 app_state 載入當前設定"""
-        if self.app_state:
-            # 設定格式選擇
-            index = self.format_combo.findData(self.app_state.convert_format)
-            if index >= 0:
-                self.format_combo.setCurrentIndex(index)
+    def _on_train_changed(self, value: int):
+        self.val_spin.setValue(100 - value)
 
-            # 設定輸出模式
+    def load_settings(self):
+        if self.app_state:
             index = self.mode_combo.findData(self.app_state.yolo_output_mode)
             if index >= 0:
                 self.mode_combo.setCurrentIndex(index)
 
     def save_settings(self):
-        """儲存設定到 app_state"""
         if self.app_state:
-            self.app_state.convert_format = self.format_combo.currentData()
+            self.app_state.convert_format = "yolo"
             self.app_state.yolo_output_mode = self.mode_combo.currentData()
         self.accept()
+
+    @property
+    def train_ratio(self) -> float:
+        return self.train_spin.value() / 100.0
+
+    @property
+    def val_ratio(self) -> float:
+        return self.val_spin.value() / 100.0
