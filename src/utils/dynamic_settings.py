@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -36,7 +37,16 @@ class Settings(BaseModel):
 
 
 def load_settings(file_path="cfg/settings.yaml"):
-    with open(file_path, "r", encoding="utf-8") as f:
+    path = Path(file_path)
+    if not path.exists():
+        log.info(f"{file_path} not found, generating default settings.")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        default = Settings()
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(default.model_dump(), f)
+        return default
+
+    with open(path, "r", encoding="utf-8") as f:
         data = yaml.load(f)
 
     return Settings(**data)

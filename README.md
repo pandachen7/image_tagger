@@ -71,7 +71,17 @@ python main.py
 | 檔案 | 用途 |
 |------|------|
 | `cfg/system.yaml` | 系統設定：預設 label、啟用 SAM3/Mask/OBB 等開關 |
-| `cfg/settings.yaml` | 執行期設定：模型路徑、categories 對應、text prompts |
+| `cfg/settings.yaml` | 執行期設定：模型路徑、categories 對應、text prompts. 不存在時會自動生成 |
+
+## 常用vs code的快捷組合鍵
+
+- ctrl + shift + `: 開新terminal(e.g. git bash, command prompt)
+- ctrl + d: focus在terminal的話, 關閉目前的terminal
+- f5: run python程式
+- shift + f5: 關閉目前正在跑的python程式
+- ctrl + shift + f5: 如果有正在跑的python程式, 則關掉並重跑
+- ctrl + `+`: 放大文字
+- ctrl + `-`: 縮小文字
 
 ## 文件目錄
 
