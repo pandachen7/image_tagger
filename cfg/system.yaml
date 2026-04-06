@@ -37,7 +37,8 @@ auto_save_per_second: 5
 show_fps: false
 
 # save img and labels to this folder (relative path of original img)
-save_folder: ./output
+# save_folder: ./output  # 相對路徑
+save_folder: C:/output  # 絕對路徑, 統一都將VOC標籤與圖片都輸出到此
 
 # 是否啟用 Draw / Erase / Fill 遮罩工具
 enable_mask_tools: false
