@@ -499,11 +499,12 @@ class ImageWidget(QWidget):
         """切換繪圖模式"""
         self.drawing_mode = mode
         self.setCursor(Qt.CursorShape.ArrowCursor)
-        # 離開SELECT模式時清除選取狀態
-        if mode != DrawingMode.SELECT:
-            self.select_type = None
-            self.selected_bbox_indices = set()
-            self.selected_polygon_indices = set()
+        # 切換模式時重置所有 focus / 選取狀態
+        self.idx_focus_bbox = -1
+        self.idx_focus_polygon = -1
+        self.select_type = None
+        self.selected_bbox_indices = set()
+        self.selected_polygon_indices = set()
         self.update()
 
     def set_brush_size(self, size: int):
