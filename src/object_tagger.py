@@ -389,6 +389,12 @@ class MainWindow(QMainWindow):
         )
         self.app_state.register_callback("status_message", self.statusbar.showMessage)
 
+        # Multi-digit label key input timer
+        self._label_key_timer = QTimer(self)
+        self._label_key_timer.setSingleShot(True)
+        self._label_key_timer.setInterval(600)  # ms
+        self._label_key_timer.timeout.connect(self._on_label_key_timeout)
+
         # Set image widget callbacks
         self.image_widget.set_callbacks(
             on_mouse_press=self.cbMousePress,
@@ -726,6 +732,41 @@ class MainWindow(QMainWindow):
             iw.bboxes[idx].label = label
             iw.update()
 
+    def _handle_label_digit(self, digit: str):
+        """Handle a digit key press for multi-digit label code input."""
+        state = self.app_state
+        buf = state.append_key_buffer(digit)
+
+        if state.is_unique_prefix():
+            # Exact match with no ambiguity — apply immediately
+            self._label_key_timer.stop()
+            self._apply_label_from_buffer()
+        elif state.has_any_prefix_match():
+            # Could still become a valid key — wait for more digits
+            self._label_key_timer.start()
+            self.statusBar().showMessage(f"Label key: [{buf}] ...")
+        else:
+            # No key starts with this buffer — discard
+            self._label_key_timer.stop()
+            self.statusBar().showMessage(f"Label key: [{buf}] — no match")
+            state.clear_key_buffer()
+
+    def _on_label_key_timeout(self):
+        """Timer expired — resolve whatever is in the buffer."""
+        self._apply_label_from_buffer()
+
+    def _apply_label_from_buffer(self):
+        """Resolve the key buffer to a label and apply it."""
+        state = self.app_state
+        buf = state.key_buffer
+        label = state.resolve_key_buffer()
+        if label:
+            state.last_used_label = label
+            self.updateFocusedAnnotation()
+            self.statusBar().showMessage(f"Label: [{buf}] → {label}")
+        else:
+            self.statusBar().showMessage(f"Label key: [{buf}] — no match")
+
     def promptInputLabel(self):
         """彈出輸入框，讓使用者輸入標籤名稱（支援多選）"""
         iw = self.image_widget
@@ -814,24 +855,9 @@ class MainWindow(QMainWindow):
             self.bbox_mode_action.setChecked(True)
             self.image_widget.set_drawing_mode(DrawingMode.BBOX)
 
-        elif event.key() in [
-            Qt.Key.Key_1,
-            Qt.Key.Key_2,
-            Qt.Key.Key_3,
-            Qt.Key.Key_4,
-            Qt.Key.Key_5,
-            Qt.Key.Key_6,
-            Qt.Key.Key_7,
-            Qt.Key.Key_8,
-            Qt.Key.Key_9,
-            Qt.Key.Key_0,
-        ]:
-            key_val = event.key() - Qt.Key.Key_1 + 1
-            self.app_state.last_used_label = self.app_state.get_label_by_key(
-                str(key_val)
-            )
-            self.updateFocusedAnnotation()
-            self.statusBar().showMessage(f"labels: {self.app_state.preset_labels}")
+        elif Qt.Key.Key_0 <= event.key() <= Qt.Key.Key_9:
+            digit = str(event.key() - Qt.Key.Key_0)
+            self._handle_label_digit(digit)
 
     def closeEvent(self, event):
         """

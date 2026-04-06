@@ -1,4 +1,7 @@
-# Preset labels, you press number to change the label
+# Preset labels — press digit code to change the label
+# Supports single-digit (1), two-digit (12), or three-digit (123) codes
+# If a code is a prefix of another (e.g. 1 and 12 both exist),
+# the shorter one waits ~600ms before applying; the longer one applies immediately.
 labels:
   1: person
   2: car
@@ -10,6 +13,15 @@ labels:
   8: bicycle
   9: train
   0: unknown
+  # 多碼範例 (uncomment to use):
+  11: motorcycle
+  12: scooter
+  21: pickup
+  22: van
+  31: airplane
+  99: other
+  111: fire_hydrant
+  1111: stop_sign
 
 # default label name, draw bbox with this label
 default_label: object

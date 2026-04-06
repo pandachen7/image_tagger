@@ -19,6 +19,9 @@ class AppState:
         self.preset_labels: dict[str, str] = {}
         self.last_used_label = "object"
 
+        # Multi-digit key input buffer
+        self._key_buffer = ""
+
         # Convert settings
         self.convert_format = "yolo"
         self.yolo_output_mode = "bbox"  # "bbox", "seg", "obb"
@@ -65,3 +68,39 @@ class AppState:
         """Get a label by its key from preset labels."""
         return self.preset_labels.get(key, self.last_used_label)
 
+    def append_key_buffer(self, digit: str) -> str:
+        """Append a digit to the key buffer and return current buffer."""
+        self._key_buffer += digit
+        return self._key_buffer
+
+    def clear_key_buffer(self):
+        self._key_buffer = ""
+
+    @property
+    def key_buffer(self) -> str:
+        return self._key_buffer
+
+    def resolve_key_buffer(self) -> str | None:
+        """Try to resolve the current buffer to a label.
+        Returns the label if matched, None otherwise.
+        """
+        label = self.preset_labels.get(self._key_buffer)
+        self._key_buffer = ""
+        return label
+
+    def is_unique_prefix(self) -> bool:
+        """Check if current buffer exactly matches one key and
+        no other key starts with this prefix (so we can apply immediately).
+        """
+        buf = self._key_buffer
+        if not buf:
+            return False
+        if buf not in self.preset_labels:
+            return False
+        # Check no other key has this as a strict prefix
+        return not any(k != buf and k.startswith(buf) for k in self.preset_labels)
+
+    def has_any_prefix_match(self) -> bool:
+        """Check if any preset key starts with the current buffer."""
+        buf = self._key_buffer
+        return any(k.startswith(buf) for k in self.preset_labels)
