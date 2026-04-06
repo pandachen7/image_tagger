@@ -13,18 +13,22 @@ labels:
   8: bicycle
   9: train
   0: unknown
-  # 多碼範例 (uncomment to use):
+  # 多碼範例
   11: motorcycle
   12: scooter
   21: pickup
   22: van
   31: airplane
   99: other
-  111: fire_hydrant
+  # 111: fire_hydrant
   1111: stop_sign
 
 # default label name, draw bbox with this label
 default_label: object
+
+# 多碼 label 輸入的等待時間（秒），超過此時間自動套用已輸入的碼
+# 習慣的話就可以設低一點, 短編碼反應速度才會快
+label_key_timeout: 2
 
 # minimal height or width of bbox
 minimal_bbox_length: 30

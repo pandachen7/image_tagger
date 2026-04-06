@@ -7,6 +7,7 @@ yaml = YAML()
 class Config(BaseModel):
     labels: dict[int, str] = {}
     default_label: str = "object"
+    label_key_timeout: float = 1.2
     minimal_bbox_length: int = 30
     last_used_label: str = "object"
     auto_save_per_second: float = -1

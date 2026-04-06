@@ -104,3 +104,10 @@ class AppState:
         """Check if any preset key starts with the current buffer."""
         buf = self._key_buffer
         return any(k.startswith(buf) for k in self.preset_labels)
+
+    def get_prefix_matches(self) -> list[tuple[str, str]]:
+        """Return all (key, label) pairs that start with the current buffer."""
+        buf = self._key_buffer
+        return [
+            (k, v) for k, v in self.preset_labels.items() if k.startswith(buf)
+        ]

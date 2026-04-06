@@ -395,7 +395,7 @@ class MainWindow(QMainWindow):
         # Multi-digit label key input timer
         self._label_key_timer = QTimer(self)
         self._label_key_timer.setSingleShot(True)
-        self._label_key_timer.setInterval(600)  # ms
+        self._label_key_timer.setInterval(int(cfg.label_key_timeout * 1000))
         self._label_key_timer.timeout.connect(self._on_label_key_timeout)
 
         # Set image widget callbacks
@@ -745,6 +745,10 @@ class MainWindow(QMainWindow):
             iw.bboxes[idx].label = label
             iw.update()
 
+    def _format_label_hints(self, matches: list[tuple[str, str]]) -> str:
+        """Format matching label candidates for status bar display."""
+        return ", ".join(f"[{k}] {v}" for k, v in matches)
+
     def _handle_label_digit(self, digit: str):
         """Handle a digit key press for multi-digit label code input."""
         state = self.app_state
@@ -757,11 +761,12 @@ class MainWindow(QMainWindow):
         elif state.has_any_prefix_match():
             # Could still become a valid key — wait for more digits
             self._label_key_timer.start()
-            self.statusBar().showMessage(f"Label key: [{buf}] ...")
+            hints = self._format_label_hints(state.get_prefix_matches())
+            self.statusBar().showMessage(f"[{buf}] → {hints}")
         else:
             # No key starts with this buffer — discard
             self._label_key_timer.stop()
-            self.statusBar().showMessage(f"Label key: [{buf}] — no match")
+            self.statusBar().showMessage(f"[{buf}] — no match")
             state.clear_key_buffer()
 
     def _on_label_key_timeout(self):
