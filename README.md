@@ -61,6 +61,7 @@ python main.py
 | `b` | BBox 繪製模式 |
 | `p` | Polygon 繪製模式 |
 | `數字鍵` | 快速切換預設 label（支援多碼，如 `12`、`111`） |
+| `Esc` | 取消正在繪製的 BBox / Polygon |
 | `PgUp/PgDn` 或 `←/→` | 上/下一個檔案 |
 | `Home/End` | 第一個/最後一個檔案 |
 | `Space` | 影片 Play/Pause |

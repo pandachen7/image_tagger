@@ -854,6 +854,17 @@ class MainWindow(QMainWindow):
             self.bbox_mode_action.setChecked(True)
             self.image_widget.set_drawing_mode(DrawingMode.BBOX)
 
+        elif event.key() == Qt.Key.Key_Escape:
+            iw = self.image_widget
+            if iw.drawing_mode == DrawingMode.BBOX and iw.drawing:
+                iw.drawing = False
+                iw.start_pos = None
+                iw.end_pos = None
+                iw.update()
+            elif iw.drawing_mode == DrawingMode.POLYGON and iw.current_polygon_points:
+                iw.current_polygon_points = []
+                iw.update()
+
         elif Qt.Key.Key_0 <= event.key() <= Qt.Key.Key_9:
             digit = str(event.key() - Qt.Key.Key_0)
             self._handle_label_digit(digit)
