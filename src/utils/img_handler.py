@@ -102,9 +102,10 @@ class Inferencer:
                     )
         return bboxes
 
-    def infer_sam3(self, image_path, src_shape) -> tuple[list, list]:
-        """SAM3 inference. Returns (list of Bbox, list of Polygon)."""
-        self._sam_predictor.set_image(image_path)
+    def infer_sam3(self, image, src_shape) -> tuple[list, list]:
+        """SAM3 inference. image: np.ndarray (BGR) or file path str.
+        Returns (list of Bbox, list of Polygon)."""
+        self._sam_predictor.set_image(image)
         # 使用 dict.fromkeys 保序去重, 避免 set() 順序不確定導致標籤錯亂
         labels = list(dict.fromkeys(settings.class_names.text_prompts or []))
         bboxes, polygons = [], []

@@ -84,6 +84,14 @@ python main.py
 - ctrl + `+`: 放大文字
 - ctrl + `-`: 縮小文字
 
+## 更新
+
+2026/4/6:
+- system.yaml可設定各種數字對應的class_name
+- VOC轉yolo格式時, 可在選定資料夾後選擇轉換的方式, 例如train/val的比例
+- SAM3 影片 frame bug 修正 — infer_sam3 改為接收 cv_img (numpy array)，不再傳檔案路徑。這樣影片的每一幀都能正確被 SAM3 偵測。
+- Ai → SAM3 Output Mode... dialog — 可在 seg / bbox / all 三種模式間切換，設定會存入 settings.yaml。
+
 ## 文件目錄
 
 - [安裝指南](./docs/installation.md) — 環境建置、PyTorch CUDA、常見問題排除

@@ -34,6 +34,7 @@ from src.utils.dialogs import (
     CategorySettingsDialog,
     ConvertSettingsDialog,
     ParamDialog,
+    Sam3ModeDialog,
     TextPromptsDialog,
 )
 from src.utils.dynamic_settings import save_settings, settings
@@ -322,6 +323,9 @@ class MainWindow(QMainWindow):
         self.ai_menu.addAction(self.select_model_action)
         if cfg.enable_sam3:
             self.ai_menu.addAction(self.select_sam_model_action)
+            self.sam3_mode_action = QAction("SAM3 Output Mode...", self)
+            self.sam3_mode_action.triggered.connect(self.show_sam3_mode_dialog)
+            self.ai_menu.addAction(self.sam3_mode_action)
         self.ai_menu.addSeparator()
         self.ai_menu.addAction(self.detect_action)
         self.ai_menu.addAction(self.auto_detect_action)
@@ -972,6 +976,13 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             save_settings()
             self.statusbar.showMessage(f"Text prompts: {settings.class_names.text_prompts}")
+
+    def show_sam3_mode_dialog(self):
+        dialog = Sam3ModeDialog(self)
+        if dialog.exec():
+            save_settings()
+            mode = settings.models.sam3_label_mode
+            self.statusbar.showMessage(f"SAM3 output mode: {mode}")
 
     def edit_param(self):
         dialog = ParamDialog(self)

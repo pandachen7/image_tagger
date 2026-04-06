@@ -470,9 +470,7 @@ class ImageWidget(QWidget):
             self.bboxes = inferencer.infer_yolo(self.cv_img)
         elif model_type == ModelType.SAM3:
             src_shape = (self.pixmap.height(), self.pixmap.width())
-            bboxes, polygons = inferencer.infer_sam3(
-                file_h.current_image_path(), src_shape
-            )
+            bboxes, polygons = inferencer.infer_sam3(self.cv_img, src_shape)
             # 根據 sam3_label_mode 過濾結果
             mode = settings.models.sam3_label_mode or "seg"
             if mode == "seg":
