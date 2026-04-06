@@ -74,6 +74,7 @@ class ImageWidget(QWidget):
     def __init__(self, app_state: AppState):
         super().__init__()
         self.setMouseTracking(True)  # 即使沒按住按鍵也能追蹤滑鼠移動
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.app_state = app_state
         self.image_label = QLabel()
         self.pixmap = None
@@ -1227,6 +1228,21 @@ class ImageWidget(QWidget):
                         break
 
                     self.idx_focus_bbox = -1  # 重置
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            if self.drawing_mode == DrawingMode.BBOX and self.drawing:
+                self.drawing = False
+                self.start_pos = None
+                self.end_pos = None
+                self.update()
+                return
+            if self.drawing_mode == DrawingMode.POLYGON and self.current_polygon_points:
+                self.current_polygon_points = []
+                self.update()
+                return
+        # 其他按鍵交給 parent (MainWindow) 處理
+        super().keyPressEvent(event)
 
     def mouseMoveEvent(self, event):
         self.current_mouse_pos = event.pos()
