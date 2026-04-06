@@ -677,13 +677,23 @@ class MainWindow(QMainWindow):
             self.play_state = PlayState.PAUSE
 
     def set_media_position(self, position):
-        # 設定影片播放位置 (以毫秒為單位)
-        if self.image_widget.cap:
-            self.progress_bar.blockSignals(True)
-            self.image_widget.cap.set(cv2.CAP_PROP_POS_MSEC, position)
-            self.progress_bar.blockSignals(False)
-            self.progress_bar.setValue(position)
-            self.image_widget.update()
+        # 設定影片播放位置 (以毫秒為單位), 並顯示該位置的 frame
+        iw = self.image_widget
+        if not iw.cap:
+            return
+        self.progress_bar.blockSignals(True)
+        iw.cap.set(cv2.CAP_PROP_POS_MSEC, position)
+        ret, iw.cv_img = iw.cap.read()
+        iw.clearBboxes()
+        self.progress_bar.blockSignals(False)
+        self.progress_bar.setValue(position)
+        if ret:
+            h, w, _ = iw.cv_img.shape
+            qImg = QImage(
+                iw.cv_img.data, w, h, 3 * w, QImage.Format.Format_RGB888
+            ).rgbSwapped()
+            iw.pixmap = QPixmap.fromImage(qImg)
+        iw.update()
 
     def set_playback_speed(self, index):
         # 設定播放速度
