@@ -1,42 +1,34 @@
 # 安裝指南
 
+<!-- 最後更新：2026-04-07 -->
+
 ## 環境需求
 
 - Python >= 3.12
 - 建議使用獨立的虛擬環境（venv 或 uv）
 - 有 NVIDIA 顯卡可大幅加速推論
 
-## 安裝步驟
+## venv vs uv — 我該選哪個？
 
-### 1. 安裝 PyTorch CUDA 版
+| | venv（Python 內建） | uv |
+|---|---|---|
+| 安裝門檻 | 不需額外安裝，Python 自帶 | 需先安裝 uv 工具 |
+| 速度 | 一般 | 安裝套件速度快 10–100 倍 |
+| 適合對象 | 初學者、不想裝額外工具 | 熟悉終端操作、追求效率 |
+| 指令風格 | `pip install ...` | `uv pip install ...` 或 `uv sync` |
 
-> **重要**：PyTorch 的 CUDA 版必須**最先安裝**，否則後續套件可能自動裝入 CPU 版，導致推論極慢。
+> **簡單來說**：如果你剛接觸 Python，用 **venv** 就好；如果你想要更快的安裝體驗，或者專案已經在用 uv，就選 **uv**。
 
-先到 [PyTorch 官網](https://pytorch.org/get-started/locally/) 查看你的 NVIDIA driver 支援的 CUDA 版本，選擇**不超過該版本**的 PyTorch 即可。
+---
 
-```bash
-# 範例：CUDA 12.4
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-```
+- [使用 Python venv 安裝](./installation_venv.md)
+- [使用 uv 安裝](./installation_uv.md)
 
-> 如果之前已裝過 PyTorch，建議**全部移除**再重裝（特別注意 `torchvision` 容易被遺漏）。
-> 最保險的作法是開一個全新的虛擬環境。
+---
 
-### 2. 安裝其他相依套件
+## 驗證結果
 
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Linux 額外相依
-
-如果 PyQt6 出現錯誤：
-```bash
-sudo apt-get install -y libxcb-cursor-dev
-```
-
-### 4. 驗證安裝
-
+安裝完成後執行：
 ```bash
 python tools/cuda_info.py
 ```
