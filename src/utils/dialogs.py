@@ -1,4 +1,5 @@
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QDialog,
     QDoubleSpinBox,
@@ -8,6 +9,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QRadioButton,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -315,6 +317,24 @@ class ConvertSettingsDialog(QDialog):
         split_group.setLayout(split_layout)
         main_layout.addWidget(split_group)
 
+        # --- 圖片處理方式（複製 / 搬移）---
+        img_group = QGroupBox("圖片處理方式")
+        img_layout = QVBoxLayout()
+
+        self.radio_copy = QRadioButton("複製 (複製圖片到 images/，保留目前的圖片)")
+        self.radio_move = QRadioButton("搬移 (將目前的圖片移到 images/，減少硬碟使用空間)")
+        self.radio_copy.setChecked(True)
+
+        self.img_mode_group = QButtonGroup(self)
+        self.img_mode_group.addButton(self.radio_copy)
+        self.img_mode_group.addButton(self.radio_move)
+
+        img_layout.addWidget(self.radio_copy)
+        img_layout.addWidget(self.radio_move)
+
+        img_group.setLayout(img_layout)
+        main_layout.addWidget(img_group)
+
         # --- 按鈕 ---
         button_layout = QHBoxLayout()
         self.save_button = QPushButton("確定 (OK)")
@@ -350,3 +370,8 @@ class ConvertSettingsDialog(QDialog):
     @property
     def val_ratio(self) -> float:
         return self.val_spin.value() / 100.0
+
+    @property
+    def copy_images(self) -> bool:
+        """True = 複製圖片, False = 搬移圖片"""
+        return self.radio_copy.isChecked()

@@ -1,6 +1,7 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
 # 更新日期: 2026-03-12
 import random
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -340,6 +341,9 @@ class MainWindow(QMainWindow):
                 missing_models.append(f"SAM3: {settings.models.sam3_model_path}")
         if settings.models.model_path:
             if Path(settings.models.model_path).is_file():
+                inferencer.model_path = settings.models.model_path
+            elif re.match(r"^yolo\d+\w*\.pt$", settings.models.model_path):
+                # 預設 YOLO 模型名稱，ultralytics 會自動下載，不需警示
                 inferencer.model_path = settings.models.model_path
             else:
                 missing_models.append(f"YOLO: {settings.models.model_path}")
@@ -890,8 +894,9 @@ class MainWindow(QMainWindow):
         將 VOC XML 格式的標註檔案轉換為 YOLO TXT 標籤檔，
         並依 train/val 比例整理成 dataset 結構 + 產生 data.yaml
         """
+        default_dir = str(Path(file_h.folder_path, cfg.save_folder)) if file_h.folder_path else ""
         folder_path = QFileDialog.getExistingDirectory(
-            self, "Select folder containing VOC XML files"
+            self, "Select folder containing VOC XML files", default_dir
         )
         if not folder_path:
             return
@@ -903,6 +908,7 @@ class MainWindow(QMainWindow):
 
         base = Path(folder_path)
         train_ratio = dialog.train_ratio
+        copy_images = dialog.copy_images
 
         # 1) 轉換 VOC XML → YOLO txt（先輸出到暫存 labels/ 下）
         tmp_labels = base / YOLO_LABELS_FOLDER
@@ -937,7 +943,10 @@ class MainWindow(QMainWindow):
             lbl_dir.mkdir(parents=True, exist_ok=True)
             for img_path in files:
                 txt_path = tmp_labels / f"{img_path.stem}.txt"
-                shutil.move(str(img_path), str(img_dir / img_path.name))
+                if copy_images:
+                    shutil.copy2(str(img_path), str(img_dir / img_path.name))
+                else:
+                    shutil.move(str(img_path), str(img_dir / img_path.name))
                 shutil.move(str(txt_path), str(lbl_dir / txt_path.name))
 
         # 清除暫存 labels/ (已搬空)
