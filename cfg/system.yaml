@@ -1,27 +1,71 @@
 # Preset labels — press digit code to change the label
 # Supports single-digit (1), two-digit (12), or three-digit (123) codes
 # If a code is a prefix of another (e.g. 1 and 12 both exist),
-# the shorter one waits ~600ms before applying; the longer one applies immediately.
+# the shorter one waits for label_key_timeout before applying; the longer one applies immediately.
+#
+# 分類樹狀結構：
+#   1x 四足動物    2x 人類/兩足    3x 鳥類/飛行動物
+#   4x 小型車輛    5x 兩輪車       6x 大型車輛
+#   7x 軌道/航空/船  8x 街道設施   9x 機械設備/其他
 labels:
-  1: person
-  2: car
-  3: motor
-  4: truck
-  5: cat
-  6: dog
-  7: bus
-  8: bicycle
-  9: train
+  # --- 1x 四足動物 ---
+  1: dog
+  11: cat
+  12: horse
+  13: cow
+  14: sheep
+  15: deer
+  16: bear
+  17: pig
+  # --- 2x 人類/兩足 ---
+  2: person
+  21: child
+  22: cyclist
+  23: rider
+  # --- 3x 鳥類/飛行動物 ---
+  3: bird
+  31: duck
+  32: eagle
+  33: pigeon
+  # --- 4x 小型車輛 ---
+  4: car
+  41: sedan
+  42: suv
+  43: pickup
+  44: van
+  45: taxi
+  # --- 5x 兩輪車 ---
+  5: motorcycle
+  51: scooter
+  52: bicycle
+  53: ebike
+  # --- 6x 大型車輛 ---
+  6: truck
+  61: bus
+  62: trailer
+  63: ambulance
+  64: fire_truck
+  # --- 7x 軌道/航空/船 ---
+  7: train
+  71: airplane
+  72: helicopter
+  73: boat
+  74: ship
+  # --- 8x 街道設施 ---
+  8: traffic_light
+  81: stop_sign
+  82: fire_hydrant
+  83: bench
+  84: trash_can
+  85: cone
+  # --- 9x 機械設備/其他 ---
+  9: forklift
+  91: excavator
+  92: crane
+  93: robot
+  99: others
+  # --- 0 未分類 ---
   0: unknown
-  # 多碼範例
-  11: motorcycle
-  12: scooter
-  21: pickup
-  22: van
-  31: airplane
-  99: other
-  # 111: fire_hydrant
-  1111: stop_sign
 
 # default label name, draw bbox with this label
 default_label: object
