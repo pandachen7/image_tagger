@@ -55,7 +55,7 @@ default_label: object
 # 習慣的話就可以設低一點, 短編碼反應速度才會快
 label_key_timeout: 2
 
-# bbox 最小高度或寬度
+# bbox 最小高度或寬度, polygon則以長方形的最小邊的長度
 minimal_bbox_length: 30
 
 # 自動儲存間隔（秒），-1 表示停用

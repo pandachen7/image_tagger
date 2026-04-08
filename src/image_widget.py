@@ -1,5 +1,5 @@
 # 圖片畫布元件：負責繪製影像、bbox、polygon、mask，以及滑鼠互動（繪製、選取、拖曳、旋轉）
-# 更新日期: 2026-03-11
+# 更新日期: 2026-04-08
 import math
 import time
 import xml.etree.ElementTree as ET
@@ -481,6 +481,17 @@ class ImageWidget(QWidget):
             else:  # "all"
                 self.bboxes = bboxes
                 self.polygons = polygons
+
+        # 過濾掉太小的偵測結果
+        min_len = cfg.minimal_bbox_length
+        self.bboxes = [
+            b for b in self.bboxes
+            if b.width >= min_len and b.height >= min_len
+        ]
+        self.polygons = [
+            p for p in self.polygons
+            if self._polygon_bbox_size(p) >= min_len
+        ]
 
         if cfg.show_fps:
             self.list_fps.append(1 / (time.time() - t1))
@@ -1148,6 +1159,16 @@ class ImageWidget(QWidget):
                     and self._distanceBetweenPoints(pos, self.current_polygon_points[0])
                     < POLYGON_CLOSE_THRESHOLD
                 ):
+                    # 檢查 polygon bounding box 是否達到最小尺寸
+                    xs = [pt.x() for pt in self.current_polygon_points]
+                    ys = [pt.y() for pt in self.current_polygon_points]
+                    poly_w = max(xs) - min(xs)
+                    poly_h = max(ys) - min(ys)
+                    if poly_w < cfg.minimal_bbox_length or poly_h < cfg.minimal_bbox_length:
+                        self.current_polygon_points = []
+                        self.update()
+                        return
+
                     # Close polygon - convert widget coords to original
                     points = []
                     for pt in self.current_polygon_points:
@@ -1500,6 +1521,13 @@ class ImageWidget(QWidget):
             bbox.color_pen = ColorPen.GREEN
         g_param.user_labeling = True
         self.update()
+
+    @staticmethod
+    def _polygon_bbox_size(polygon: Polygon) -> float:
+        """回傳 polygon bounding box 的較短邊長度（原始影像座標）"""
+        xs = [x for x, _ in polygon.points]
+        ys = [y for _, y in polygon.points]
+        return min(max(xs) - min(xs), max(ys) - min(ys))
 
     def _distanceBetweenPoints(self, p1: QPoint, p2: QPoint) -> float:
         dx = p1.x() - p2.x()
