@@ -1,3 +1,5 @@
+# 各種設定用的 Dialog (Categories, Param, TextPrompts, Sam3Mode, ConvertSettings)
+# Updated: 2026-04-09
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -23,12 +25,16 @@ from src.utils.dynamic_settings import settings
 class CategorySettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Edit Categories, 這是給VOC轉yolo用的")
+        self.setWindowTitle("Edit Categories")
         self.categories = settings.class_names.categories
+
+        hint = QLabel("設定 VOC → YOLO 轉換時 class name 與 class id 的對應關係")
+        hint.setStyleSheet("color: gray; font-size: 11px;")
+        hint.setWordWrap(True)
 
         self.table_widget = QTableWidget()
         self.table_widget.setColumnCount(2)
-        self.table_widget.setHorizontalHeaderLabels(["class_name (Category Name)", "class_id (index)"])
+        self.table_widget.setHorizontalHeaderLabels(["class_name", "class_id"])
         self.table_widget.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )
@@ -50,6 +56,7 @@ class CategorySettingsDialog(QDialog):
         button_layout.addWidget(self.cancel_button)
 
         main_layout = QVBoxLayout(self)
+        main_layout.addWidget(hint)
         main_layout.addWidget(self.table_widget)
         main_layout.addLayout(button_layout)
 
@@ -109,6 +116,11 @@ class ParamDialog(QDialog):
 
         layout = QFormLayout(self)
 
+        hint = QLabel("調整模型輸出的後處理參數，影響標註精度與效能")
+        hint.setStyleSheet("color: gray; font-size: 11px;")
+        hint.setWordWrap(True)
+        layout.addRow(hint)
+
         self.polygon_tolerance_spin = QDoubleSpinBox()
         self.polygon_tolerance_spin.setRange(0.001, 0.1)
         self.polygon_tolerance_spin.setDecimals(3)
@@ -149,10 +161,14 @@ class TextPromptsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Text Prompts (SAM3)")
+        self.setWindowTitle("Text Prompts")
         self.setMinimumWidth(350)
 
         self.prompts = list(settings.class_names.text_prompts or [])
+
+        hint = QLabel("提供給 SAM3 / Segmentation model 的文字提示，用於引導分割目標")
+        hint.setStyleSheet("color: gray; font-size: 11px;")
+        hint.setWordWrap(True)
 
         self.list_widget = QTableWidget()
         self.list_widget.setColumnCount(1)
@@ -177,9 +193,13 @@ class TextPromptsDialog(QDialog):
         button_layout.addWidget(self.save_button)
         button_layout.addWidget(self.cancel_button)
 
-        main_layout = QHBoxLayout(self)
-        main_layout.addWidget(self.list_widget)
-        main_layout.addLayout(button_layout)
+        content_layout = QHBoxLayout()
+        content_layout.addWidget(self.list_widget)
+        content_layout.addLayout(button_layout)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.addWidget(hint)
+        main_layout.addLayout(content_layout)
 
         self.load_prompts()
 

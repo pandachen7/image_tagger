@@ -274,7 +274,8 @@ class MainWindow(QMainWindow):
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.save_action)
         self.file_menu.addAction(self.auto_save_action)
-        self.file_menu.addAction(self.save_mask_action)
+        if cfg.enable_mask_tools:
+            self.file_menu.addAction(self.save_mask_action)
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.quit_action)
 
