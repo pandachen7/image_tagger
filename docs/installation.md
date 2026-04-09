@@ -66,7 +66,7 @@ nvidia-smi
 
 安裝或升級某個套件時（尤其用了 `-U` flag），可能會把 `torch` 換成 CPU 版。
 
-檢查方式：
+檢查方式(linux 或 git-bash)：
 ```bash
 pip list | grep torch
 ```
@@ -75,5 +75,11 @@ pip list | grep torch
 
 ```bash
 pip uninstall torch torchvision torchaudio -y
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+```
+
+uv版的話, 記得前面加上`uv`  
+```bash
+uv pip uninstall torch torchvision torchaudio -y
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 ```

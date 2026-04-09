@@ -15,7 +15,9 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 # Windows (CMD)
 .venv\Scripts\activate.bat
-# Windows (Git Bash) / Linux / macOS
+# Windows (Git Bash)
+.venv/Scripts/activate.bat
+# Linux / macOS
 source .venv/bin/activate
 ```
 
@@ -49,7 +51,7 @@ sudo apt-get install -y libxcb-cursor-dev
 ## 5. 驗證安裝
 
 ```bash
-python tools/cuda_info.py
+python scripts/cuda_info.py
 ```
 
 > 驗證結果的說明請見 [安裝指南總覽](./installation.md#驗證結果)
