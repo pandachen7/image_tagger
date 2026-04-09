@@ -37,6 +37,10 @@ python main.py
 
 ### SAM3 語義分割
 
+由於SAM3是需要申請下載權限, 因此請到  
+https://huggingface.co/facebook/sam3  
+有獲得授權後就能下載 `sam3.pt`
+
 > 需要先在 `cfg/system.yaml` 中設定 `enable_sam3: true`
 
 1. **Ai → Select SAM3 Model**：選擇 SAM3 的 `.pt` 模型檔

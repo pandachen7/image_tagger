@@ -28,7 +28,7 @@ class CategorySettingsDialog(QDialog):
 
         self.table_widget = QTableWidget()
         self.table_widget.setColumnCount(2)
-        self.table_widget.setHorizontalHeaderLabels(["Category Name", "class_id (index)"])
+        self.table_widget.setHorizontalHeaderLabels(["class_name (Category Name)", "class_id (index)"])
         self.table_widget.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )
