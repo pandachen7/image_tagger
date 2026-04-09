@@ -10,13 +10,7 @@
 > 詳細安裝步驟請見 [安裝指南](./docs/installation.md)
 
 ```bash
-# 1. 安裝 PyTorch CUDA 版 (範例 CUDA 12.4, 請依自己的環境調整)
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-
-# 2. 安裝其他相依套件
-pip install -r requirements.txt
-
-# 3. 啟動
+# 安裝完畢後直接啟動
 python main.py
 ```
 
@@ -27,11 +21,11 @@ python main.py
 ```
 
 1. **File → Open Folder** 開啟含有圖片的資料夾
-2. **按 `d` 或 Ai → Detect** 自動偵測物件（首次會自動下載 `yolo26s.pt` 預設模型）
-3. 手動微調框的位置、名稱後，**File → Save** 儲存為 VOC XML
-4. **Convert → Edit Categories** 設定 class name → class_id 的對應關係
+2. **按 `d` 或 Ai → Detect** 偵測物件（首次會自動下載 `yolo26s.pt` 預設模型）
+3. 手動微調框的位置、名稱後，**File → Save** 或按 `s` 儲存為 VOC XML
+4. **Convert → Edit Categories** 設定 class_name → class_id 的對應關係, 才能給yolo訓練(因為yolo只認數字)
 5. **Convert → VOC to YOLO** 選擇資料夾 → 設定輸出模式與 train/val 比例 → 自動轉換、分割檔案並產生 `dataset.yaml`
-6. 使用產生的 `dataset.yaml` 訓練模型
+6. 使用產生的 `dataset.yaml` 訓練模型, 路徑剛好對應dataset的圖檔與標籤
 
 > 每個步驟的詳細操作說明請見 [使用教學](./docs/usage.md)
 > 訓練相關（dataset 結構、data.yaml、segment 訓練）請見 [訓練指南](./docs/training.md)
@@ -40,11 +34,11 @@ python main.py
 
 | 功能 | 說明 |
 |------|------|
-| YOLO 自動偵測 | 載入 `.pt` 模型，一鍵偵測並畫框 |
+| YOLO 自動偵測 | 載入 `.pt` 模型，偵測並畫框 |
 | SAM3 語義分割 | 透過文字描述自動產生 polygon / bbox |
 | 手動 BBox | 左鍵拖曳畫框，角落可調整大小 |
 | 手動 Polygon | 左鍵點擊頂點，靠近起點自動封閉 |
-| Mask 工具 | Draw / Erase / Fill 遮罩繪製 |
+| Mask 工具 | Draw / Erase / Fill 遮罩繪製，但訓練不需要 |
 | VOC → YOLO 轉換 | 支援 BBox、Seg、OBB 三種輸出格式 |
 | 影片標註 | 逐幀標註，支援自動抽幀儲存 |
 
