@@ -5,7 +5,7 @@
 
 ![system gui](./asset/system_gui.png)
 
-## Quick Start
+## 安裝環境與啟動
 
 > 詳細安裝步驟請見 [安裝指南](./docs/installation.md)
 
