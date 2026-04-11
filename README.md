@@ -39,7 +39,8 @@ python main.py
 | 手動 BBox | 左鍵拖曳畫框，角落可調整大小 |
 | 手動 Polygon | 左鍵點擊頂點，靠近起點自動封閉 |
 | Mask 工具 | Draw / Erase / Fill 遮罩繪製，但訓練不需要 |
-| VOC → YOLO 轉換 | 支援 BBox、Seg、OBB 三種輸出格式 |
+| VOC → YOLO 轉換 | 支援 BBox、Seg、OBB 三種輸出格式，轉換進度條、未對應 class 記錄 |
+| Categorize Media | 用 YOLO/SAM3 模型偵測後，依最多次物件名稱自動分類到子資料夾 |
 | 影片標註 | 逐幀標註，支援自動抽幀儲存 |
 
 ## 快捷鍵
@@ -85,6 +86,8 @@ python main.py
 - VOC轉yolo格式時, 可在選定資料夾後選擇轉換的方式, 例如train/val的比例
 - SAM3 影片 frame bug 修正 — infer_sam3 改為接收 cv_img (numpy array)，不再傳檔案路徑。這樣影片的每一幀都能正確被 SAM3 偵測。
 - Ai → SAM3 Output Mode... dialog — 可在 seg / bbox / all 三種模式間切換，設定會存入 settings.yaml。
+- VOC → YOLO 轉換增加進度條、未對應 class_name 記錄檔 (not_match_*.txt)、轉換完成摘要對話框
+- Ai → Categorize Media — 選擇資料夾與 model，自動偵測每個圖片/影片中出現最多次的物件，依名稱分類到子資料夾。支援 YOLO / YOLO-Seg / SAM3 三種模型，可自動偵測模型類型。
 
 ## 文件目錄
 

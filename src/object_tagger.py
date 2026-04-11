@@ -33,6 +33,7 @@ from src.core import AppState
 from src.utils.const import IMAGE_EXTS
 from src.image_widget import DrawingMode, ImageWidget
 from src.utils.dialogs import (
+    CategorizeMediaDialog,
     CategorySettingsDialog,
     ConvertSettingsDialog,
     ParamDialog,
@@ -332,6 +333,11 @@ class MainWindow(QMainWindow):
         self.ai_menu.addSeparator()
         self.ai_menu.addAction(self.detect_action)
         self.ai_menu.addAction(self.auto_detect_action)
+        self.ai_menu.addSeparator()
+
+        self.categorize_media_action = QAction("Categorize Media", self)
+        self.categorize_media_action.triggered.connect(self.categorize_media)
+        self.ai_menu.addAction(self.categorize_media_action)
 
         # Store model paths only (lazy load on first inference)
         # Verify model files exist before assigning
@@ -1048,6 +1054,13 @@ class MainWindow(QMainWindow):
             f"轉換完成 — train: {train_count}, val: {val_count}, "
             f"yaml: {yaml_name}"
         )
+
+    def categorize_media(self):
+        """開啟 Categorize Media 對話框，依 YOLO 偵測結果分類媒體檔案"""
+        default_folder = str(file_h.folder_path) if file_h.folder_path else ""
+        default_model = settings.models.model_path or ""
+        dialog = CategorizeMediaDialog(self, default_folder, default_model)
+        dialog.exec()
 
     def edit_categories(self):
         dialog = CategorySettingsDialog(self)
