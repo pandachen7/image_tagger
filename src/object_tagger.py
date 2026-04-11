@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-03-12
+# 更新日期: 2026-04-11
 import random
 import re
 import shutil
@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QSlider,
     QStatusBar,
     QStyle,
@@ -910,11 +911,47 @@ class MainWindow(QMainWindow):
         base = Path(folder_path)
         train_ratio = dialog.train_ratio
         copy_images = dialog.copy_images
+        start_time = datetime.now()
 
-        # 1) 轉換 VOC XML → YOLO txt（先輸出到暫存 labels/ 下）
+        # 1) 轉換 VOC XML → YOLO txt（先輸出到暫存 labels/ 下），顯示進度條
         tmp_labels = base / YOLO_LABELS_FOLDER
         tmp_labels.mkdir(parents=True, exist_ok=True)
-        file_h.convertVocInFolder(folder_path, tmp_labels, self.app_state)
+
+        progress = QProgressDialog("正在轉換 VOC → YOLO ...", "取消", 0, 100, self)
+        progress.setWindowTitle("轉換進度")
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        canceled = False
+
+        def on_progress(current: int, total: int):
+            nonlocal canceled
+            if progress.wasCanceled():
+                canceled = True
+                return
+            progress.setMaximum(total)
+            progress.setValue(current)
+            progress.setLabelText(f"正在轉換 VOC → YOLO ... ({current}/{total})")
+            QApplication.processEvents()
+
+        not_matched = file_h.convertVocInFolder(
+            folder_path, tmp_labels, self.app_state, progress_callback=on_progress
+        )
+        progress.close()
+
+        if canceled:
+            self.statusbar.showMessage("轉換已取消")
+            return
+
+        # 寫入未對應的 class_name 記錄檔
+        not_match_path = None
+        if not_matched:
+            not_match_name = f"not_match_{start_time.strftime('%Y_%m%d_%H%M%S')}.txt"
+            not_match_path = base / not_match_name
+            with open(not_match_path, "w", encoding="utf-8") as f:
+                for image_filename, class_name in not_matched:
+                    f.write(f"{image_filename}\t{class_name}\n")
+            log.w(f"未對應的 class_name 已寫入: {not_match_path}")
 
         # 2) 收集有對應 label 的圖片
         image_files = sorted(
@@ -969,13 +1006,46 @@ class MainWindow(QMainWindow):
         data_yaml["nc"] = len(id_to_name)
         data_yaml["names"] = id_to_name
 
-        yaml_name = f"dataset_{datetime.now().strftime('%Y_%m%d_%H%M%S')}.yaml"
+        yaml_name = f"dataset_{start_time.strftime('%Y_%m%d_%H%M%S')}.yaml"
         yaml_path = base / yaml_name
         with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.dump(data_yaml, f)
 
+        # 5) 顯示轉換結果摘要
+        self._show_convert_summary(
+            id_to_name, len(train_files), len(val_files),
+            yaml_name, not_matched, not_match_path,
+        )
+
+    def _show_convert_summary(
+        self,
+        id_to_name: dict[int, str],
+        train_count: int,
+        val_count: int,
+        yaml_name: str,
+        not_matched: list[tuple[str, str]],
+        not_match_path: Path | None,
+    ):
+        """顯示 VOC → YOLO 轉換完成的摘要對話框"""
+        # class_name 對應表
+        lines = ["轉換完成\n"]
+        lines.append(f"  Train: {train_count} 張, Val: {val_count} 張")
+        lines.append(f"  Dataset YAML: {yaml_name}\n")
+        lines.append("── Class 對應表 ──")
+        for cid, cname in id_to_name.items():
+            lines.append(f"  {cid}: {cname}")
+
+        # 未對應提示
+        if not_matched and not_match_path:
+            unique_names = sorted(set(cn for _, cn in not_matched))
+            lines.append(f"\n⚠ 有 {len(not_matched)} 筆標註的 class_name 未對應到 categories:")
+            for name in unique_names:
+                lines.append(f"  - {name}")
+            lines.append(f"\n詳細記錄: {not_match_path.name}")
+
+        QMessageBox.information(self, "VOC → YOLO 轉換結果", "\n".join(lines))
         self.statusbar.showMessage(
-            f"轉換完成 — train: {len(train_files)}, val: {len(val_files)}, "
+            f"轉換完成 — train: {train_count}, val: {val_count}, "
             f"yaml: {yaml_name}"
         )
 

@@ -1,3 +1,5 @@
+# 檔案讀寫、VOC XML 產生與 VOC→YOLO 格式轉換
+# 更新日期: 2026-04-11
 import math
 import os
 import xml.etree.ElementTree as ET
@@ -122,28 +124,45 @@ class FileHandler:
         folder_path,
         output_folder: Optional[Path] = None,
         app_state: AppState = None,
-    ):
+        progress_callback: Optional[callable] = None,
+    ) -> list[tuple[str, str]]:
         """
         將指定資料夾下的所有 VOC XML 檔案轉換為 YOLO 格式
+        Args:
+            progress_callback: 回呼函式 (current, total) -> None，用於更新進度條
+        Returns:
+            not_matched: 未對應到的 (圖檔名, class_name) 列表
         """
         if output_folder is None:
             output_folder = folder_path  # 預設輸出到同一個資料夾
 
         output_mode = app_state.yolo_output_mode if app_state else "bbox"
-        ct = 0
-        for xml_file in Path(folder_path).glob("*.xml"):
-            if output_mode == "seg":
-                self.convert_voc_xml_to_yolo_seg_txt(xml_file, output_folder, app_state)
-            else:
-                self.convert_voc_xml_to_yolo_txt(xml_file, output_folder, app_state)
-            ct += 1
-        log.i(f"converted {ct} xml files (mode={output_mode})")
+        xml_files = list(Path(folder_path).glob("*.xml"))
+        total = len(xml_files)
+        not_matched: list[tuple[str, str]] = []
 
-    def convert_voc_xml_to_yolo_txt(self, xml_path, output_folder, app_state=None):
+        for i, xml_file in enumerate(xml_files):
+            if output_mode == "seg":
+                unmatched = self.convert_voc_xml_to_yolo_seg_txt(xml_file, output_folder, app_state)
+            else:
+                unmatched = self.convert_voc_xml_to_yolo_txt(xml_file, output_folder, app_state)
+            not_matched.extend(unmatched)
+            if progress_callback:
+                progress_callback(i + 1, total)
+
+        log.i(f"converted {total} xml files (mode={output_mode})")
+        return not_matched
+
+    def convert_voc_xml_to_yolo_txt(
+        self, xml_path, output_folder, app_state=None
+    ) -> list[tuple[str, str]]:
         """
         轉換單個 VOC XML 檔案到 YOLO 格式
         支援 OBB (Oriented Bounding Box) 格式，輸出四個角點座標
+        Returns:
+            not_matched: 未對應到的 (圖檔名, class_name) 列表
         """
+        not_matched: list[tuple[str, str]] = []
 
         # root = ET.parse(Path(xml_path).as_posix())
         tree = ET.parse(xml_path)
@@ -151,15 +170,20 @@ class FileHandler:
         size_element = root.find("size")
         if size_element is None:
             log.w(f"Warning: No size element found in {xml_path}, skipping")
-            return
+            return not_matched
         img_width = int(size_element.find("width").text)
         img_height = int(size_element.find("height").text)
         yolo_lines = []
 
+        # 取得對應的圖檔名
+        filename_element = root.find("filename")
+        image_filename = filename_element.text if filename_element is not None else Path(xml_path).stem
+
         for object_element in root.findall("object"):
             label_name = object_element.find("name").text
             if label_name not in settings.class_names.categories:
-                log.w(f"Warning: Label '{label_name}' not in categories,")
+                log.w(f"Warning: Label '{label_name}' not in categories")
+                not_matched.append((image_filename, label_name))
                 continue  # Skip to the next object if label is not in categories
 
             category_id = settings.class_names.categories.get(label_name)
@@ -167,6 +191,7 @@ class FileHandler:
                 log.w(
                     f"Warning: Category ID not found for label '{label_name}', skipping"
                 )
+                not_matched.append((image_filename, label_name))
                 continue
 
             bndbox_element = object_element.find("bndbox")
@@ -237,27 +262,36 @@ class FileHandler:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("\n".join(yolo_lines))
 
-        # log.d(f"Converted {xml_path} to {output_file}")
+        return not_matched
 
-    def convert_voc_xml_to_yolo_seg_txt(self, xml_path, output_folder, app_state=None):
+    def convert_voc_xml_to_yolo_seg_txt(
+        self, xml_path, output_folder, app_state=None
+    ) -> list[tuple[str, str]]:
         """
         轉換單個 VOC XML 檔案到 YOLO Segmentation 格式
         格式: class_id x1 y1 x2 y2 ... xN yN (normalized 0-1)
         """
+        not_matched: list[tuple[str, str]] = []
+
         tree = ET.parse(xml_path)
         root = tree.getroot()
         size_element = root.find("size")
         if size_element is None:
             log.w(f"Warning: No size element found in {xml_path}, skipping")
-            return
+            return not_matched
         img_width = int(size_element.find("width").text)
         img_height = int(size_element.find("height").text)
         yolo_lines = []
+
+        # 取得對應的圖檔名
+        filename_element = root.find("filename")
+        image_filename = filename_element.text if filename_element is not None else Path(xml_path).stem
 
         for object_element in root.findall("object"):
             label_name = object_element.find("name").text
             if label_name not in settings.class_names.categories:
                 log.w(f"Warning: Label '{label_name}' not in categories")
+                not_matched.append((image_filename, label_name))
                 continue
 
             category_id = settings.class_names.categories.get(label_name)
@@ -265,6 +299,7 @@ class FileHandler:
                 log.w(
                     f"Warning: Category ID not found for label '{label_name}', skipping"
                 )
+                not_matched.append((image_filename, label_name))
                 continue
 
             polygon_element = object_element.find("polygon")
@@ -310,6 +345,8 @@ class FileHandler:
         output_file = output_folder / Path(xml_path).with_suffix(".txt").name
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("\n".join(yolo_lines))
+
+        return not_matched
 
 
 file_h = FileHandler()

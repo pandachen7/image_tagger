@@ -1,5 +1,5 @@
 # 各種設定用的 Dialog (Categories, Param, TextPrompts, Sam3Mode, ConvertSettings)
-# Updated: 2026-04-09
+# Updated: 2026-04-11
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QComboBox,
