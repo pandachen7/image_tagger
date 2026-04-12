@@ -98,10 +98,10 @@ class CategorizeMediaDialog(QDialog):
         btn_layout.addStretch()
         self.start_btn = QPushButton("開始偵測")
         self.start_btn.clicked.connect(self._run)
-        self.cancel_btn = QPushButton("取消")
-        self.cancel_btn.clicked.connect(self._on_cancel)
+        self.close_dialog_btn = QPushButton("關閉")
+        self.close_dialog_btn.clicked.connect(self._on_cancel)
         btn_layout.addWidget(self.start_btn)
-        btn_layout.addWidget(self.cancel_btn)
+        btn_layout.addWidget(self.close_dialog_btn)
         main_layout.addLayout(btn_layout)
 
         # --- 進度區域（類似狀態列）---

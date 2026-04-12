@@ -814,7 +814,7 @@ class MainWindow(QMainWindow):
             current_label = iw.bboxes[iw.idx_focus_bbox].label
 
         label, ok = QInputDialog.getText(
-            self, "Input", "Enter label name:", text=current_label
+            self, "Input", "Edit current label name:", text=current_label
         )
         if ok and label.strip():
             self.app_state.set_last_used_label(label)
