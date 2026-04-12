@@ -25,8 +25,8 @@ class Sam3ModeDialog(QDialog):
         layout.addWidget(QLabel("選擇 SAM3 偵測後要產生的標註類型："))
 
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("Seg — 只產生 Polygon", "seg")
         self.mode_combo.addItem("BBox — 只產生 Bounding Box", "bbox")
+        self.mode_combo.addItem("Seg — 只產生 Polygon", "seg")
         self.mode_combo.addItem("All — 同時產生 Polygon 和 BBox", "all")
         layout.addWidget(self.mode_combo)
 

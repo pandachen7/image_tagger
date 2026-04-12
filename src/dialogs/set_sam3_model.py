@@ -48,8 +48,8 @@ class SetSam3ModelDialog(QDialog):
         param_layout = QFormLayout()
 
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("Seg — 只產生 Polygon", "seg")
         self.mode_combo.addItem("BBox — 只產生 Bounding Box", "bbox")
+        self.mode_combo.addItem("Seg — 只產生 Polygon", "seg")
         self.mode_combo.addItem("All — 同時產生 Polygon 和 BBox", "all")
         current_mode = settings.models.sam3_label_mode or "seg"
         idx = self.mode_combo.findData(current_mode)

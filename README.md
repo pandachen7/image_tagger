@@ -34,7 +34,7 @@ python main.py
 
 | 功能 | 說明 |
 |------|------|
-| YOLO 自動偵測 | 載入 `.pt` 模型，偵測並畫框；透過 Set YOLO Model 設定路徑 |
+| YOLO 自動偵測 | 載入 `.pt` 模型，支援 detect 與 seg model；seg model 可輸出 bbox / polygon / all，透過 Set YOLO Model 設定 |
 | SAM3 語義分割 | 透過文字描述自動產生 polygon / bbox；Set SAM3 Model 整合模型、輸出模式、tolerance、prompts |
 | 手動 BBox | 左鍵拖曳畫框，角落可調整大小 |
 | 手動 Polygon | 左鍵點擊頂點，靠近起點自動封閉 |
@@ -94,8 +94,8 @@ python main.py
 2026/4/12
 - Convert → VOC to YOLO 對話框整合 Class Mapping（原 Edit Categories）與資料夾選擇，顯示圖片數量
 - Ai → Set YOLO Model / Set SAM3 Model 取代原本的 Select Model 選單；SAM3 dialog 整合 Output Mode、Polygon Tolerance、Text Prompts
-- 移除 Edit 選單中的 Text Prompts 與 Param（皆已整合進 Set SAM3 Model）
-- 將 src/utils/dialogs.py 拆分為 src/dialogs/ 模組，每個 dialog 獨立一檔
+- YOLO seg model（如 yolo26m-seg.pt）支援 bbox / seg / all 輸出模式與獨立的 Polygon Tolerance 設定
+- 模型切換後背景非同步載入，不阻塞 UI；首次使用官方模型名稱時自動下載
 
 ## 文件目錄
 
