@@ -5,6 +5,8 @@ from src.dialogs.class_mapping import ClassMappingDialog
 from src.dialogs.convert_settings import ConvertSettingsDialog
 from src.dialogs.param import ParamDialog
 from src.dialogs.sam3_mode import Sam3ModeDialog
+from src.dialogs.set_sam3_model import SetSam3ModelDialog
+from src.dialogs.set_yolo_model import SetYoloModelDialog
 from src.dialogs.text_prompts import TextPromptsDialog
 
 __all__ = [
@@ -13,5 +15,7 @@ __all__ = [
     "ConvertSettingsDialog",
     "ParamDialog",
     "Sam3ModeDialog",
+    "SetSam3ModelDialog",
+    "SetYoloModelDialog",
     "TextPromptsDialog",
 ]

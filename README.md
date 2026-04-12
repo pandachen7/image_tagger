@@ -21,10 +21,10 @@ python main.py
 ```
 
 1. **File → Open Folder** 開啟含有圖片的資料夾
-2. **按 `d` 或 Ai → Detect** 偵測物件（首次會自動下載 `yolo26s.pt` 預設模型）
-3. 手動微調框的位置、名稱後，**File → Save** 或按 `s` 儲存為 VOC XML
-4. **Convert → Edit Categories** 設定 class_name → class_id 的對應關係, 才能給yolo訓練(因為yolo只認數字)
-5. **Convert → VOC to YOLO** 選擇資料夾 → 設定輸出模式與 train/val 比例 → 自動轉換、分割檔案並產生 `dataset.yaml`
+2. **Ai → Set YOLO Model** 設定模型路徑（首次會自動下載 `yolo26s.pt` 預設模型）；如需使用 SAM3，透過 **Ai → Set SAM3 Model** 一併設定模型、輸出模式、Polygon Tolerance 與 Text Prompts
+3. **按 `d` 或 Ai → Detect** 偵測物件
+4. 手動微調框的位置、名稱後，**File → Save** 或按 `s` 儲存為 VOC XML
+5. **Convert → VOC to YOLO** 在對話框中設定 Class Mapping（class_name → class_id）、選擇資料夾、輸出模式與 train/val 比例 → 自動轉換並產生 `dataset.yaml`
 6. 使用產生的 `dataset.yaml` 訓練模型, 路徑剛好對應dataset的圖檔與標籤
 
 > 每個步驟的詳細操作說明請見 [使用教學](./docs/usage.md)
@@ -34,8 +34,8 @@ python main.py
 
 | 功能 | 說明 |
 |------|------|
-| YOLO 自動偵測 | 載入 `.pt` 模型，偵測並畫框 |
-| SAM3 語義分割 | 透過文字描述自動產生 polygon / bbox |
+| YOLO 自動偵測 | 載入 `.pt` 模型，偵測並畫框；透過 Set YOLO Model 設定路徑 |
+| SAM3 語義分割 | 透過文字描述自動產生 polygon / bbox；Set SAM3 Model 整合模型、輸出模式、tolerance、prompts |
 | 手動 BBox | 左鍵拖曳畫框，角落可調整大小 |
 | 手動 Polygon | 左鍵點擊頂點，靠近起點自動封閉 |
 | Mask 工具 | Draw / Erase / Fill 遮罩繪製，但訓練不需要 |
@@ -90,6 +90,12 @@ python main.py
 2026/4/11
 - VOC → YOLO 轉換增加進度條、未對應 class_name 記錄檔 (not_match_*.txt)、轉換完成摘要對話框
 - Ai → Categorize Media — 選擇資料夾與 model，自動偵測每個圖片/影片中出現最多次的物件，依名稱分類到子資料夾。支援 YOLO / YOLO-Seg / SAM3 三種模型，可自動偵測模型類型。
+
+2026/4/12
+- Convert → VOC to YOLO 對話框整合 Class Mapping（原 Edit Categories）與資料夾選擇，顯示圖片數量
+- Ai → Set YOLO Model / Set SAM3 Model 取代原本的 Select Model 選單；SAM3 dialog 整合 Output Mode、Polygon Tolerance、Text Prompts
+- 移除 Edit 選單中的 Text Prompts 與 Param（皆已整合進 Set SAM3 Model）
+- 將 src/utils/dialogs.py 拆分為 src/dialogs/ 模組，每個 dialog 獨立一檔
 
 ## 文件目錄
 

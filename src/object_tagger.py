@@ -35,9 +35,8 @@ from src.image_widget import DrawingMode, ImageWidget
 from src.dialogs import (
     CategorizeMediaDialog,
     ConvertSettingsDialog,
-    ParamDialog,
-    Sam3ModeDialog,
-    TextPromptsDialog,
+    SetSam3ModelDialog,
+    SetYoloModelDialog,
 )
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
@@ -282,14 +281,6 @@ class MainWindow(QMainWindow):
 
         self.edit_menu.addAction(self.edit_label_action)
 
-        self.edit_text_prompts_action = QAction("Text Prompts", self)
-        self.edit_text_prompts_action.triggered.connect(self.edit_text_prompts)
-        self.edit_menu.addAction(self.edit_text_prompts_action)
-
-        self.edit_param_action = QAction("Param", self)
-        self.edit_param_action.triggered.connect(self.edit_param)
-        self.edit_menu.addAction(self.edit_param_action)
-
         # Model selection radio group
         self.model_action_group = QActionGroup(self)
         self.model_action_group.setExclusive(True)
@@ -313,18 +304,15 @@ class MainWindow(QMainWindow):
             self.ai_menu.addAction(self.use_sam_action)
         self.ai_menu.addSeparator()
 
-        self.select_model_action = QAction("Select YOLO Model...", self)
-        self.select_model_action.triggered.connect(self.select_model)
+        self.set_yolo_model_action = QAction("Set YOLO Model", self)
+        self.set_yolo_model_action.triggered.connect(self.set_yolo_model)
 
-        self.select_sam_model_action = QAction("Select SAM3 Model...", self)
-        self.select_sam_model_action.triggered.connect(self.select_sam_model)
+        self.set_sam3_model_action = QAction("Set SAM3 Model", self)
+        self.set_sam3_model_action.triggered.connect(self.set_sam3_model)
 
-        self.ai_menu.addAction(self.select_model_action)
+        self.ai_menu.addAction(self.set_yolo_model_action)
         if cfg.enable_sam3:
-            self.ai_menu.addAction(self.select_sam_model_action)
-            self.sam3_mode_action = QAction("SAM3 Output Mode...", self)
-            self.sam3_mode_action.triggered.connect(self.show_sam3_mode_dialog)
-            self.ai_menu.addAction(self.sam3_mode_action)
+            self.ai_menu.addAction(self.set_sam3_model_action)
         self.ai_menu.addSeparator()
         self.ai_menu.addAction(self.detect_action)
         self.ai_menu.addAction(self.auto_detect_action)
@@ -468,21 +456,19 @@ class MainWindow(QMainWindow):
         self.play_state = PlayState.STOP
         self.image_widget.clearBboxes()
 
-    def select_model(self):
-        model_path, _ = QFileDialog.getOpenFileName(
-            self, "Open YOLO Model File", "", "Model Files (*.pt)"
-        )
-        if model_path:
-            settings.models.model_path = model_path
-            self._set_model(ModelType.YOLO, model_path)
+    def set_yolo_model(self):
+        """開啟 Set YOLO Model 對話框"""
+        dialog = SetYoloModelDialog(self)
+        if dialog.exec():
+            self._set_model(ModelType.YOLO, settings.models.model_path)
+            save_settings()
 
-    def select_sam_model(self):
-        model_path, _ = QFileDialog.getOpenFileName(
-            self, "Open SAM3 Model File", "", "Model Files (*.pt)"
-        )
-        if model_path:
-            settings.models.sam3_model_path = model_path
-            self._set_model(ModelType.SAM3, model_path)
+    def set_sam3_model(self):
+        """開啟 Set SAM3 Model 對話框（含 output mode、tolerance、text prompts）"""
+        dialog = SetSam3ModelDialog(self)
+        if dialog.exec():
+            self._set_model(ModelType.SAM3, settings.models.sam3_model_path)
+            save_settings()
 
     def cycle_view_mode(self):
         """Cycle view mode: ALL -> BBOX -> SEG -> ALL"""
@@ -1049,27 +1035,6 @@ class MainWindow(QMainWindow):
         default_model = settings.models.model_path or ""
         dialog = CategorizeMediaDialog(self, default_folder, default_model)
         dialog.exec()
-
-    def edit_text_prompts(self):
-        dialog = TextPromptsDialog(self)
-        if dialog.exec():
-            save_settings()
-            self.statusbar.showMessage(f"Text prompts: {settings.class_names.text_prompts}")
-
-    def show_sam3_mode_dialog(self):
-        dialog = Sam3ModeDialog(self)
-        if dialog.exec():
-            save_settings()
-            mode = settings.models.sam3_label_mode
-            self.statusbar.showMessage(f"SAM3 output mode: {mode}")
-
-    def edit_param(self):
-        dialog = ParamDialog(self)
-        if dialog.exec():
-            save_settings()
-            self.statusbar.showMessage(
-                f"Polygon tolerance: {settings.models.polygon_tolerance}"
-            )
 
     def cbWheelEvent(self, wheel_up):
         if self.app_state.auto_save or g_param.user_labeling:
