@@ -23,9 +23,13 @@ class ModelsSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     active_model: Optional[str] = None
+    # YOLO
     model_path: Optional[str] = None
+    yolo_label_mode: Optional[str] = "bbox"  # "seg", "bbox", "all"
+    yolo_polygon_tolerance: Optional[float] = 0.002
+    # SAM3
     sam3_model_path: Optional[str] = None
-    polygon_tolerance: Optional[float] = 0.002
+    sam3_polygon_tolerance: Optional[float] = 0.002
     sam3_label_mode: Optional[str] = "seg"  # "seg", "bbox", "all"
 
 

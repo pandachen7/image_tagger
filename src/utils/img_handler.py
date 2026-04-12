@@ -97,11 +97,14 @@ class Inferencer:
             return self._sam_predictor is not None
         return False
 
-    def infer_yolo(self, cv_img) -> list:
-        """YOLO inference. Returns list of Bbox."""
+    def infer_yolo(self, cv_img) -> tuple[list[Bbox], list[Polygon]]:
+        """YOLO inference. 依 model task 與 yolo_label_mode 回傳 bbox / polygon / all。"""
         results = self._yolo_model.predict(cv_img, verbose=False)
-        bboxes = []
+        is_seg = self._yolo_model.task == "segment"
+        bboxes, polygons = [], []
+
         for result in results:
+            # Bbox
             if result.boxes is not None:
                 for box in result.boxes:
                     b = box.xyxy[0]
@@ -116,7 +119,22 @@ class Inferencer:
                             float(box.conf),
                         )
                     )
-        return bboxes
+            # Polygon（僅 segment model，masks.xy 已轉換至原圖座標）
+            if is_seg and result.masks is not None:
+                tolerance = settings.models.yolo_polygon_tolerance or 0.002
+                for i, poly_xy in enumerate(result.masks.xy):
+                    if len(poly_xy) < 3:
+                        continue
+                    label = self._yolo_model.names[int(result.boxes[i].cls)]
+                    conf = float(result.boxes[i].conf)
+                    contour = poly_xy.reshape(-1, 1, 2).astype(np.float32)
+                    epsilon = tolerance * cv2.arcLength(contour, True)
+                    approx = cv2.approxPolyDP(contour, epsilon, True)
+                    if len(approx) >= 3:
+                        points = [(float(x), float(y)) for x, y in approx.squeeze()]
+                        polygons.append(Polygon(points, label, conf))
+
+        return bboxes, polygons
 
     def infer_sam3(self, image, src_shape) -> tuple[list, list]:
         """SAM3 inference. image: np.ndarray (BGR) or file path str.
@@ -138,7 +156,7 @@ class Inferencer:
                     mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                 )
                 if contours:
-                    tolerance = settings.models.polygon_tolerance or 0.002
+                    tolerance = settings.models.sam3_polygon_tolerance or 0.002
                     for poly_pts in mask_to_polygon(contours, tolerance):
                         points = [(float(x), float(y)) for x, y in poly_pts]
                         polygons.append(Polygon(points, label, -1.0))

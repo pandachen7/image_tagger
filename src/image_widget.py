@@ -468,7 +468,15 @@ class ImageWidget(QWidget):
             t1 = time.time()
 
         if model_type == ModelType.YOLO:
-            self.bboxes = inferencer.infer_yolo(self.cv_img)
+            bboxes, polygons = inferencer.infer_yolo(self.cv_img)
+            mode = settings.models.yolo_label_mode or "bbox"
+            if mode == "seg":
+                self.polygons = polygons
+            elif mode == "bbox":
+                self.bboxes = bboxes
+            else:  # "all"
+                self.bboxes = bboxes
+                self.polygons = polygons
         elif model_type == ModelType.SAM3:
             src_shape = (self.pixmap.height(), self.pixmap.width())
             bboxes, polygons = inferencer.infer_sam3(self.cv_img, src_shape)

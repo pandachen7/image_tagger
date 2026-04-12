@@ -31,7 +31,7 @@ class ParamDialog(QDialog):
         self.polygon_tolerance_spin.setRange(0.001, 0.1)
         self.polygon_tolerance_spin.setDecimals(3)
         self.polygon_tolerance_spin.setSingleStep(0.001)
-        self.polygon_tolerance_spin.setValue(settings.models.polygon_tolerance or 0.002)
+        self.polygon_tolerance_spin.setValue(settings.models.sam3_polygon_tolerance or 0.002)
 
         tolerance_tip = (
             "越小越精密, 越大越粗糙\n"
@@ -58,5 +58,5 @@ class ParamDialog(QDialog):
         layout.addRow(btn_layout)
 
     def save(self):
-        settings.models.polygon_tolerance = self.polygon_tolerance_spin.value()
+        settings.models.sam3_polygon_tolerance = self.polygon_tolerance_spin.value()
         self.accept()

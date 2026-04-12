@@ -66,7 +66,7 @@ class SetSam3ModelDialog(QDialog):
         self.tolerance_spin.setRange(0.001, 0.1)
         self.tolerance_spin.setDecimals(3)
         self.tolerance_spin.setSingleStep(0.001)
-        self.tolerance_spin.setValue(settings.models.polygon_tolerance or 0.002)
+        self.tolerance_spin.setValue(settings.models.sam3_polygon_tolerance or 0.002)
         tolerance_info = QLabel("\u2139")
         tolerance_info.setToolTip(
             "越小越精密, 越大越粗糙\n"
@@ -165,7 +165,7 @@ class SetSam3ModelDialog(QDialog):
         settings.models.sam3_label_mode = self.mode_combo.currentData()
 
         # Polygon tolerance
-        settings.models.polygon_tolerance = self.tolerance_spin.value()
+        settings.models.sam3_polygon_tolerance = self.tolerance_spin.value()
 
         # Text prompts
         prompts = []
