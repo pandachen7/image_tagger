@@ -38,41 +38,57 @@ class Inferencer:
         self.sam_model_path: Optional[str] = None
         self._yolo_model = None
         self._sam_predictor = None
+        self._loading = False
+
+    @property
+    def is_loading(self) -> bool:
+        return self._loading
 
     def set_active_model(self, model_type: str, model_path: str = None):
+        """設定啟用的模型類型與路徑，路徑變更時清除已載入的舊模型以便重新載入"""
         self.active_model_type = model_type
         if model_path:
             if model_type == ModelType.YOLO:
+                if model_path != self.model_path:
+                    self._yolo_model = None
                 self.model_path = model_path
             elif model_type == ModelType.SAM3:
+                if model_path != self.sam_model_path:
+                    self._sam_predictor = None
                 self.sam_model_path = model_path
 
     def ensure_loaded(self, model_type: str = None) -> bool:
         """Lazy-load the given model type. Returns True if ready."""
+        if self._loading:
+            return False
         if model_type is None:
             model_type = self.active_model_type
-        if model_type == ModelType.YOLO:
-            if self._yolo_model is None and self.model_path:
-                from ultralytics import YOLO
+        self._loading = True
+        try:
+            if model_type == ModelType.YOLO:
+                if self._yolo_model is None and self.model_path:
+                    from ultralytics import YOLO
 
-                self._yolo_model = YOLO(self.model_path)
-            return self._yolo_model is not None
-        elif model_type == ModelType.SAM3:
-            if self._sam_predictor is None and self.sam_model_path:
-                from ultralytics.models.sam import SAM3SemanticPredictor
+                    self._yolo_model = YOLO(self.model_path)
+                return self._yolo_model is not None
+            elif model_type == ModelType.SAM3:
+                if self._sam_predictor is None and self.sam_model_path:
+                    from ultralytics.models.sam import SAM3SemanticPredictor
 
-                overrides = dict(
-                    conf=0.25,
-                    imgsz=630,  # 設愈高, VRAM容易不夠, 建議14倍數的630
-                    task="segment",
-                    mode="predict",
-                    model=self.sam_model_path,
-                    half=True,
-                    verbose=False,
-                )
-                self._sam_predictor = SAM3SemanticPredictor(overrides=overrides)
-            return self._sam_predictor is not None
-        return False
+                    overrides = dict(
+                        conf=0.25,
+                        imgsz=630,  # 設愈高, VRAM容易不夠, 建議14倍數的630
+                        task="segment",
+                        mode="predict",
+                        model=self.sam_model_path,
+                        half=True,
+                        verbose=False,
+                    )
+                    self._sam_predictor = SAM3SemanticPredictor(overrides=overrides)
+                return self._sam_predictor is not None
+            return False
+        finally:
+            self._loading = False
 
     def is_loaded(self, model_type: str) -> bool:
         if model_type == ModelType.YOLO:

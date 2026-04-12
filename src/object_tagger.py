@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -52,6 +52,26 @@ yaml = YAML()
 YOLO_LABELS_FOLDER = "labels"
 
 
+class _ModelLoader(QThread):
+    """背景載入模型（含下載）的 worker thread"""
+    finished = pyqtSignal(bool, str)  # (success, message)
+
+    def __init__(self, model_type: str):
+        super().__init__()
+        self.model_type = model_type
+
+    def run(self):
+        try:
+            ok = inferencer.ensure_loaded(self.model_type)
+            if ok:
+                self.finished.emit(True, "模型載入完成")
+            else:
+                self.finished.emit(False, "模型載入失敗")
+        except Exception as e:
+            log.e(f"模型載入錯誤: {e}")
+            self.finished.emit(False, "模型載入失敗")
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
 
@@ -64,6 +84,8 @@ class MainWindow(QMainWindow):
 
         # Initialize state
         self.app_state = AppState()
+        self._model_loader: _ModelLoader | None = None
+        self._detect_after_load = False
 
         # 儲存
         self.save_action = QAction("Save", self)
@@ -424,7 +446,7 @@ class MainWindow(QMainWindow):
             self.image_widget.runInference()
 
     def _set_model(self, model_type: str, model_path: str = None):
-        """Set active model and sync UI."""
+        """Set active model and sync UI. 若模型尚未載入則觸發背景載入。"""
         inferencer.set_active_model(model_type, model_path)
         if model_type == ModelType.YOLO:
             self.use_yolo_action.setChecked(True)
@@ -432,24 +454,60 @@ class MainWindow(QMainWindow):
             self.use_sam_action.setChecked(True)
         settings.models.active_model = model_type
         save_settings()
-        self.statusbar.showMessage(f"Active model: {model_type}")
+        # 背景預載模型
+        self._load_model_async(model_type)
+
+    def _load_model_async(self, model_type: str, detect_after: bool = False):
+        """背景載入模型，不阻塞 UI"""
+        if inferencer.is_loaded(model_type):
+            if detect_after:
+                self._run_detect()
+            return
+        if inferencer.is_loading:
+            return
+        self._detect_after_load = detect_after
+        self._model_loader = _ModelLoader(model_type)
+        self._model_loader.finished.connect(self._on_model_loaded)
+        # 判斷是否需要下載
+        model_path = (
+            inferencer.model_path if model_type == ModelType.YOLO
+            else inferencer.sam_model_path
+        ) or ""
+        if model_path and not Path(model_path).is_file():
+            self.statusbar.showMessage(f"正在下載並載入模型: {Path(model_path).name} ...")
+        else:
+            self.statusbar.showMessage(f"正在載入模型: {Path(model_path).name} ...")
+        self._model_loader.start()
+
+    def _on_model_loaded(self, success: bool, message: str):
+        """模型載入完成的回呼"""
+        self.statusbar.showMessage(message)
+        if success and self._detect_after_load:
+            self._detect_after_load = False
+            self._run_detect()
+
+    def _run_detect(self):
+        """執行偵測並更新 statusbar"""
+        self.image_widget.runInference()
+        nb = len(self.image_widget.bboxes) + len(self.image_widget.polygons)
+        self.statusbar.showMessage(f"Detect ({inferencer.active_model_type}): {nb} annotations")
 
     def manual_detect(self):
-        """手動偵測，提供狀態回饋"""
+        """手動偵測，提供狀態回饋。模型未載入時觸發背景載入，載入完成後自動偵測。"""
         if inferencer.active_model_type == ModelType.NONE:
             self.statusbar.showMessage("Detect: no model selected (use Ai menu)")
             return
         if not file_h.current_image_path():
             self.statusbar.showMessage("Detect: no image loaded")
             return
-        if not inferencer.ensure_loaded(inferencer.active_model_type):
-            self.statusbar.showMessage(
-                f"Detect: failed to load {inferencer.active_model_type} model"
-            )
+        if inferencer.is_loading:
+            self.statusbar.showMessage("模型載入中，請稍候...")
             return
-        self.image_widget.runInference()
-        nb = len(self.image_widget.bboxes) + len(self.image_widget.polygons)
-        self.statusbar.showMessage(f"Detect ({inferencer.active_model_type}): {nb} annotations")
+        if not inferencer.is_loaded(inferencer.active_model_type):
+            # 模型尚未載入，背景載入後自動偵測
+            self._load_model_async(inferencer.active_model_type, detect_after=True)
+            return
+        self._run_detect()
 
     def resetStates(self):
         g_param.auto_save_counter = 0

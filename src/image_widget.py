@@ -458,7 +458,7 @@ class ImageWidget(QWidget):
         if not file_h.current_image_path():
             return
         model_type = inferencer.active_model_type
-        if not inferencer.ensure_loaded(model_type):
+        if inferencer.is_loading or not inferencer.is_loaded(model_type):
             return
 
         self.bboxes = []
