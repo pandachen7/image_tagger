@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-04-11
+# 更新日期: 2026-04-12
 import random
 import re
 import shutil
@@ -32,9 +32,8 @@ from src.config import cfg
 from src.core import AppState
 from src.utils.const import IMAGE_EXTS
 from src.image_widget import DrawingMode, ImageWidget
-from src.utils.dialogs import (
+from src.dialogs import (
     CategorizeMediaDialog,
-    CategorySettingsDialog,
     ConvertSettingsDialog,
     ParamDialog,
     Sam3ModeDialog,
@@ -259,13 +258,9 @@ class MainWindow(QMainWindow):
         self.view_menu.addAction(self.view_bbox_action)
         self.view_menu.addAction(self.view_seg_action)
 
-        self.edit_categories_action = QAction("Edit Categories", self)
-        self.edit_categories_action.triggered.connect(self.edit_categories)
-
         self.convert_voc_yolo_action = QAction("VOC to YOLO", self)
         self.convert_voc_yolo_action.triggered.connect(self.convert_voc_to_yolo)
 
-        self.convert_menu.addAction(self.edit_categories_action)
         self.convert_menu.addAction(self.convert_voc_yolo_action)
 
         self.open_file_by_index_action = QAction("Open File by Index", self)
@@ -903,18 +898,11 @@ class MainWindow(QMainWindow):
         並依 train/val 比例整理成 dataset 結構 + 產生 data.yaml
         """
         default_dir = str(Path(file_h.folder_path, cfg.save_folder)) if file_h.folder_path else ""
-        folder_path = QFileDialog.getExistingDirectory(
-            self, "Select folder containing VOC XML files", default_dir
-        )
-        if not folder_path:
-            return
-
-        # 顯示轉換設定 dialog（含 split 比例）
-        dialog = ConvertSettingsDialog(self, self.app_state)
+        dialog = ConvertSettingsDialog(self, self.app_state, default_dir)
         if not dialog.exec():
             return
 
-        base = Path(folder_path)
+        base = Path(dialog.folder_path)
         train_ratio = dialog.train_ratio
         copy_images = dialog.copy_images
         start_time = datetime.now()
@@ -941,7 +929,7 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
 
         not_matched = file_h.convertVocInFolder(
-            folder_path, tmp_labels, self.app_state, progress_callback=on_progress
+            str(base), tmp_labels, self.app_state, progress_callback=on_progress
         )
         progress.close()
 
@@ -1061,12 +1049,6 @@ class MainWindow(QMainWindow):
         default_model = settings.models.model_path or ""
         dialog = CategorizeMediaDialog(self, default_folder, default_model)
         dialog.exec()
-
-    def edit_categories(self):
-        dialog = CategorySettingsDialog(self)
-        if dialog.exec():
-            self.statusbar.showMessage("Categories設定已儲存")
-            save_settings()
 
     def edit_text_prompts(self):
         dialog = TextPromptsDialog(self)
