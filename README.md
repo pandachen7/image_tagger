@@ -81,17 +81,13 @@ python main.py
 
 ## 更新
 
-2026/4/9
+2026/4
 - system.yaml可設定各種數字對應的class_name, 並且可在system.yaml設定短編碼的反應時間
 - VOC轉yolo格式時, 可在選定資料夾後選擇轉換的方式, 例如train/val的比例
 - SAM3 影片 frame bug 修正 — infer_sam3 改為接收 cv_img (numpy array)，不再傳檔案路徑。這樣影片的每一幀都能正確被 SAM3 偵測。
 - Ai → SAM3 Output Mode... dialog — 可在 seg / bbox / all 三種模式間切換，設定會存入 settings.yaml。
-
-2026/4/11
 - VOC → YOLO 轉換增加進度條、未對應 class_name 記錄檔 (not_match_*.txt)、轉換完成摘要對話框
 - Ai → Categorize Media — 選擇資料夾與 model，自動偵測每個圖片/影片中出現最多次的物件，依名稱分類到子資料夾。支援 YOLO / YOLO-Seg / SAM3 三種模型，可自動偵測模型類型。
-
-2026/4/12
 - Convert → VOC to YOLO 對話框整合 Class Mapping（原 Edit Categories）與資料夾選擇，顯示圖片數量
 - Ai → Set YOLO Model / Set SAM3 Model 取代原本的 Select Model 選單；SAM3 dialog 整合 Output Mode、Polygon Tolerance、Text Prompts
 - YOLO seg model（如 yolo26m-seg.pt）支援 bbox / seg / all 輸出模式與獨立的 Polygon Tolerance 設定
