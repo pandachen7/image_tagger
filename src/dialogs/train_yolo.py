@@ -47,9 +47,14 @@ def _resolve_cache(cache_str: str | None):
 def _build_train_kwargs(name: str) -> dict:
     """依 settings.training 組合 ultralytics model.train() 所需的 kwargs"""
     t = settings.training
+    task = t.task or "detect"
+    # 強制 project 指向工作目錄下的 runs/<task>，避免 ultralytics 全域 settings.json
+    # 把 runs_dir 記在其他磁碟造成輸出位置跑掉
+    project = str(Path.cwd() / "runs" / task)
     return {
         # 資料與輸出
         "data": t.last_data_yaml,
+        "project": project,
         "name": name,
         "exist_ok": False,
         "plots": True,
@@ -593,11 +598,11 @@ class TrainYoloDialog(QDialog):
             self._thread.stop()
 
     def _open_folder(self) -> None:
-        """開啟訓練輸出資料夾 (若尚未開始或無 save_dir 則退回 runs/<task>/)"""
+        """開啟訓練輸出資料夾 (若尚未開始或無 save_dir 則退回 cwd/runs/<task>/)"""
         target = self._save_dir
         if not target or not Path(target).is_dir():
             task = self.task_combo.currentData() or "detect"
-            target = str(Path("runs") / task)
+            target = str(Path.cwd() / "runs" / task)
             try:
                 Path(target).mkdir(parents=True, exist_ok=True)
             except Exception as e:
