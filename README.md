@@ -24,8 +24,8 @@ python main.py
 2. **Ai → Set YOLO Model** 設定模型路徑（首次會自動下載 `yolo26s.pt` 預設模型）；如需使用 SAM3，透過 **Ai → Set SAM3 Model** 一併設定模型、輸出模式、Polygon Tolerance 與 Text Prompts
 3. **按 `d` 或 Ai → Detect** 偵測物件
 4. 手動微調框的位置、名稱後，**File → Save** 或按 `s` 儲存為 VOC XML
-5. **Convert → VOC to YOLO** 在對話框中設定 Class Mapping（class_name → class_id）、選擇資料夾、輸出模式與 train/val 比例 → 自動轉換並產生 `dataset.yaml`
-6. 使用產生的 `dataset.yaml` 訓練模型, 路徑剛好對應dataset的圖檔與標籤
+5. **Train → VOC to YOLO** 在對話框中設定 Class Mapping（class_name → class_id）、選擇資料夾、輸出模式與 train/val 比例（預設 80/20）→ 自動轉換並產生 `dataset.yaml`
+6. **Train → Train YOLO** 直接在 GUI 內訓練：選擇 `dataset.yaml`、Task（Detect / Segment）、Model Size、訓練參數，啟動後顯示 epoch 進度與 mAP，完成後可開啟訓練資料夾
 
 > 每個步驟的詳細操作說明請見 [使用教學](./docs/usage.md)
 > 訓練相關（dataset 結構、data.yaml、segment 訓練）請見 [訓練指南](./docs/training.md)
@@ -40,6 +40,7 @@ python main.py
 | 手動 Polygon | 左鍵點擊頂點，靠近起點自動封閉 |
 | Mask 工具 | Draw / Erase / Fill 遮罩繪製，但訓練不需要 |
 | VOC → YOLO 轉換 | 支援 BBox、Seg、OBB 三種輸出格式，轉換進度條、未對應 class 記錄 |
+| Train YOLO (GUI) | 直接在 GUI 內呼叫 ultralytics 訓練，可設定基本參數與進階參數（優化器 / 增強 / cache 等），訓練中顯示進度與 mAP |
 | Categorize Media | 用 YOLO/SAM3 模型偵測後，依最多次物件名稱自動分類到子資料夾 |
 | 影片標註 | 逐幀標註，支援自動抽幀儲存 |
 
@@ -67,7 +68,7 @@ python main.py
 | 檔案 | 用途 |
 |------|------|
 | `cfg/system.yaml` | 系統設定：預設 label、啟用 SAM3/Mask/OBB 等開關 |
-| `cfg/settings.yaml` | 執行期設定：模型路徑、categories 對應、text prompts. 不存在時會自動生成 |
+| `cfg/settings.yaml` | 執行期設定：模型路徑、categories 對應、text prompts、訓練參數暫存 (training 區段). 不存在時會自動生成 |
 
 ## 常用vs code的快捷組合鍵
 
@@ -82,6 +83,9 @@ python main.py
 ## 更新
 
 2026/4
+- 選單 `Convert` 更名為 `Train`，新增 **Train → Train YOLO**：可選 dataset.yaml、Task / Model Size / Version / 訓練參數，內建進度條與訓練結果摘要，並可開啟訓練資料夾
+- Train YOLO 對話框新增「進階參數...」按鈕：優化器 (lr0/lrf/weight_decay/warmup) / 幾何 / HSV / Mosaic+MixUp / 系統 (workers/cache/amp/freeze...) 全套參數，全部暫存到 `cfg/settings.yaml` 的 `training` 區段
+- VOC → YOLO 預設改為 Train 80% / Val 20%；產生的 `dataset.yaml` 一定包含 `train` 與 `val` 兩個 key（無 val split 時 val 退回指向 train）
 - system.yaml可設定各種數字對應的class_name, 並且可在system.yaml設定短編碼的反應時間
 - VOC轉yolo格式時, 可在選定資料夾後選擇轉換的方式, 例如train/val的比例
 - SAM3 影片 frame bug 修正 — infer_sam3 改為接收 cv_img (numpy array)，不再傳檔案路徑。這樣影片的每一幀都能正確被 SAM3 偵測。

@@ -95,13 +95,13 @@ class ConvertSettingsDialog(QDialog):
         self.train_spin.setRange(50, 100)
         self.train_spin.setSuffix(" %")
         self.train_spin.setSingleStep(5)
-        self.train_spin.setValue(100)
+        self.train_spin.setValue(80)
         self.train_spin.valueChanged.connect(self._on_train_changed)
 
         self.val_spin = QSpinBox()
         self.val_spin.setRange(0, 50)
         self.val_spin.setSuffix(" %")
-        self.val_spin.setValue(0)
+        self.val_spin.setValue(20)
         self.val_spin.setReadOnly(True)
 
         ratio_row = QHBoxLayout()

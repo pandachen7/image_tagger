@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-04-12
+# 更新日期: 2026-04-25
 import random
 import re
 import shutil
@@ -37,6 +37,7 @@ from src.dialogs import (
     ConvertSettingsDialog,
     SetSam3ModelDialog,
     SetYoloModelDialog,
+    TrainYoloDialog,
 )
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
@@ -245,7 +246,7 @@ class MainWindow(QMainWindow):
         self.file_menu = self.menu.addMenu("File")
         self.edit_menu = self.menu.addMenu("Edit")
         self.ai_menu = self.menu.addMenu("Ai")
-        self.convert_menu = self.menu.addMenu("Convert")
+        self.train_menu = self.menu.addMenu("Train")
         self.view_menu = self.menu.addMenu("View")
         # self.help_menu = self.menu.addMenu("&Help")
 
@@ -282,7 +283,11 @@ class MainWindow(QMainWindow):
         self.convert_voc_yolo_action = QAction("VOC to YOLO", self)
         self.convert_voc_yolo_action.triggered.connect(self.convert_voc_to_yolo)
 
-        self.convert_menu.addAction(self.convert_voc_yolo_action)
+        self.train_yolo_action = QAction("Train YOLO", self)
+        self.train_yolo_action.triggered.connect(self.train_yolo)
+
+        self.train_menu.addAction(self.convert_voc_yolo_action)
+        self.train_menu.addAction(self.train_yolo_action)
 
         self.open_file_by_index_action = QAction("Open File by Index", self)
         self.open_file_by_index_action.triggered.connect(self.open_file_by_index)
@@ -1039,8 +1044,8 @@ class MainWindow(QMainWindow):
 
         data_yaml = {"path": str(base.resolve())}
         data_yaml["train"] = "images/train"
-        if val_files:
-            data_yaml["val"] = "images/val"
+        # ultralytics 要求 train/val 都必須存在；無 val split 時退回指向 train
+        data_yaml["val"] = "images/val" if val_files else "images/train"
         data_yaml["nc"] = len(id_to_name)
         data_yaml["names"] = id_to_name
 
@@ -1068,7 +1073,10 @@ class MainWindow(QMainWindow):
         # class_name 對應表
         lines = ["轉換完成\n"]
         lines.append(f"  Train: {train_count} 張, Val: {val_count} 張")
-        lines.append(f"  Dataset YAML: {yaml_name}\n")
+        lines.append(f"  Dataset YAML: {yaml_name}")
+        if val_count == 0:
+            lines.append("  ⚠ 無 val split，dataset.yaml 的 val 已退回指向 train (僅供訓練啟動，建議下次設定 val 比例)")
+        lines.append("")
         lines.append("── Class 對應表 ──")
         for cid, cname in id_to_name.items():
             lines.append(f"  {cid}: {cname}")
@@ -1092,6 +1100,16 @@ class MainWindow(QMainWindow):
         default_folder = str(file_h.folder_path) if file_h.folder_path else ""
         default_model = settings.models.model_path or ""
         dialog = CategorizeMediaDialog(self, default_folder, default_model)
+        dialog.exec()
+
+    def train_yolo(self):
+        """開啟 Train YOLO 對話框，設定參數並啟動 ultralytics 訓練"""
+        default_folder = ""
+        if file_h.folder_path:
+            # 優先用 dataset 轉換的輸出 (save_folder)，沒有再退回目前資料夾
+            converted = Path(file_h.folder_path, cfg.save_folder)
+            default_folder = str(converted) if converted.is_dir() else str(file_h.folder_path)
+        dialog = TrainYoloDialog(self, default_folder)
         dialog.exec()
 
     def cbWheelEvent(self, wheel_up):
