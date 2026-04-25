@@ -180,6 +180,7 @@ img/*
 tmp*
 *.webm
 *.model
-cfg/settings.yaml
+# cfg/ 內所有 yaml 都是使用者本機設定，不入 git；資料夾用 .gitkeep 保留
+cfg/*.yaml
 runs/
 depricated/
