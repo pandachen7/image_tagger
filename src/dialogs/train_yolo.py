@@ -1,5 +1,6 @@
 # Train YOLO 對話框：選擇 dataset.yaml、設定訓練參數、執行 ultralytics 訓練並顯示進度與結果
-# 更新日期: 2026-04-25
+# 支援指定既有 .pt 來再訓練（fine-tune）或從中斷處續訓（resume）
+# 更新日期: 2026-05-01
 from __future__ import annotations
 
 import os
@@ -9,10 +10,12 @@ from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -44,14 +47,19 @@ def _resolve_cache(cache_str: str | None):
     return False
 
 
-def _build_train_kwargs(name: str) -> dict:
-    """依 settings.training 組合 ultralytics model.train() 所需的 kwargs"""
+def _build_train_kwargs(name: str, resume: bool = False) -> dict:
+    """依 settings.training 組合 ultralytics model.train() 所需的 kwargs
+
+    Args:
+        name: 輸出資料夾名稱（runs/<task>/<name>）
+        resume: True 時加上 resume=True，從原訓練的 epoch / optimizer / scheduler 接續
+    """
     t = settings.training
     task = t.task or "detect"
     # 強制 project 指向工作目錄下的 runs/<task>，避免 ultralytics 全域 settings.json
     # 把 runs_dir 記在其他磁碟造成輸出位置跑掉
     project = str(Path.cwd() / "runs" / task)
-    return {
+    kwargs = {
         # 資料與輸出
         "data": t.last_data_yaml,
         "project": project,
@@ -102,6 +110,11 @@ def _build_train_kwargs(name: str) -> dict:
         "fraction": t.fraction,
         "freeze": t.freeze if (t.freeze or 0) > 0 else None,
     }
+    if resume:
+        # ultralytics resume 會讀取 last.pt 旁邊的 args.yaml 接續訓練；
+        # 大多數 hyperparameter 由原訓練保留，但仍允許覆寫 epochs。
+        kwargs["resume"] = True
+    return kwargs
 
 
 def _parse_device(text: str):
@@ -288,7 +301,53 @@ class TrainYoloDialog(QDialog):
 
         # === Model 設定 ===
         model_group = QGroupBox("Model 設定")
-        model_layout = QFormLayout()
+        model_layout = QVBoxLayout()
+
+        # --- 從現有 .pt 接續訓練（選填）---
+        resume_row = QHBoxLayout()
+        self.resume_pt_edit = QLineEdit()
+        self.resume_pt_edit.setPlaceholderText(
+            "選填：選擇之前訓練的 last.pt / best.pt 來再訓練 (留空=從預訓練模型開始)"
+        )
+        self.resume_pt_edit.setToolTip(
+            "指定 .pt 來接續訓練：\n"
+            "• 留空：依下方 Task / Model Size / Version 組合預訓練模型 (e.g. yolo26s.pt)\n"
+            "• 填入 best.pt：以該權重做新一輪訓練 (fine-tune，會建立新的 runs/ 資料夾)\n"
+            "• 填入 last.pt 並勾選『Resume』：從原訓練中斷處繼續，沿用原 epoch 與 optimizer 狀態"
+        )
+        resume_browse = QPushButton("瀏覽...")
+        resume_browse.setFixedWidth(80)
+        resume_browse.clicked.connect(self._browse_resume_pt)
+        resume_clear = QPushButton("清除")
+        resume_clear.setFixedWidth(60)
+        resume_clear.clicked.connect(lambda: self.resume_pt_edit.setText(""))
+        resume_row.addWidget(QLabel("Resume from .pt:"))
+        resume_row.addWidget(self.resume_pt_edit)
+        resume_row.addWidget(resume_browse)
+        resume_row.addWidget(resume_clear)
+        model_layout.addLayout(resume_row)
+
+        self.resume_check = QCheckBox(
+            "Resume mode：從原訓練的 epoch 接續 (需指向 last.pt，沿用原 optimizer/scheduler/dataset)"
+        )
+        self.resume_check.setToolTip(
+            "勾選 = ultralytics resume=True：\n"
+            "  - 從原訓練中斷的 epoch 繼續，optimizer/scheduler 狀態保留\n"
+            "  - .pt 旁需有 args.yaml (ultralytics 自動產出)，dataset 結構不可變動\n"
+            "未勾選且填了 .pt = fine-tune：\n"
+            "  - 以該權重為起點，使用此對話框的所有參數做新一輪訓練"
+        )
+        model_layout.addWidget(self.resume_check)
+        self.resume_pt_edit.textChanged.connect(self._update_resume_state)
+        self.resume_check.toggled.connect(self._update_resume_state)
+
+        # --- 預訓練模型組合（resume_pt_edit 為空時使用）---
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        model_layout.addWidget(sep)
+
+        base_form = QFormLayout()
 
         self.task_combo = QComboBox()
         self.task_combo.addItem("Object Detection — bbox 偵測", "detect")
@@ -298,29 +357,30 @@ class TrainYoloDialog(QDialog):
             "Detect: 一般物件偵測 (bbox)\n"
             "Segment: 多邊形分割 (需要 seg 模型權重)"
         )
-        model_layout.addRow("Task:", self.task_combo)
+        base_form.addRow("Task:", self.task_combo)
 
         self.size_combo = QComboBox()
         for size, desc in self.MODEL_SIZES:
             self.size_combo.addItem(f"{size} — {desc}", size)
         self.size_combo.setToolTip("模型規模越大越準確但越慢、越吃 VRAM")
-        model_layout.addRow("Model Size:", self.size_combo)
+        base_form.addRow("Model Size:", self.size_combo)
 
         self.version_edit = QLineEdit()
         self.version_edit.setToolTip(
             "YOLO 版本前綴 (例如 yolo26 / yolov8 / yolo12)\n"
             "會組合成 <version><size>[-seg].pt"
         )
-        model_layout.addRow("Version:", self.version_edit)
+        base_form.addRow("Version:", self.version_edit)
 
         self.model_info_label = QLabel()
         self.model_info_label.setStyleSheet("color: gray; font-size: 11px;")
-        model_layout.addRow(self.model_info_label)
+        base_form.addRow(self.model_info_label)
         # 自動更新顯示的最終模型檔名
         self.task_combo.currentIndexChanged.connect(self._update_model_info_label)
         self.size_combo.currentIndexChanged.connect(self._update_model_info_label)
         self.version_edit.textChanged.connect(self._update_model_info_label)
 
+        model_layout.addLayout(base_form)
         model_group.setLayout(model_layout)
         main_layout.addWidget(model_group)
 
@@ -433,6 +493,7 @@ class TrainYoloDialog(QDialog):
         # 從 settings 載入基本參數初值
         self._load_basic_from_settings()
         self._update_model_info_label()
+        self._update_resume_state()
 
     # === Helpers ===
 
@@ -453,7 +514,14 @@ class TrainYoloDialog(QDialog):
             return ""
 
     def _build_model_info(self) -> str:
-        """組合模型權重檔名 (例如 yolo26s.pt 或 yolo26s-seg.pt)"""
+        """組合最終要載入的模型路徑/名稱
+
+        - 若有指定 resume .pt 路徑且檔案存在，回傳該路徑
+        - 否則用 version+size+task 組合預訓練模型檔名 (例如 yolo26s.pt 或 yolo26s-seg.pt)
+        """
+        resume_pt = self.resume_pt_edit.text().strip()
+        if resume_pt and Path(resume_pt).is_file():
+            return resume_pt
         version = self.version_edit.text().strip() or self.DEFAULT_VERSION
         size = self.size_combo.currentData() or "s"
         task = self.task_combo.currentData() or "detect"
@@ -462,10 +530,44 @@ class TrainYoloDialog(QDialog):
 
     def _update_model_info_label(self) -> None:
         """更新顯示最終模型檔名的提示 label"""
-        self.model_info_label.setText(
-            f"最終使用模型: {self._build_model_info()} "
-            f"(若本地不存在，ultralytics 會自動下載)"
+        resume_pt = self.resume_pt_edit.text().strip()
+        if resume_pt:
+            mode = "Resume (從原 epoch 接續)" if self.resume_check.isChecked() else "Fine-tune (以此權重開新訓練)"
+            self.model_info_label.setText(
+                f"最終使用模型: {resume_pt}\n"
+                f"模式: {mode}"
+            )
+        else:
+            self.model_info_label.setText(
+                f"最終使用模型: {self._build_model_info()} "
+                f"(若本地不存在，ultralytics 會自動下載)"
+            )
+
+    def _update_resume_state(self) -> None:
+        """根據 resume_pt_edit 是否有值，切換預訓練組合欄位的可用性，並刷新提示 label"""
+        has_resume = bool(self.resume_pt_edit.text().strip())
+        # 有指定 resume .pt 時，version/size/task 由該 .pt 決定，下方欄位 disable
+        self.task_combo.setEnabled(not has_resume)
+        self.size_combo.setEnabled(not has_resume)
+        self.version_edit.setEnabled(not has_resume)
+        # resume mode checkbox 只在有指定 .pt 時有意義
+        self.resume_check.setEnabled(has_resume)
+        if not has_resume:
+            self.resume_check.setChecked(False)
+        self._update_model_info_label()
+
+    def _browse_resume_pt(self) -> None:
+        """瀏覽選擇要接續訓練的 .pt 檔"""
+        # 預設從工作目錄下的 runs/ 開始找，找不到再退回 default_folder
+        runs_dir = Path.cwd() / "runs"
+        start = self.resume_pt_edit.text().strip()
+        if not start:
+            start = str(runs_dir) if runs_dir.is_dir() else (self._default_folder or "")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "選擇要接續訓練的 .pt 檔", start, "PyTorch Weights (*.pt)"
         )
+        if path:
+            self.resume_pt_edit.setText(path)
 
     def _browse_yaml(self) -> None:
         """瀏覽選擇 dataset.yaml"""
@@ -495,6 +597,14 @@ class TrainYoloDialog(QDialog):
         self.save_period_spin.setValue(
             t.save_period if t.save_period is not None else -1
         )
+        # 再訓練設定：只在 .pt 路徑仍存在時還原，避免 UI 帶到一個失效的舊路徑
+        prev_pt = (t.resume_pt_path or "").strip()
+        if prev_pt and Path(prev_pt).is_file():
+            self.resume_pt_edit.setText(prev_pt)
+            self.resume_check.setChecked(bool(t.resume_mode))
+        else:
+            self.resume_pt_edit.setText("")
+            self.resume_check.setChecked(False)
 
     def _save_basic_to_settings(self) -> None:
         """把基本參數寫回 settings.training (不含 name)"""
@@ -509,6 +619,8 @@ class TrainYoloDialog(QDialog):
         t.patience = self.patience_spin.value()
         t.device = self.device_edit.text().strip() or "0"
         t.save_period = self.save_period_spin.value()
+        t.resume_pt_path = self.resume_pt_edit.text().strip()
+        t.resume_mode = bool(self.resume_check.isChecked() and t.resume_pt_path)
 
     # === 訓練控制 ===
 
@@ -524,6 +636,24 @@ class TrainYoloDialog(QDialog):
             QMessageBox.warning(self, "Warning", "請選擇有效的 dataset.yaml")
             return
 
+        # 再訓練 .pt 檢查
+        resume_pt = self.resume_pt_edit.text().strip()
+        if resume_pt and not Path(resume_pt).is_file():
+            QMessageBox.warning(
+                self, "Warning", f"找不到指定的 .pt 檔: {resume_pt}"
+            )
+            return
+        resume_mode = bool(resume_pt) and self.resume_check.isChecked()
+        if resume_mode and Path(resume_pt).name != "last.pt":
+            reply = QMessageBox.question(
+                self,
+                "確認 Resume",
+                "Resume 模式建議使用 last.pt（旁邊需有 args.yaml 才能正確接續）。\n"
+                f"目前選的是: {Path(resume_pt).name}\n是否仍要繼續?",
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
         # 把基本參數寫回 settings 並持久化
         self._save_basic_to_settings()
         try:
@@ -535,7 +665,7 @@ class TrainYoloDialog(QDialog):
             self.name_edit.text().strip()
             or f"train_{datetime.now().strftime('%Y_%m%d_%H%M%S')}"
         )
-        train_kwargs = _build_train_kwargs(name)
+        train_kwargs = _build_train_kwargs(name, resume=resume_mode)
         model_info = self._build_model_info()
 
         # UI 狀態切換
@@ -636,9 +766,7 @@ class TrainYoloDialog(QDialog):
         self.stop_btn.setEnabled(running)
         self.advanced_btn.setEnabled(not running)
         self.yaml_edit.setEnabled(not running)
-        self.task_combo.setEnabled(not running)
-        self.size_combo.setEnabled(not running)
-        self.version_edit.setEnabled(not running)
+        self.resume_pt_edit.setEnabled(not running)
         self.epochs_spin.setEnabled(not running)
         self.batch_spin.setEnabled(not running)
         self.imgsz_spin.setEnabled(not running)
@@ -646,3 +774,12 @@ class TrainYoloDialog(QDialog):
         self.device_edit.setEnabled(not running)
         self.save_period_spin.setEnabled(not running)
         self.name_edit.setEnabled(not running)
+        if running:
+            # 訓練中所有 model 區塊都鎖住
+            self.task_combo.setEnabled(False)
+            self.size_combo.setEnabled(False)
+            self.version_edit.setEnabled(False)
+            self.resume_check.setEnabled(False)
+        else:
+            # 閒置時依 resume 是否有值決定哪些欄位可用
+            self._update_resume_state()

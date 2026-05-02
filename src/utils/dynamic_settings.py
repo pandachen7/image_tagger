@@ -58,6 +58,13 @@ class TrainingSettings(BaseModel):
     device: Optional[str] = "0"              # "0" / "cpu" / "0,1"
     save_period: Optional[int] = -1
 
+    # === 再訓練 / 續訓 ===
+    # 指向之前訓練產出的 .pt（last.pt 或 best.pt）；空字串表示走 version+size 流程
+    resume_pt_path: Optional[str] = ""
+    # True 時對 ultralytics 傳 resume=True，從原訓練的 epoch、optimizer、scheduler 接續
+    # （要求 .pt 來自 ultralytics 的 last.pt，且 dataset / 結構一致）
+    resume_mode: Optional[bool] = False
+
     # === 進階：優化器 ===
     optimizer: Optional[str] = "auto"        # auto / SGD / Adam / AdamW / RMSProp
     lr0: Optional[float] = 0.01

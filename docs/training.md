@@ -77,11 +77,13 @@ names:
 **Train → Train YOLO** 直接呼叫 ultralytics 訓練：
 
 1. 選擇 `dataset.yaml`（會自動帶上次用過的或自動搜尋目前資料夾下的 `dataset_*.yaml`）
-2. 設定 **Task**（Detect / Segment）、**Model Size**（n/s/m/l/x）、**Version**（預設 `yolo26`）
+2. **（選填）Resume from .pt**：如果想接續之前訓練的權重，按「瀏覽...」選 `runs/<task>/<name>/weights/last.pt` 或 `best.pt`。留空則走步驟 3 的預訓練模型流程。詳見下方 [再訓練 / 繼續訓練](#再訓練--繼續訓練)
+3. 設定 **Task**（Detect / Segment）、**Model Size**（n/s/m/l/x）、**Version**（預設 `yolo26`）
    - 對話框會顯示組合出的最終模型檔名（例如 `yolo26s.pt` 或 `yolo26m-seg.pt`），ultralytics 會自動下載
-3. 調整基本訓練參數：Epochs / Batch / Image Size / Patience / Device / Save Period / Name
-4. 需要更細的調整時按「**進階參數...**」：optimizer / lr / 增強 (HSV / Mosaic / MixUp) / cache / freeze / amp ... 等
-5. 「**開始訓練**」後會顯示 `Epoch X/Y  mAP50=…`，完成後顯示輸出資料夾與最終 mAP，可按「開啟訓練資料夾」直接開啟 `runs/<task>/<name>/`
+   - 若上面已指定 Resume `.pt`，這幾項會被鎖住（由 `.pt` 自動決定）
+4. 調整基本訓練參數：Epochs / Batch / Image Size / Patience / Device / Save Period / Name
+5. 需要更細的調整時按「**進階參數...**」：optimizer / lr / 增強 (HSV / Mosaic / MixUp) / cache / freeze / amp ... 等
+6. 「**開始訓練**」後會顯示 `Epoch X/Y  mAP50=…`，完成後顯示輸出資料夾與最終 mAP，可按「開啟訓練資料夾」直接開啟 `runs/<task>/<name>/`
 
 > 所有基本與進階參數都暫存在 `cfg/settings.yaml` 的 `training` 區段，下次再開直接帶回上次的值。
 
@@ -156,8 +158,56 @@ python src/for_training/val_yolo.py
 
 ### 訓練到一半可以接續嗎？
 
-可以。將模型路徑指向上次的 `last.pt`：
+可以，請參考下一節 [再訓練 / 繼續訓練](#再訓練--繼續訓練)。
+
+---
+
+## 再訓練 / 繼續訓練
+
+訓練後（無論是因為中斷、想加 epoch、還是想對其他資料集 fine-tune）都可以拿既有的 `.pt` 接續，分成兩種模式：
+
+| 模式 | 用什麼 .pt | 說明 | 適用情境 |
+|------|-----------|------|---------|
+| **Resume**（接續同一次訓練） | `last.pt` | 從原訓練中斷的 epoch 繼續，optimizer / scheduler / lr schedule / 增強參數全部沿用原訓練的 `args.yaml` | 訓練被中斷（電腦關機、Ctrl-C），想無痛接續到原本設定的最後一個 epoch |
+| **Fine-tune**（用權重做新訓練） | `last.pt` 或 `best.pt`（建議 best） | 把這個 `.pt` 當成「新訓練的初始權重」，依照當前對話框的所有參數開新一輪訓練（會建立新的 `runs/<task>/<name>/` 資料夾） | 想加更多 epoch、想換 dataset、想用更小的 lr 收尾、想換增強策略 |
+
+### 在 GUI 內操作
+
+1. 開啟 **Train → Train YOLO**
+2. 在 **Resume from .pt** 欄位按「瀏覽...」選擇之前的 `.pt`：
+   - Resume 模式 → 選 `runs/<task>/<name>/weights/last.pt`
+   - Fine-tune 模式 → 選 `runs/<task>/<name>/weights/best.pt`（也可以選 `last.pt`）
+3. 想要 Resume，再勾選「**Resume mode**」checkbox；想要 Fine-tune 就**不要勾**
+4. 設定 `dataset.yaml`：
+   - Resume 模式：dataset 結構不能變（class 數、`train`/`val` 路徑要一致）
+   - Fine-tune 模式：可以是同一個或全新的 dataset
+5. 調整 Epochs / Batch / 等參數後按「**開始訓練**」
+
+> 指定 `.pt` 後，下方的 Task / Model Size / Version 會自動鎖住——這些屬性由 `.pt` 內部決定，不需要也不能在這裡覆寫。
+>
+> 「最終使用模型」提示列會顯示目前用的是哪一顆 `.pt` 以及處於 Resume 或 Fine-tune 模式。
+
+### Ultralytics 對 Resume 的規則
+
+- Resume 要求 `last.pt` **同層的 `weights/` 上一層** 有 ultralytics 自動產出的 `args.yaml`，沒有的話 ultralytics 會直接報錯。
+- Resume 後大部分超參數會由 `args.yaml` 覆蓋，這個對話框的 epoch / batch / 增強等設定**不會生效**。要改參數就用 Fine-tune 模式。
+- 如果 dataset 結構變了（例如多/少 class、改路徑），Resume 會失敗，請改用 Fine-tune。
+
+### 用 Python 腳本接續
+
 ```python
+from ultralytics import YOLO
+
+# Resume：從 last.pt 接續，args.yaml 帶回原訓練的所有設定
 model = YOLO("runs/detect/train/weights/last.pt")
-results = model.train(data="path/to/data.yaml", epochs=600, ...)
+results = model.train(resume=True)
+
+# Fine-tune：用 best.pt 當初始權重，自由換 dataset / epoch / lr
+model = YOLO("runs/detect/train/weights/best.pt")
+results = model.train(
+    data="path/to/new_or_same_dataset.yaml",
+    epochs=200,
+    lr0=0.001,   # 通常 fine-tune 會降低 lr
+    imgsz=640,
+)
 ```

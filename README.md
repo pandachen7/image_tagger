@@ -25,7 +25,7 @@ python main.py
 3. **按 `d` 或 Ai → Detect** 偵測物件
 4. 手動微調框的位置、名稱後，**File → Save** 或按 `s` 儲存為 VOC XML
 5. **Train → VOC to YOLO** 在對話框中設定 Class Mapping（class_name → class_id）、選擇資料夾、輸出模式與 train/val 比例（預設 80/20）→ 自動轉換並產生 `dataset.yaml`
-6. **Train → Train YOLO** 直接在 GUI 內訓練：選擇 `dataset.yaml`、Task（Detect / Segment）、Model Size、訓練參數，啟動後顯示 epoch 進度與 mAP，完成後可開啟訓練資料夾
+6. **Train → Train YOLO** 直接在 GUI 內訓練：選擇 `dataset.yaml`、Task（Detect / Segment）、Model Size、訓練參數，啟動後顯示 epoch 進度與 mAP，完成後可開啟訓練資料夾。也可指定既有 `.pt` 接續訓練（Resume / Fine-tune）
 
 > 每個步驟的詳細操作說明請見 [使用教學](./docs/usage.md)
 > 訓練相關（dataset 結構、data.yaml、segment 訓練）請見 [訓練指南](./docs/training.md)
@@ -40,7 +40,7 @@ python main.py
 | 手動 Polygon | 左鍵點擊頂點，靠近起點自動封閉 |
 | Mask 工具 | Draw / Erase / Fill 遮罩繪製，但訓練不需要 |
 | VOC → YOLO 轉換 | 支援 BBox、Seg、OBB 三種輸出格式，轉換進度條、未對應 class 記錄 |
-| Train YOLO (GUI) | 直接在 GUI 內呼叫 ultralytics 訓練，可設定基本參數與進階參數（優化器 / 增強 / cache 等），訓練中顯示進度與 mAP |
+| Train YOLO (GUI) | 直接在 GUI 內呼叫 ultralytics 訓練，可設定基本參數與進階參數（優化器 / 增強 / cache 等），訓練中顯示進度與 mAP；支援指定既有 `.pt` 做 Resume / Fine-tune 再訓練 |
 | Categorize Media | 用 YOLO/SAM3 模型偵測後，依最多次物件名稱自動分類到子資料夾 |
 | 影片標註 | 逐幀標註，支援自動抽幀儲存 |
 
@@ -81,6 +81,9 @@ python main.py
 - ctrl + `-`: 縮小文字
 
 ## 更新
+
+2026/5
+- Train YOLO 對話框新增 **Resume from .pt** 欄位：可選擇之前訓練的 `last.pt` / `best.pt` 接續訓練；勾選「Resume mode」時走 ultralytics `resume=True` 從原 epoch 接續，不勾選則以該權重做 fine-tune（細節見 [訓練指南 → 再訓練 / 繼續訓練](./docs/training.md#再訓練--繼續訓練)）
 
 2026/4
 - 選單 `Convert` 更名為 `Train`，新增 **Train → Train YOLO**：可選 dataset.yaml、Task / Model Size / Version / 訓練參數，內建進度條與訓練結果摘要，並可開啟訓練資料夾
