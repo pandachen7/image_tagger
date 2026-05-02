@@ -1,6 +1,21 @@
 import os
 from pathlib import Path
 
+import cv2
+import numpy as np
+
+
+def imread_unicode(path, flags=cv2.IMREAD_COLOR):
+    # cv2.imread 在 Windows 用 ANSI code page 開檔，遇中文/日文路徑會回 None。
+    # 改走 np.fromfile + cv2.imdecode 由 Python 自己讀 bytes，路徑就吃得下任何 unicode。
+    try:
+        data = np.fromfile(str(path), dtype=np.uint8)
+    except (OSError, ValueError):
+        return None
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, flags)
+
 
 def find_pairs(file_path):
     """

@@ -11,6 +11,7 @@ import cv2
 from src.core import AppState
 from src.utils.const import ALL_EXTS
 from src.utils.dynamic_settings import settings
+from src.utils.func import imread_unicode
 from src.utils.logger import getUniqueLogger
 from src.utils.model import Bbox, Polygon, ShowImageCmd
 
@@ -85,8 +86,8 @@ class FileHandler:
         xml_str += f"    <folder>{folder_name}</folder>\n"
         xml_str += f"    <filename>{image_filename}</filename>\n"
 
-        # 讀取圖片大小
-        img = cv2.imread(image_path)
+        # 讀取圖片大小（imread_unicode 支援中文路徑）
+        img = imread_unicode(image_path)
         height, width, depth = img.shape
 
         xml_str += f"    <size>\n        <width>{width}</width>\n        <height>{height}</height>\n    </size>\n"

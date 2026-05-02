@@ -31,7 +31,7 @@ from src.utils.const import (
 )
 from src.utils.dynamic_settings import settings
 from src.utils.file_handler import file_h
-from src.utils.func import getXmlPath
+from src.utils.func import getXmlPath, imread_unicode
 from src.utils.global_param import g_param
 from src.utils.img_handler import inferencer
 from src.utils.logger import getUniqueLogger
@@ -551,7 +551,8 @@ class ImageWidget(QWidget):
                 self.on_video_loaded_callback(self.get_total_msec())
         else:
             self.file_type = FileType.IMAGE
-            self.cv_img = cv2.imread(file_path)
+            # imread_unicode 支援中文路徑（cv2.imread 在 Windows 走 ANSI code page，中文會回 None）
+            self.cv_img = imread_unicode(file_path)
 
             if self.on_image_loaded_callback:
                 self.on_image_loaded_callback()

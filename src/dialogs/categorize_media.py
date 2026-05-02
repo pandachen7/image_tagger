@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 
 from src.utils.const import ALL_EXTS, IMAGE_EXTS, VIDEO_EXTS
 from src.utils.dynamic_settings import settings
+from src.utils.func import imread_unicode
 from src.utils.logger import getUniqueLogger
 
 log = getUniqueLogger(__file__)
@@ -295,7 +296,7 @@ class CategorizeMediaDialog(QDialog):
         suffix = file_path.suffix.lower()
 
         if suffix in IMAGE_EXTS:
-            img = cv2.imread(str(file_path))
+            img = imread_unicode(file_path)
             if img is not None:
                 self._count_detections(model, img, counts)
         elif suffix in VIDEO_EXTS:
@@ -331,7 +332,7 @@ class CategorizeMediaDialog(QDialog):
         suffix = file_path.suffix.lower()
 
         if suffix in IMAGE_EXTS:
-            img = cv2.imread(str(file_path))
+            img = imread_unicode(file_path)
             if img is not None:
                 self._count_sam3(predictor, img, labels, counts)
         elif suffix in VIDEO_EXTS:
