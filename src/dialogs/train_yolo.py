@@ -228,7 +228,18 @@ class _TrainerThread(QThread):
         except Exception as e:
             log.e(f"訓練錯誤: {e}")
             info = {"save_dir": self._save_dir} if self._save_dir else {}
-            self.finished_train.emit(False, "訓練失敗，請查看 log", info)
+            err_msg = str(e)
+            # ultralytics 對「已完成的 last.pt 又被 resume」會丟這個訊息，
+            # 把原文跟解法一起回給 UI。
+            if "nothing to resume" in err_msg.lower():
+                hint = (
+                    "原訓練已達設定的最大 epoch 數，無法 Resume。\n"
+                    "請取消勾選『Resume mode』改用 Fine-tune 模式，"
+                    "並把 Epochs 設成你想要的新 epoch 數重新訓練。"
+                )
+                info["hint"] = hint
+            info["error"] = err_msg
+            self.finished_train.emit(False, f"訓練失敗: {err_msg}", info)
 
 
 class TrainYoloDialog(QDialog):
@@ -716,9 +727,12 @@ class TrainYoloDialog(QDialog):
             self.result_text.setPlainText("\n".join(lines))
             self.result_text.setVisible(True)
         else:
-            QMessageBox.warning(
-                self, "Warning", "訓練未完成，請查看 console log 取得詳細資訊"
-            )
+            err = info.get("error") or "請查看 console log 取得詳細資訊"
+            hint = info.get("hint")
+            text = f"訓練失敗：\n{err}"
+            if hint:
+                text += f"\n\n建議：\n{hint}"
+            QMessageBox.warning(self, "Warning", text)
 
     def _on_stop(self) -> None:
         """請求中止訓練"""
