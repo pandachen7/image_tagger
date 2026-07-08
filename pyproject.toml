@@ -4,4 +4,29 @@ version = "1.0.0"
 description = "Annotate images with labels"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    # 上限暫鎖 <2.13 / <0.28：torch 2.13.0 / torchvision 0.28.0 於 2026-07-08 當天釋出，
+    # PyTorch R2 CDN 仍在同步、下載會 hash mismatch；待 CDN 穩定後可移除上限升級。
+    "torch>=2.10,<2.13",
+    "torchvision>=0.25,<0.28",
+    "opencv-python>=4.11.0.86",
+    "PyQt6>=6.8.1",
+    "dicttoxml>=1.7.16",
+    "ultralytics",
+    "ruamel.yaml",
+    "python-dotenv",
+    "pydantic",
+    "orjson",
+]
+
+# torch / torchvision 從 PyTorch 官方 CUDA 13.0 (cu130) index 安裝，
+# explicit = true 代表這個 index 只用在下面 tool.uv.sources 有指定的套件，
+# 其餘套件仍走 PyPI，避免整份相依都被拉去 pytorch index。
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130" }]
+torchvision = [{ index = "pytorch-cu130" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true

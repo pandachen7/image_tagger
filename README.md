@@ -9,10 +9,25 @@
 
 > 詳細安裝步驟請見 [安裝指南](./docs/installation.md)
 
+**建議使用 [uv](https://docs.astral.sh/uv/)**：安裝套件快，且會依 `pyproject.toml` 自動裝好含 **CUDA 13.0** 的 PyTorch。
+
 ```bash
-# 安裝完畢後直接啟動
-python main.py
+# 建立環境並安裝所有相依（含 CUDA 13.0 的 PyTorch）
+uv sync
+
+# 啟動
+uv run main.py
 ```
+
+> **Fallback（不使用 uv 時）**：改用 Python 內建 venv + pip。注意 PyTorch CUDA 版要自行從 cu130 index 安裝，pip 不會讀取 `pyproject.toml` 裡的 uv index 設定。
+>
+> ```bash
+> python -m venv .venv
+> .venv\Scripts\Activate.ps1                                                    # Windows PowerShell
+> pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+> pip install .
+> python main.py
+> ```
 
 ## 基本使用流程
 

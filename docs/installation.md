@@ -1,44 +1,47 @@
 # 安裝指南
 
-<!-- 最後更新：2026-04-07 -->
+<!-- 最後更新：2026-07-08 -->
 
 ## 環境需求
 
 - Python >= 3.12
-- 建議使用獨立的虛擬環境（venv 或 uv）
+- 建議使用獨立的虛擬環境（uv 或 venv）
 - 有 NVIDIA 顯卡可大幅加速推論
 
-## venv vs uv — 我該選哪個？
+## uv vs venv — 我該選哪個？
 
-| | venv（Python 內建） | uv |
+**建議用 [uv](https://docs.astral.sh/uv/)。** 相依（含 CUDA 13.0 的 PyTorch）都寫在 `pyproject.toml` 裡，`uv sync` 一行就能裝好全部；venv + pip 則需自行分步安裝 PyTorch CUDA 版。
+
+| | uv（建議） | venv（Python 內建） |
 |---|---|---|
-| 安裝門檻 | 不需額外安裝，Python 自帶 | 需先安裝 uv 工具 |
-| 速度 | 一般 | 安裝套件速度快 10–100 倍 |
-| 適合對象 | 初學者、不想裝額外工具 | 熟悉終端操作、追求效率 |
-| 指令風格 | `pip install ...` | `uv pip install ...` 或 `uv sync` |
+| 安裝門檻 | 需先安裝 uv 工具 | 不需額外安裝，Python 自帶 |
+| 速度 | 安裝套件速度快 10–100 倍 | 一般 |
+| PyTorch CUDA 版 | `pyproject.toml` 自動指向 cu130 index，`uv sync` 直接裝好 | 需自行從 cu130 index 手動安裝 |
+| 指令風格 | `uv sync` / `uv run` | `pip install ...` |
+| 適合對象 | 追求效率、想要一鍵安裝 | 初學者、不想裝額外工具 |
 
-> **簡單來說**：如果你剛接觸 Python，用 **venv** 就好；如果你想要更快的安裝體驗，或者專案已經在用 uv，就選 **uv**。
+> **簡單來說**：優先用 **uv**（一行 `uv sync` 搞定含 CUDA 的所有相依）；如果不想裝 uv，才退回用 Python 內建的 **venv**。
 
 ---
 
-- [使用 Python venv 安裝](./installation_venv.md)
-- [使用 uv 安裝](./installation_uv.md)
+- [使用 uv 安裝（建議）](./installation_uv.md)
+- [使用 Python venv 安裝（fallback）](./installation_venv.md)
 
 ---
 
 ## 驗證結果
 
-安裝完成後執行：
+安裝完成後執行（uv 環境請在前面加上 `uv run`）：
 ```bash
-python tools/cuda_info.py
+python scripts/cuda_info.py
 ```
 
 正常輸出應該像這樣：
 ```
-torch version: 2.10.0+cu126
+torch version: 2.12.1+cu130
 cuda available: True
-cuda version: 12.6
-cudnn version: 91002
+cuda version: 13.0
+cudnn version: 91300
 ```
 
 確認重點：
@@ -74,12 +77,11 @@ pip list | grep torch
 如果版本號沒有 `+cuXXX` 後綴，就是 CPU 版。解決方式：
 
 ```bash
-pip uninstall torch torchvision torchaudio -y
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip uninstall torch torchvision -y
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 ```
 
-uv版的話, 記得前面加上`uv`  
+uv 版的話，直接重新同步即可（`pyproject.toml` 已指定 cu130 index）：
 ```bash
-uv pip uninstall torch torchvision torchaudio -y
-uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+uv sync --reinstall-package torch --reinstall-package torchvision
 ```

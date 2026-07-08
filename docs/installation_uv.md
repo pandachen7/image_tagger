@@ -1,8 +1,10 @@
-# 安裝指南 — 使用 uv
+# 安裝指南 — 使用 uv（建議）
 
-<!-- 最後更新：2026-04-07 -->
+<!-- 最後更新：2026-07-08 -->
 
 > 回到 [安裝指南總覽](./installation.md)
+
+所有相依（含 **CUDA 13.0** 的 PyTorch）都寫在 `pyproject.toml`，`uv sync` 會自動建立虛擬環境並裝好全部套件，不需手動分步安裝 PyTorch。
 
 ## 1. 安裝 uv
 
@@ -18,52 +20,44 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 > 安裝完成後重新開啟終端，確認 `uv --version` 有正確輸出。
 
-## 2. 建立虛擬環境
+## 2. 安裝所有相依
+
+在專案根目錄執行：
 
 ```bash
-uv venv --python 3.12
+uv sync
 ```
 
-啟動方式與 venv 相同：
-```bash
-# Windows (PowerShell)
-.venv\Scripts\Activate.ps1
-# Windows (CMD)
-.venv\Scripts\activate.bat
-# Windows (Git Bash)
-.venv/Scripts/activate.bat
-# Linux / macOS
-source .venv/bin/activate
-```
+`uv sync` 會：
 
-## 3. 安裝 PyTorch CUDA 版
+- 依 `.python-version`（3.12）建立 `.venv`
+- 從 PyTorch 官方 cu130 index 安裝含 CUDA 13.0 的 `torch` / `torchvision`
+- 從 PyPI 安裝其餘相依（ultralytics、PyQt6、opencv-python…）
 
-> **重要**：PyTorch 的 CUDA 版必須**最先安裝**，否則後續套件可能自動裝入 CPU 版，導致推論極慢。
+> PyTorch cu130 相依較大，首次安裝需要一些時間。
+>
+> cu130 是給 NVIDIA driver 支援 CUDA 13.0（含以上）的環境。若你的 driver 較舊，請到 [PyTorch 官網](https://pytorch.org/get-started/locally/) 查看可用的 CUDA 版本，並將 `pyproject.toml` 中 `[[tool.uv.index]]` 的 `url` 改成對應版本（例如 `.../whl/cu124`）後再 `uv sync`。
 
-先到 [PyTorch 官網](https://pytorch.org/get-started/locally/) 查看你的 NVIDIA driver 支援的 CUDA 版本，選擇**不超過該版本**的 PyTorch 即可。
+## 3. 啟動程式
 
 ```bash
-# 範例：CUDA 12.4
-uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+uv run main.py
 ```
 
-## 4. 安裝其他相依套件
+> `uv run` 會自動使用專案的 `.venv`，不需手動 activate。
+> 如果偏好手動啟動，仍可 `.venv\Scripts\Activate.ps1`（Windows）/ `source .venv/bin/activate`（Linux）後直接 `python main.py`。
 
-```bash
-uv pip install -r requirements.txt
-```
-
-## 5. Linux 額外相依
+## 4. Linux 額外相依
 
 如果 PyQt6 出現錯誤：
 ```bash
 sudo apt-get install -y libxcb-cursor-dev
 ```
 
-## 6. 驗證安裝
+## 5. 驗證安裝
 
 ```bash
-python scripts/cuda_info.py
+uv run scripts/cuda_info.py
 ```
 
 > 驗證結果的說明請見 [安裝指南總覽](./installation.md#驗證結果)
