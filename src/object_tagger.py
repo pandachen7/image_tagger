@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-04-25
+# 更新日期: 2026-07-08
 import random
 import re
 import shutil
@@ -751,17 +751,20 @@ class MainWindow(QMainWindow):
             iw.pixmap = QPixmap.fromImage(qImg)
         iw.update()
 
-    def set_playback_speed(self, index):
+    def _update_refresh_interval(self) -> None:
+        """依影片 fps 與當前播放速度計算 QTimer 的每幀間隔(毫秒)"""
+        fps = self.image_widget.fps or 30
+        speed = self.speed_control.currentData() or 1.0
+        # QTimer.start(interval) 的 interval 單位是毫秒(每幀間隔),
+        # 每幀間隔 = 1000 / (fps * speed); 至少 1ms 避免 speed 過大時變成 0
+        self.refresh_interval = max(1, round(1000 / (fps * speed)))
+
+    def set_playback_speed(self, index: int) -> None:
         # 設定播放速度
         if self.image_widget.file_type != FileType.VIDEO:
             return
-        speed = self.speed_control.itemData(index)
         self.timer.stop()
-        if self.image_widget.fps:
-            fps = self.image_widget.fps
-        else:
-            fps = 30
-        self.refresh_interval = int(fps / speed)
+        self._update_refresh_interval()
         if self.play_state == PlayState.PLAY:
             self.timer.start(self.refresh_interval)  # 重新啟動定時器
 
@@ -1131,6 +1134,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.image_widget.cap.set(cv2.CAP_PROP_POS_MSEC, 0)
         self.progress_bar.blockSignals(False)
+        # 依影片 fps 初始化每幀間隔, 避免首次播放前沿用寫死的預設值
+        self._update_refresh_interval()
         # 啟用與影片相關的控制項
         self.play_pause_action.setEnabled(True)
         self.progress_bar.setEnabled(True)
