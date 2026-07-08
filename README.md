@@ -97,6 +97,10 @@ uv run main.py
 
 ## 更新
 
+2026/7
+- 修正播放無法同時偵測的問題
+- lib (python pkg) 配置升級, 並且以後都以uv為主
+
 2026/5
 - Train YOLO 對話框新增 **Resume from .pt** 欄位：可選擇之前訓練的 `last.pt` / `best.pt` 接續訓練；勾選「Resume mode」時走 ultralytics `resume=True` 從原 epoch 接續，不勾選則以該權重做 fine-tune（細節見 [訓練指南 → 再訓練 / 繼續訓練](./docs/training.md#再訓練--繼續訓練)）
 
