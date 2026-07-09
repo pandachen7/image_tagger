@@ -509,10 +509,24 @@ class ImageWidget(QWidget):
 
         self.update()
 
-    def get_total_msec(self):
-        # 取得影片總毫秒數
+    def get_total_msec(self) -> int:
+        """取得影片總毫秒數; frame_count 不可靠時 seek 到尾端探測真實長度"""
+        fps = self.fps or 30
         total_frames = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        return int(total_frames * 1000 / self.fps)
+        if total_frames and total_frames > 0:
+            return int(total_frames * 1000 / fps)
+
+        # 部分編碼/串流的 CAP_PROP_FRAME_COUNT 會回傳 0 或負值(偵測失敗),
+        # 此時 seek 到影片尾端讀 POS_MSEC 取得真實長度, 完成後還原播放位置
+        try:
+            pos_frames = self.cap.get(cv2.CAP_PROP_POS_FRAMES)  # 記住目前位置
+            self.cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 1.0)
+            total_msec = int(self.cap.get(cv2.CAP_PROP_POS_MSEC))
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, pos_frames)  # 還原位置
+        except Exception as e:
+            log.error(f"probe video duration failed: {e}")
+            total_msec = 0
+        return total_msec
 
     def set_drawing_mode(self, mode: DrawingMode):
         """切換繪圖模式"""

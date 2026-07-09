@@ -386,7 +386,6 @@ class MainWindow(QMainWindow):
             self.app_state.auto_detect = True
         elif cfg.enable_sam3 and inferencer.sam_model_path:
             inferencer.active_model_type = ModelType.SAM3
-        self.choose_folder(settings.file_system.folder_path, settings.file_system.file_index)
 
         try:
             with open("cfg/system.yaml", "r", encoding="utf-8") as f:
@@ -430,6 +429,13 @@ class MainWindow(QMainWindow):
 
         # Sync initial UI state with app_state
         self._sync_ui_state()
+
+        # 還原上次資料夾並載入第一個檔; 必須在 set_callbacks 之後執行,
+        # 否則首個檔的 cbVideoLoaded/cbImageLoaded 不會觸發,
+        # 進度條 range 會停在初始 (0, 100) 造成一播放就跳到最後
+        self.choose_folder(
+            settings.file_system.folder_path, settings.file_system.file_index
+        )
 
     def _sync_ui_state(self):
         """Sync UI components with app_state."""
