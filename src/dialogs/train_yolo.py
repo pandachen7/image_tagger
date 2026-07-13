@@ -1,6 +1,6 @@
 # Train YOLO 對話框：選擇 dataset.yaml、設定訓練參數、執行 ultralytics 訓練並顯示進度與結果
 # 支援指定既有 .pt 來再訓練（fine-tune）或從中斷處續訓（resume）
-# 更新日期: 2026-05-01
+# 更新日期: 2026-07-13
 from __future__ import annotations
 
 import os
@@ -10,6 +10,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -687,6 +688,18 @@ class TrainYoloDialog(QDialog):
         self.result_text.setVisible(False)
         self.result_text.clear()
         self._save_dir = ""
+
+        # 在主執行緒先 import ultralytics: 若讓 _TrainerThread 子執行緒首次 import 這類
+        # 重型原生套件, 在 Windows 會觸發 native crash / 程式無聲跳出 (與 detect 同一個坑)。
+        # 已 import 過則為即時 cache 命中, 不影響效能。
+        QApplication.processEvents()  # 先把上面的狀態訊息畫出來, import 可能短暫凍結 UI
+        try:
+            import ultralytics  # noqa: F401
+        except Exception as e:
+            log.e(f"ultralytics 匯入失敗: {e}")
+            QMessageBox.warning(self, "Warning", "ultralytics 未安裝或匯入失敗")
+            self._set_running(False)
+            return
 
         self._thread = _TrainerThread(model_info, train_kwargs)
         self._thread.progress.connect(self._on_progress)

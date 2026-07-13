@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
-from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QActionGroup, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -53,26 +53,6 @@ yaml = YAML()
 YOLO_LABELS_FOLDER = "labels"
 
 
-class _ModelLoader(QThread):
-    """背景載入模型（含下載）的 worker thread"""
-    finished = pyqtSignal(bool, str)  # (success, message)
-
-    def __init__(self, model_type: str):
-        super().__init__()
-        self.model_type = model_type
-
-    def run(self):
-        try:
-            ok = inferencer.ensure_loaded(self.model_type)
-            if ok:
-                self.finished.emit(True, "模型載入完成")
-            else:
-                self.finished.emit(False, "模型載入失敗")
-        except Exception as e:
-            log.e(f"模型載入錯誤: {e}")
-            self.finished.emit(False, "模型載入失敗")
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
 
@@ -85,7 +65,6 @@ class MainWindow(QMainWindow):
 
         # Initialize state
         self.app_state = AppState()
-        self._model_loader: _ModelLoader | None = None
         self._detect_after_load = False
 
         # 儲存
@@ -466,10 +445,16 @@ class MainWindow(QMainWindow):
         settings.models.active_model = model_type
         save_settings()
         # 背景預載模型
-        self._load_model_async(model_type)
+        self._load_model(model_type)
 
-    def _load_model_async(self, model_type: str, detect_after: bool = False):
-        """背景載入模型，不阻塞 UI"""
+    def _load_model(self, model_type: str, detect_after: bool = False):
+        """載入模型 (主執行緒同步)。
+
+        原本用背景 QThread 載入以免凍結 UI, 但在子執行緒「首次 import ultralytics /
+        建立模型」會在 Windows 觸發 native crash (重型原生套件的 DLL / Qt 初始化必須
+        在主執行緒), 表現為按 Detect 後程式無聲跳出。改為主執行緒同步載入: 載入期間
+        UI 僅短暫凍結數秒, 遠優於無聲崩潰。
+        """
         if inferencer.is_loaded(model_type):
             if detect_after:
                 self._run_detect()
@@ -477,8 +462,6 @@ class MainWindow(QMainWindow):
         if inferencer.is_loading:
             return
         self._detect_after_load = detect_after
-        self._model_loader = _ModelLoader(model_type)
-        self._model_loader.finished.connect(self._on_model_loaded)
         # 判斷是否需要下載
         model_path = (
             inferencer.model_path if model_type == ModelType.YOLO
@@ -488,7 +471,14 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage(f"正在下載並載入模型: {Path(model_path).name} ...")
         else:
             self.statusbar.showMessage(f"正在載入模型: {Path(model_path).name} ...")
-        self._model_loader.start()
+        QApplication.processEvents()  # 先把上面的狀態訊息畫出來, 再進入阻塞式載入
+
+        try:
+            ok = inferencer.ensure_loaded(model_type)
+        except Exception as e:
+            log.e(f"模型載入錯誤: {e}")
+            ok = False
+        self._on_model_loaded(ok, "模型載入完成" if ok else "模型載入失敗")
 
     def _on_model_loaded(self, success: bool, message: str):
         """模型載入完成的回呼"""
@@ -504,7 +494,7 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(f"Detect ({inferencer.active_model_type}): {nb} annotations")
 
     def manual_detect(self):
-        """手動偵測，提供狀態回饋。模型未載入時觸發背景載入，載入完成後自動偵測。"""
+        """手動偵測，提供狀態回饋。模型未載入時觸發載入，載入完成後自動偵測。"""
         if inferencer.active_model_type == ModelType.NONE:
             self.statusbar.showMessage("Detect: no model selected (use Ai menu)")
             return
@@ -515,8 +505,8 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage("模型載入中，請稍候...")
             return
         if not inferencer.is_loaded(inferencer.active_model_type):
-            # 模型尚未載入，背景載入後自動偵測
-            self._load_model_async(inferencer.active_model_type, detect_after=True)
+            # 模型尚未載入，載入後自動偵測
+            self._load_model(inferencer.active_model_type, detect_after=True)
             return
         self._run_detect()
 
