@@ -354,15 +354,15 @@ class MainWindow(QMainWindow):
         if not inferencer.model_path:
             inferencer.model_path = "yolo26s.pt"
             settings.models.model_path = "yolo26s.pt"
-        # Restore last active model from settings, fallback to priority logic
+        # Restore last active model from settings, fallback to priority logic.
+        # 注意: 只還原 active_model_type, 不主動開啟 auto_detect。auto_detect 預設關閉
+        # (與 auto_save 一致), 避免工具列打勾卻因模型尚未載入而不偵測, 造成誤解。
         if cfg.enable_sam3 and settings.models.active_model == ModelType.SAM3 and inferencer.sam_model_path:
             inferencer.active_model_type = ModelType.SAM3
         elif settings.models.active_model == ModelType.YOLO and inferencer.model_path:
             inferencer.active_model_type = ModelType.YOLO
-            self.app_state.auto_detect = True
         elif inferencer.model_path:
             inferencer.active_model_type = ModelType.YOLO
-            self.app_state.auto_detect = True
         elif cfg.enable_sam3 and inferencer.sam_model_path:
             inferencer.active_model_type = ModelType.SAM3
 
@@ -433,7 +433,9 @@ class MainWindow(QMainWindow):
         """Callback when auto detect state changes."""
         self.auto_detect_action.setChecked(enabled)
         if enabled:
-            self.image_widget.runInference()
+            # 走與按 Detect 相同的流程: 模型未載入時先載入 (主執行緒同步) 再偵測當前影格,
+            # 避免「已勾選卻不偵測」。之後播放/切換影格時 cbImageLoaded 會自動偵測。
+            self.manual_detect()
 
     def _set_model(self, model_type: str, model_path: str = None):
         """Set active model and sync UI. 若模型尚未載入則觸發背景載入。"""
