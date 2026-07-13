@@ -1,5 +1,5 @@
 # 圖片畫布元件：負責繪製影像、bbox、polygon、mask，以及滑鼠互動（繪製、選取、拖曳、旋轉）
-# 更新日期: 2026-04-08
+# 更新日期: 2026-07-14
 import math
 import time
 import xml.etree.ElementTree as ET
@@ -934,7 +934,8 @@ class ImageWidget(QWidget):
             fm = painter.fontMetrics()
             sel_text_w = fm.horizontalAdvance(sel_text)
             sel_text_h = fm.height()
-            sel_text_pos = sel_rect.bottomRight() + QPoint(5, 5)
+            # label 顯示在右下角這個點的右上, 以免框選拉到畫面底部時 label 被截在畫面外看不到
+            sel_text_pos = sel_rect.bottomRight() + QPoint(5, -(sel_text_h + 5))
             sel_bg = QRect(
                 sel_text_pos,
                 QPoint(sel_text_pos.x() + sel_text_w + 4, sel_text_pos.y() + sel_text_h),
