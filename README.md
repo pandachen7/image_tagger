@@ -53,6 +53,7 @@ uv run main.py
 | SAM3 語義分割 | 透過文字描述自動產生 polygon / bbox；Set SAM3 Model 整合模型、輸出模式、tolerance、prompts |
 | 手動 BBox | 左鍵拖曳畫框，角落可調整大小 |
 | 手動 Polygon | 左鍵點擊頂點，靠近起點自動封閉 |
+| Cropped 裁切儲存 | 只裁切有框的區域存成小圖 + VOC XML（Label → Label Mode），每個框外擴 padding 或補至 640、碰邊往對邊補；相鄰框自動合併，適合小物件 ROI dataset |
 | Mask 工具 | Draw / Erase / Fill 遮罩繪製，但訓練不需要 |
 | VOC → YOLO 轉換 | 支援 BBox、Seg、OBB 三種輸出格式，轉換進度條、未對應 class 記錄 |
 | Train YOLO (GUI) | 直接在 GUI 內呼叫 ultralytics 訓練，可設定基本參數與進階參數（優化器 / 增強 / cache 等），訓練中顯示進度與 mAP；支援指定既有 `.pt` 做 Resume / Fine-tune 再訓練 |
@@ -83,7 +84,7 @@ uv run main.py
 | 檔案 | 用途 |
 |------|------|
 | `cfg/system.yaml` | 系統設定：預設 label、啟用 SAM3/Mask/OBB 等開關 |
-| `cfg/settings.yaml` | 執行期設定：模型路徑、categories 對應、text prompts、訓練參數暫存 (training 區段). 不存在時會自動生成 |
+| `cfg/settings.yaml` | 執行期設定：模型路徑、categories 對應、text prompts、訓練參數暫存 (training 區段)、標註儲存模式 (label 區段). 不存在時會自動生成 |
 
 ## 常用vs code的快捷組合鍵
 

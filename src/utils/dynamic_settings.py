@@ -1,5 +1,5 @@
 # 動態設定管理：載入/儲存 settings.yaml，自動同步 schema 變更（補新欄位、移除過時欄位）
-# 更新日期: 2026-04-25
+# 更新日期: 2026-07-14
 from pathlib import Path
 from typing import Optional
 
@@ -40,6 +40,20 @@ class ClassNamesSettings(BaseModel):
     text_prompts: Optional[list] = Field(
         default_factory=lambda: ["person", "cat", "dog", "car"]
     )
+
+
+class LabelSettings(BaseModel):
+    """標註儲存模式設定：整張圖 (full) 或裁切框 (cropped) 及 cropped 裁切參數"""
+    model_config = ConfigDict(extra="ignore")
+
+    # 儲存模式："full" = 整張圖 + 標註 (原方式); "cropped" = 只裁切有框的區域
+    save_mode: Optional[str] = "full"
+    # cropped 尺寸模式："padding" = 每邊固定外擴 px; "fixed" = 裁切區至少 fixed_size 邊長
+    crop_size_mode: Optional[str] = "fixed"
+    # padding 模式：每邊外擴的 pixel 數 (增加背景資訊)
+    crop_padding_px: Optional[int] = 50
+    # fixed 模式：裁切區的最小邊長 (對齊 yolo 輸入維度, 如 640)
+    crop_fixed_size: Optional[int] = 640
 
 
 class TrainingSettings(BaseModel):
@@ -111,6 +125,7 @@ class Settings(BaseModel):
     models: ModelsSettings = Field(default_factory=ModelsSettings)
     class_names: ClassNamesSettings = Field(default_factory=ClassNamesSettings)
     training: TrainingSettings = Field(default_factory=TrainingSettings)
+    label: LabelSettings = Field(default_factory=LabelSettings)
 
 
 def load_settings(file_path="cfg/settings.yaml"):

@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-07-08
+# 更新日期: 2026-07-14
 import random
 import re
 import shutil
@@ -35,14 +35,16 @@ from src.image_widget import DrawingMode, ImageWidget
 from src.dialogs import (
     CategorizeMediaDialog,
     ConvertSettingsDialog,
+    LabelModeDialog,
     SetSam3ModelDialog,
     SetYoloModelDialog,
     TrainYoloDialog,
 )
+from src.utils.cropper import CROP_MODE_FIXED, compute_crops
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
 from src.utils.img_handler import inferencer
-from src.utils.func import getMaskPath, getXmlPath
+from src.utils.func import getMaskPath, getXmlPath, imwrite_unicode
 from src.utils.global_param import g_param
 from src.utils.logger import getUniqueLogger
 from src.utils.model import FileType, ModelType, PlayState, ShowImageCmd, ViewMode
@@ -223,7 +225,7 @@ class MainWindow(QMainWindow):
         # 主選單
         self.menu = self.menuBar()
         self.file_menu = self.menu.addMenu("File")
-        self.edit_menu = self.menu.addMenu("Edit")
+        self.label_menu = self.menu.addMenu("Label")
         self.ai_menu = self.menu.addMenu("Ai")
         self.train_menu = self.menu.addMenu("Train")
         self.view_menu = self.menu.addMenu("View")
@@ -285,7 +287,13 @@ class MainWindow(QMainWindow):
         self.edit_label_action = QAction("Edit Label", self)
         self.edit_label_action.triggered.connect(self.promptInputLabel)
 
-        self.edit_menu.addAction(self.edit_label_action)
+        # 標註儲存模式設定 (整張圖 / Cropped)
+        self.label_mode_action = QAction("Label Mode…", self)
+        self.label_mode_action.triggered.connect(self.open_label_mode)
+
+        self.label_menu.addAction(self.edit_label_action)
+        self.label_menu.addSeparator()
+        self.label_menu.addAction(self.label_mode_action)
 
         # Model selection radio group
         self.model_action_group = QActionGroup(self)
@@ -658,12 +666,26 @@ class MainWindow(QMainWindow):
                     self.saveImgAndLabels()
                     g_param.auto_save_counter = 0
 
+    def open_label_mode(self):
+        """開啟 Label Mode 對話框，設定標註儲存模式 (整張圖 / Cropped) 與裁切參數"""
+        dialog = LabelModeDialog(self)
+        if dialog.exec():
+            mode = settings.label.save_mode
+            self.statusbar.showMessage(
+                f"Label 儲存模式：{'Cropped 裁切' if mode == 'cropped' else '整張圖'}"
+            )
+
     def saveImgAndLabels(self):
         """
         儲存標記, 注意就算沒有bbox也是要儲存, 表示有處理過, 也能讓trainer知道這是在訓練背景
+
+        Cropped 模式改走 _saveCropped: 只裁切有框的區域, 沒框則不儲存
         """
         current_path = file_h.current_image_path()
         if not current_path:
+            return
+        if settings.label.save_mode == "cropped":
+            self._saveCropped(current_path)
             return
         Path(file_h.folder_path, cfg.save_folder).mkdir(parents=True, exist_ok=True)
         # Save BBox annotations (XML)
@@ -693,6 +715,69 @@ class MainWindow(QMainWindow):
         g_param.user_labeling = False
         status_message = f"Annotations saved to {xml_path}"
         self.statusbar.showMessage(status_message)
+
+    def _saveCropped(self, current_path: str):
+        """Cropped 模式儲存：只裁切有框 (bbox/polygon) 的區域，各自存成小圖 + VOC XML。
+
+        沒有任何框則不儲存 (與整張圖模式會存背景不同)。裁切參數取自 settings.label。
+
+        Args:
+            current_path: 目前影像的路徑
+        """
+        iw = self.image_widget
+        if iw.cv_img is None:
+            return
+
+        bboxes = iw.bboxes
+        polygons = iw.polygons
+        if not bboxes and not polygons:
+            self.statusbar.showMessage("Cropped: 目前畫面無標註，未儲存")
+            return
+
+        img = iw.cv_img
+        img_h, img_w = img.shape[:2]
+        mode = settings.label.crop_size_mode or CROP_MODE_FIXED
+        padding = settings.label.crop_padding_px or 0
+        fixed = settings.label.crop_fixed_size or 640
+
+        tasks = compute_crops(img_w, img_h, bboxes, polygons, mode, padding, fixed)
+        if not tasks:
+            self.statusbar.showMessage("Cropped: 無可裁切的標註")
+            return
+
+        out_dir = Path(file_h.folder_path, cfg.save_folder)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # 檔名前綴：影片再加上 frame 編號，避免不同幀互相覆蓋
+        stem = Path(current_path).stem
+        if iw.file_type == FileType.VIDEO and iw.cap:
+            frame_number = int(iw.cap.get(cv2.CAP_PROP_POS_FRAMES))
+            stem = f"{stem}_frame{frame_number}"
+
+        saved = 0
+        for idx, task in enumerate(tasks):
+            crop = img[task.y0:task.y1, task.x0:task.x1]
+            if crop.size == 0:
+                continue
+            crop_path = out_dir / f"{stem}_crop{idx}.jpg"
+            if not imwrite_unicode(crop_path, crop):
+                log.e(f"寫入 cropped 圖片失敗: {crop_path}")
+                continue
+            # 先寫圖再產生 xml (generate_voc_xml 會讀圖取得尺寸)
+            xml_path = getXmlPath(crop_path.as_posix())
+            try:
+                xml_content = file_h.generate_voc_xml(
+                    task.bboxes, crop_path.as_posix(), task.polygons
+                )
+                with open(xml_path, "w", encoding="utf-8") as f:
+                    f.write(xml_content)
+            except Exception as e:
+                log.e(f"寫入 cropped 標註失敗 ({xml_path}): {e}")
+                continue
+            saved += 1
+
+        g_param.user_labeling = False
+        self.statusbar.showMessage(f"Cropped 已儲存 {saved} 張至 {out_dir}")
 
     def saveMask(self):
         current_path = file_h.current_image_path()
