@@ -1,5 +1,5 @@
-# 角落選取區域大小
-CORNER_SIZE = 10
+# 角落方塊半徑(螢幕px), 繪製與命中判斷共用; 方塊邊長 = CORNER_SIZE*2
+CORNER_SIZE = 5
 # 旋轉控制點相關常數
 ROTATION_HANDLE_RADIUS = 6  # 旋轉控制點圓圈半徑
 ROTATION_HANDLE_DISTANCE = 30  # 旋轉控制點距離 bbox 頂部的距離

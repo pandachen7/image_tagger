@@ -191,53 +191,37 @@ class ImageWidget(QWidget):
             return result >= 0
 
     def _isInCorner(self, pos, bbox: Bbox) -> str:
-        """檢查滑鼠是否在角落，並且resize"""
-        pos = self._scale_to_original(pos)
-
+        """檢查滑鼠是否在角落，並且resize (以螢幕像素判斷, 與繪製的方塊大小一致)"""
         if bbox.angle == 0:
-            x1, y1 = bbox.x, bbox.y
-            x2, y2 = bbox.x + bbox.width, bbox.y + bbox.height
-
-            # 計算四個角落的範圍
-            corners = {
-                "top_left": QRect(
-                    x1 - CORNER_SIZE,
-                    y1 - CORNER_SIZE,
-                    CORNER_SIZE * 2,
-                    CORNER_SIZE * 2,
-                ),
-                "top_right": QRect(
-                    x2 - CORNER_SIZE,
-                    y1 - CORNER_SIZE,
-                    CORNER_SIZE * 2,
-                    CORNER_SIZE * 2,
-                ),
-                "bottom_left": QRect(
-                    x1 - CORNER_SIZE,
-                    y2 - CORNER_SIZE,
-                    CORNER_SIZE * 2,
-                    CORNER_SIZE * 2,
-                ),
-                "bottom_right": QRect(
-                    x2 - CORNER_SIZE,
-                    y2 - CORNER_SIZE,
-                    CORNER_SIZE * 2,
-                    CORNER_SIZE * 2,
+            # 四個角落轉為 widget 座標, 在螢幕像素下判斷命中
+            corner_pts = {
+                "top_left": QPoint(bbox.x, bbox.y),
+                "top_right": QPoint(bbox.x + bbox.width, bbox.y),
+                "bottom_left": QPoint(bbox.x, bbox.y + bbox.height),
+                "bottom_right": QPoint(
+                    bbox.x + bbox.width, bbox.y + bbox.height
                 ),
             }
-
-            for corner, rect in corners.items():
+            for corner, cpt in corner_pts.items():
+                wpt = self._scale_to_widget(cpt)
+                rect = QRect(
+                    wpt.x() - CORNER_SIZE,
+                    wpt.y() - CORNER_SIZE,
+                    CORNER_SIZE * 2,
+                    CORNER_SIZE * 2,
+                )
                 if rect.contains(pos):
                     return corner
             return None
         else:
-            # 旋轉的情況，使用角點距離檢測
+            # 旋轉的情況，使用角點距離檢測 (widget 座標)
             corners = self._getRotatedCorners(bbox)
             corner_names = ["top_left", "top_right", "bottom_right", "bottom_left"]
 
             for i, (cx, cy) in enumerate(corners):
-                dx = pos.x() - cx
-                dy = pos.y() - cy
+                wpt = self._scale_to_widget(QPoint(int(cx), int(cy)))
+                dx = pos.x() - wpt.x()
+                dy = pos.y() - wpt.y()
                 distance = (dx * dx + dy * dy) ** 0.5
                 if distance <= CORNER_SIZE * 2:
                     return corner_names[i]
@@ -905,10 +889,39 @@ class ImageWidget(QWidget):
                 )
 
         # BBOX兩點模式：繪製中的黃色矩形預覽
-        if self.drawing and self.drawing_mode == DrawingMode.BBOX:
+        if (
+            self.drawing
+            and self.drawing_mode == DrawingMode.BBOX
+            and self.start_pos
+            and self.end_pos
+        ):
             painter.setPen(ColorPen.YELLOW)
-            rect = QRect(self.start_pos, self.end_pos)
+            rect = QRect(self.start_pos, self.end_pos).normalized()
             painter.drawRect(rect)
+
+            # 繪製中即時顯示寬高與面積（原始pixel座標）
+            orig_start = self._scale_to_original(rect.topLeft())
+            orig_end = self._scale_to_original(rect.bottomRight())
+            box_w = abs(orig_end.x() - orig_start.x())
+            box_h = abs(orig_end.y() - orig_start.y())
+            box_text = f"{box_w}x{box_h}={box_w * box_h}"
+            fm = painter.fontMetrics()
+            box_text_w = fm.horizontalAdvance(box_text)
+            box_text_h = fm.height()
+            # label 顯示在右下角點的右上, 與框選一致, 以免拉到畫面底部被截斷
+            box_text_pos = rect.bottomRight() + QPoint(5, -(box_text_h + 5))
+            box_bg = QRect(
+                box_text_pos,
+                QPoint(
+                    box_text_pos.x() + box_text_w + 4,
+                    box_text_pos.y() + box_text_h,
+                ),
+            )
+            painter.fillRect(box_bg, QColor(0, 0, 0, 150))
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(
+                box_text_pos + QPoint(2, box_text_h - fm.descent()), box_text
+            )
 
         # SELECT模式：繪製框選矩形（淡藍色）
         if (
@@ -968,7 +981,8 @@ class ImageWidget(QWidget):
                 font_metrics = painter.fontMetrics()
                 text_width = font_metrics.horizontalAdvance(text)
                 text_height = font_metrics.height()
-                text_pos = info_pos + QPoint(5, 5)
+                # label 顯示在右下角點的右上, 與框選一致, 以免拉到畫面底部被截斷
+                text_pos = info_pos + QPoint(5, -(text_height + 5))
                 bg_rect = QRect(
                     text_pos,
                     QPoint(text_pos.x() + text_width + 4, text_pos.y() + text_height),
@@ -1183,9 +1197,15 @@ class ImageWidget(QWidget):
                     and self._distanceBetweenPoints(pos, self.current_polygon_points[0])
                     < POLYGON_CLOSE_THRESHOLD
                 ):
-                    # 檢查 polygon bounding box 是否達到最小尺寸
-                    xs = [pt.x() for pt in self.current_polygon_points]
-                    ys = [pt.y() for pt in self.current_polygon_points]
+                    # Close polygon - convert widget coords to original
+                    points = []
+                    for pt in self.current_polygon_points:
+                        orig = self._scale_to_original(pt)
+                        points.append((float(orig.x()), float(orig.y())))
+
+                    # 檢查 polygon bounding box 是否達到最小尺寸 (以原圖像素為準)
+                    xs = [x for x, _ in points]
+                    ys = [y for _, y in points]
                     poly_w = max(xs) - min(xs)
                     poly_h = max(ys) - min(ys)
                     if poly_w < cfg.minimal_bbox_length or poly_h < cfg.minimal_bbox_length:
@@ -1193,11 +1213,6 @@ class ImageWidget(QWidget):
                         self.update()
                         return
 
-                    # Close polygon - convert widget coords to original
-                    points = []
-                    for pt in self.current_polygon_points:
-                        orig = self._scale_to_original(pt)
-                        points.append((float(orig.x()), float(orig.y())))
                     self.polygons.append(
                         Polygon(
                             points,
@@ -1515,16 +1530,19 @@ class ImageWidget(QWidget):
         width = abs(x2 - x1)
         height = abs(y2 - y1)
 
-        # 檢查寬高是否大於最小限制
-        if width < cfg.minimal_bbox_length or height < cfg.minimal_bbox_length:
-            self.completeMouseAction()
-            return
-
         # 將視窗座標轉換為原始影像座標
         x1_original = self._scale_to_original(QPoint(x1, y1)).x()
         y1_original = self._scale_to_original(QPoint(x1, y1)).y()
         width_original = int(width * self.pixmap.width() / self.scaled_width)
         height_original = int(height * self.pixmap.height() / self.scaled_height)
+
+        # 檢查寬高是否大於最小限制 (以原圖像素為準, 不受顯示縮放影響)
+        if (
+            width_original < cfg.minimal_bbox_length
+            or height_original < cfg.minimal_bbox_length
+        ):
+            self.completeMouseAction()
+            return
 
         self.bboxes.append(
             Bbox(
