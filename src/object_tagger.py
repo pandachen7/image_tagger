@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-07-14
+# 更新日期: 2026-07-15
 import random
 import re
 import shutil
@@ -584,9 +584,15 @@ class MainWindow(QMainWindow):
 
     def open_folder(self):
         """
-        用pyqt瀏覽並選定資料夾
+        用pyqt瀏覽並選定資料夾。
+        起始目錄以目前開啟的資料夾為準; 若未設定或不存在, 則退回專案根目錄。
         """
-        folder_path = QFileDialog.getExistingDirectory(self, "Open Folder")  # PyQt6
+        current = settings.file_system.folder_path
+        # 目前資料夾存在才當起點, 否則用專案根目錄 (app 由根目錄啟動, cwd 即根目錄)
+        start_dir = current if current and Path(current).is_dir() else str(Path.cwd())
+        folder_path = QFileDialog.getExistingDirectory(self, "Open Folder", start_dir)  # PyQt6
+        if not folder_path:  # 使用者取消, 保留原本設定不覆寫
+            return
         self.choose_folder(folder_path)
         settings.file_system.folder_path = folder_path
         settings.file_system.file_index = 0
