@@ -11,7 +11,7 @@
     "charliermarsh.ruff", // 修復與轉換工具, 可搭配editor.codeActionsOnSave
 
     // 上色與註解相關
-    "gruntfuggly.todo-tree",
+    // "gruntfuggly.todo-tree",
     "aaron-bond.better-comments",
     "mechatroner.rainbow-csv",
 
