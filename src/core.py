@@ -2,6 +2,8 @@
 Core module for managing application state and business logic.
 This module decouples the ImageWidget from MainWindow by providing
 a centralized state management system.
+
+更新日期: 2026-08-06
 """
 
 from typing import Callable
@@ -45,7 +47,17 @@ class AppState:
                 callback(*args, **kwargs)
 
     def toggle_auto_save(self):
-        """Toggle auto save mode."""
+        """Toggle auto save mode.
+
+        auto_save 專門負責「自動產生的標註」落檔 (auto_detect 的推論結果、
+        影片定時抽幀), 因此依附於 auto_detect; 未開啟 auto_detect 時不可切換。
+        手動畫的框由 g_param.user_labeling 負責, 不受此開關影響。
+        """
+        if not self.auto_detect:
+            self._trigger_callback(
+                "status_message", "Auto save 需先開啟 Auto Detect"
+            )
+            return
         self.auto_save = not self.auto_save
         self._trigger_callback("auto_save_changed", self.auto_save)
         self._trigger_callback(
@@ -53,8 +65,12 @@ class AppState:
         )
 
     def toggle_auto_detect(self):
-        """Toggle auto detect mode."""
+        """Toggle auto detect mode. 關閉時一併關閉 auto_save。"""
         self.auto_detect = not self.auto_detect
+        # auto_save 依附於 auto_detect, 否則會出現選項灰掉卻仍打勾且持續存檔的狀態
+        if not self.auto_detect and self.auto_save:
+            self.auto_save = False
+            self._trigger_callback("auto_save_changed", False)
         self._trigger_callback("auto_detect_changed", self.auto_detect)
         self._trigger_callback(
             "status_message", f"Auto detect: {'on' if self.auto_detect else 'off'}"

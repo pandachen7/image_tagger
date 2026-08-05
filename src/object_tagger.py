@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-07-15
+# 更新日期: 2026-08-06
 import random
 import re
 import shutil
@@ -71,10 +71,21 @@ class MainWindow(QMainWindow):
 
         # 儲存
         self.save_action = QAction("Save", self)
+        self.save_action.setToolTip(
+            "儲存目前影像與標註; 依 Label Mode 決定存整張圖或裁切 (Cropped)"
+        )
         self.save_action.triggered.connect(self.saveImgAndLabels)
 
+        # 存背景圖: 明確把「沒有物件的畫面」收為訓練背景樣本
+        self.save_bg_action = QAction("Save Background", self)
+        self.save_bg_action.setToolTip("將目前畫面存成背景樣本 (需無任何標註)")
+        self.save_bg_action.triggered.connect(self.saveBackground)
+
+        # Auto Save 依附於 Auto Detect, 只管自動產生的標註落檔, 故初始為 disabled
         self.auto_save_action = QAction("Auto Save", self)
         self.auto_save_action.setCheckable(True)
+        self.auto_save_action.setEnabled(False)
+        self.auto_save_action.setToolTip("自動儲存偵測結果與影片抽幀 (需先開啟 Auto Detect)")
         self.auto_save_action.triggered.connect(self.app_state.toggle_auto_save)
 
         self.save_mask_action = QAction("Save Mask", self)
@@ -83,6 +94,7 @@ class MainWindow(QMainWindow):
         # 自動使用偵測 (GPU不好速度就會慢)
         self.auto_detect_action = QAction("Auto Detect", self)
         self.auto_detect_action.setCheckable(True)
+        self.auto_detect_action.setToolTip("切換影格時自動偵測; 關閉時會一併關閉 Auto Save")
         self.auto_detect_action.triggered.connect(self.app_state.toggle_auto_detect)
 
         # 檔案相關動作
@@ -106,9 +118,11 @@ class MainWindow(QMainWindow):
         self.toolbar = QToolBar()
         self.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolbar)
 
-        self.toolbar.addAction(self.auto_save_action)
+        # Auto Save 只放在 Ai 選單裡緊鄰 Auto Detect, 工具列不重複擺放
         self.toolbar.addAction(self.auto_detect_action)
+        self.toolbar.addSeparator()
         self.toolbar.addAction(self.save_action)
+        self.toolbar.addAction(self.save_bg_action)
 
         # 播放控制
         self.timer = QTimer()
@@ -277,7 +291,8 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.open_file_by_index_action)
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.save_action)
-        self.file_menu.addAction(self.auto_save_action)
+        self.file_menu.addAction(self.save_bg_action)
+        # Auto Save 已移至 Ai 選單, 緊接 Auto Detect 之下
         if cfg.enable_mask_tools:
             self.file_menu.addAction(self.save_mask_action)
         self.file_menu.addSeparator()
@@ -329,7 +344,10 @@ class MainWindow(QMainWindow):
             self.ai_menu.addAction(self.set_sam3_model_action)
         self.ai_menu.addSeparator()
         self.ai_menu.addAction(self.detect_action)
+        # 分隔線: 手動 Detect 與「Auto Detect + 依附其上的 Auto Save」分屬兩組
+        self.ai_menu.addSeparator()
         self.ai_menu.addAction(self.auto_detect_action)
+        self.ai_menu.addAction(self.auto_save_action)
         self.ai_menu.addSeparator()
 
         self.categorize_media_action = QAction("Categorize Media", self)
@@ -414,6 +432,18 @@ class MainWindow(QMainWindow):
             on_image_loaded=self.cbImageLoaded,
         )
 
+        # QMenu 預設不顯示 tooltip, 需逐一開啟。
+        # 未設過 tooltip 的項目不會冒框 (QMenu 讀的是原始欄位, 不是會回退成文字的 getter),
+        # 所以只有真正加了說明的項目才看得到小框
+        for menu in (
+            self.file_menu,
+            self.label_menu,
+            self.ai_menu,
+            self.train_menu,
+            self.view_menu,
+        ):
+            menu.setToolTipsVisible(True)
+
         # Sync initial UI state with app_state
         self._sync_ui_state()
 
@@ -427,6 +457,7 @@ class MainWindow(QMainWindow):
     def _sync_ui_state(self):
         """Sync UI components with app_state."""
         self.auto_save_action.setChecked(self.app_state.auto_save)
+        self.auto_save_action.setEnabled(self.app_state.auto_detect)
         self.auto_detect_action.setChecked(self.app_state.auto_detect)
         if inferencer.active_model_type == ModelType.YOLO:
             self.use_yolo_action.setChecked(True)
@@ -440,6 +471,8 @@ class MainWindow(QMainWindow):
     def _on_auto_detect_changed(self, enabled: bool):
         """Callback when auto detect state changes."""
         self.auto_detect_action.setChecked(enabled)
+        # Auto Save 只在 Auto Detect 開啟時可選 (關閉時 app_state 已一併關掉它)
+        self.auto_save_action.setEnabled(enabled)
         if enabled:
             # 走與按 Detect 相同的流程: 模型未載入時先載入 (主執行緒同步) 再偵測當前影格,
             # 避免「已勾選卻不偵測」。之後播放/切換影格時 cbImageLoaded 會自動偵測。
@@ -693,6 +726,14 @@ class MainWindow(QMainWindow):
         if settings.label.save_mode == "cropped":
             self._saveCropped(current_path)
             return
+        self._saveFullImage(current_path)
+
+    def _saveFullImage(self, current_path: str):
+        """整張圖模式儲存：把原圖 (或影片當前幀) 放進 save_folder, 並寫出對應 VOC XML。
+
+        Args:
+            current_path: 目前影像或影片的路徑
+        """
         Path(file_h.folder_path, cfg.save_folder).mkdir(parents=True, exist_ok=True)
         # Save BBox annotations (XML)
         if self.image_widget.file_type == FileType.VIDEO:
@@ -715,12 +756,33 @@ class MainWindow(QMainWindow):
         xml_path = getXmlPath(save_path)
         bboxes = self.image_widget.bboxes
         polygons = self.image_widget.polygons
-        xml_content = file_h.generate_voc_xml(bboxes, save_path, polygons)
-        with open(xml_path, "w", encoding="utf-8") as f:
-            f.write(xml_content)
+        try:
+            xml_content = file_h.generate_voc_xml(bboxes, save_path, polygons)
+            with open(xml_path, "w", encoding="utf-8") as f:
+                f.write(xml_content)
+        except Exception as e:
+            log.e(f"寫入標註失敗 ({xml_path}): {e}")
+            self.statusbar.showMessage("標註儲存失敗，請查看 log")
+            return
         g_param.user_labeling = False
         status_message = f"Annotations saved to {xml_path}"
         self.statusbar.showMessage(status_message)
+
+    def saveBackground(self):
+        """將目前畫面存成背景樣本 (整張圖 + 空標註 XML)。
+
+        畫面上若有任何 bbox/polygon 則拒絕, 避免把含物件的圖誤收為背景污染訓練集。
+        不受 Label Mode 影響: 背景本來就沒有框可裁, 一律存整張圖。
+        """
+        current_path = file_h.current_image_path()
+        if not current_path:
+            self.statusbar.showMessage("Background: 尚未載入影像")
+            return
+        if self.image_widget.bboxes or self.image_widget.polygons:
+            self.statusbar.showMessage("Background: 畫面有標註，請先清除後再存背景")
+            return
+        self._saveFullImage(current_path)
+        self.statusbar.showMessage(f"背景樣本已儲存: {Path(current_path).name}")
 
     def _saveCropped(self, current_path: str):
         """Cropped 模式儲存：只裁切有框 (bbox/polygon) 的區域，各自存成小圖 + VOC XML。
@@ -995,6 +1057,8 @@ class MainWindow(QMainWindow):
             self.close()
         elif event.key() == Qt.Key.Key_S:
             self.saveImgAndLabels()
+        elif event.key() == Qt.Key.Key_G:
+            self.saveBackground()
         elif event.key() == Qt.Key.Key_A:
             self.app_state.toggle_auto_save()
         elif event.key() == Qt.Key.Key_D:

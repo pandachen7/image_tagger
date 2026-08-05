@@ -127,7 +127,10 @@ labels:
 ## 儲存
 
 - **File → Save**（快捷鍵 `s`）：依目前的**儲存模式**儲存標註
-- **File → Auto Save**（快捷鍵 `a`）：切換檔案時自動儲存
+- **File → Save Background**（快捷鍵 `g`）：把目前畫面存成背景樣本（整張圖 + 空標註）。畫面上若有任何標註會拒絕儲存，避免誤把含物件的圖收成背景；此功能不受儲存模式影響，Cropped 模式下也一律存整張圖
+- **Ai → Auto Save**（快捷鍵 `a`）：自動儲存 Auto Detect 的偵測結果與影片抽幀。**需先開啟 Auto Detect 才可勾選**，關閉 Auto Detect 時會一併關閉
+
+> 手動畫的框不需要開啟 Auto Save：只要動過標註（畫框 / 拖曳 / 刪除），切換檔案、滾輪換圖、播放影片、關閉程式時都會自動儲存。Auto Save 只負責「自動產生」的標註落檔。
 
 > 儲存的圖片和 XML 會放在原始資料夾下的 `output` 子資料夾，避免與原始檔案混淆。
 > 如果 Mask 工具有啟用，mask 會另存為 `{檔名}_mask.png`。
@@ -233,5 +236,5 @@ Cropped 模式的裁切尺寸為**二選一**：
 - **Space**：Play / Pause
 - 有播放進度條，可拖曳跳轉
 - 按下滑鼠鍵會暫停播放
-- 開啟 Auto Save 後，播放期間會自動抽幀儲存，檔名為 `{原檔名}_frame{N}`
+- 開啟 Auto Save 後，播放期間會自動抽幀儲存，檔名為 `{原檔名}_frame{N}`（Auto Save 需先開啟 Auto Detect）
 - 在 `cfg/system.yaml` 的 `auto_save_per_second` 可設定每幾秒儲存一幀（`-1` 關閉）

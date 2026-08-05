@@ -71,7 +71,8 @@ uv run main.py
 |------|------|
 | `q` | 離開 |
 | `s` | 儲存 |
-| `a` | 切換 Auto Save |
+| `g` | 將目前畫面存成背景樣本（需無任何標註）|
+| `a` | 切換 Auto Save（需先開啟 Auto Detect）|
 | `d` | 執行偵測 (Detect) |
 | `l` | 編輯選取框的 label 名稱 |
 | `v` | Select 選取模式 |
