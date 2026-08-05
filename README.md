@@ -12,12 +12,17 @@
 **建議使用 [uv](https://docs.astral.sh/uv/)**：安裝套件快，且會依 `pyproject.toml` 自動裝好含 **CUDA 13.0** 的 PyTorch。
 
 ```bash
+# 保持 uv 為最新版（本專案需 uv >= 0.12）
+uv self update
+
 # 建立環境並安裝所有相依（含 CUDA 13.0 的 PyTorch）
 uv sync
 
 # 啟動
 uv run main.py
 ```
+
+> **請定期更新 uv。** uv 改版頻繁，舊版遇到 PyTorch index 的邊緣狀況時，錯誤訊息往往指向錯誤的原因（例如把「index 沒發布 hash」報成 `Hash mismatch`）。`uv sync` 出現無法理解的相依錯誤時，先 `uv self update` 再試一次。細節見 [安裝指南](./docs/installation_uv.md#請保持-uv-為最新版)。
 
 > **Fallback（不使用 uv 時）**：改用 Python 內建 venv + pip。注意 PyTorch CUDA 版要自行從 cu130 index 安裝，pip 不會讀取 `pyproject.toml` 裡的 uv index 設定。
 >

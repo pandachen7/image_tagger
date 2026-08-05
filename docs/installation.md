@@ -1,11 +1,13 @@
 # 安裝指南
 
-<!-- 最後更新：2026-07-08 -->
+<!-- 最後更新：2026-08-05 -->
 
 ## 環境需求
 
 - Python >= 3.12
 - 建議使用獨立的虛擬環境（uv 或 venv）
+- 用 uv 的話需要 **uv >= 0.12**，並建議定期 `uv self update`（原因見 [使用 uv 安裝 → 請保持 uv 為最新版](./installation_uv.md#請保持-uv-為最新版)）
+- NVIDIA driver 需支援 **CUDA 13.0** 以上（PyTorch 從 cu130 index 安裝）
 - 有 NVIDIA 顯卡可大幅加速推論
 
 ## uv vs venv — 我該選哪個？
@@ -38,10 +40,10 @@ python scripts/cuda_info.py
 
 正常輸出應該像這樣：
 ```
-torch version: 2.12.1+cu130
+torch version: 2.13.0+cu130
 cuda available: True
 cuda version: 13.0
-cudnn version: 91300
+cudnn version: 92000
 ```
 
 確認重點：

@@ -1,6 +1,6 @@
 # 安裝指南 — 使用 uv（建議）
 
-<!-- 最後更新：2026-07-08 -->
+<!-- 最後更新：2026-08-05 -->
 
 > 回到 [安裝指南總覽](./installation.md)
 
@@ -19,6 +19,22 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 > 安裝完成後重新開啟終端，確認 `uv --version` 有正確輸出。
+
+### 請保持 uv 為最新版
+
+**本專案需要 uv >= 0.12**，且建議養成定期更新的習慣：
+
+```bash
+uv self update
+```
+
+> 若 uv 是用其他方式安裝的（如 pipx、Homebrew、scoop），`uv self update` 會失效，請改用原本的管道更新。
+
+uv 改版很快（每一兩週就有新版），而 PyTorch 這類套件的 index 又常有邊緣狀況，**舊版 uv 的錯誤訊息經常無法反映真正的原因**。實際遇過的例子：
+
+- PyTorch cu130 index 沒有發布 `torchvision` Windows wheel 的 `#sha256`（Linux wheel 則正常）。uv <= 0.7.x 遇到這種缺 hash 的 wheel，會退而拿下載檔去比對該版本「其他平台」的 hash，於是必然 mismatch，報出 `Hash mismatch for torchvision==...`，看起來像檔案損毀或 CDN 有問題，實際上檔案完全正常。升到 uv 0.12.1 後即正常安裝。
+
+所以 **`uv sync` 出現無法理解的相依 / hash 錯誤時，第一步先更新 uv 再試一次**，通常比去改 `pyproject.toml` 有效。
 
 ## 2. 安裝所有相依
 

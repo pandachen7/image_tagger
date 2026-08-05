@@ -1,5 +1,14 @@
 # 更新記錄
 
+2026/8
+- **資安更新**：`torch` 2.12.1 → **2.13.0+cu130**（CVE-2025-3000, Low）、`setuptools` 81.0.0 → **83.0.0**（CVE-2026-59890, Moderate）
+  - `torchvision` 一併升到 **0.28.0+cu130**：它硬性要求 `torch==2.13.0`，無法只升 torch
+  - torch / torchvision 因相容性反覆出過問題，`pyproject.toml` 改用 `==` **固定版本**，升級時務必兩者一起改
+  - `setuptools` 僅為 torch 的間接相依，用 `[tool.uv] constraint-dependencies` 拉下限，不宣告成直接相依
+- **本專案改為需要 uv >= 0.12，並建議定期 `uv self update`**
+  - PyTorch cu130 index 未發布 `torchvision` 0.28.0 全部 Windows wheel 的 `#sha256`（Linux wheel 正常）；uv <= 0.7.x 會退而比對其他平台的 hash 而必然失敗，報出誤導性的 `Hash mismatch`，uv 0.12.1 才正常
+  - 教訓：`uv sync` 出現無法理解的相依 / hash 錯誤時，先更新 uv 再試，通常比改 `pyproject.toml` 有效
+
 2026/7
 - 新增 **Cropped 裁切儲存模式**（選單 `Edit` 更名為 `Label`，透過 **Label → Label Mode…** 切換）：只裁切畫面上有框 (bbox / polygon) 的區域，各自存成小圖 + VOC XML，適合對動態區 / ROI 過濾後的目標做放大裁切，提升小物件的 YOLO 偵測訓練效果
   - 尺寸二選一：**固定外擴 padding (px)** 或 **至少固定尺寸 (px，對齊 YOLO 輸入如 640)**；某邊碰到影像邊緣沒有像素時，會往對邊補足像素以維持尺寸

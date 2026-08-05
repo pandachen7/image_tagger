@@ -5,10 +5,11 @@ description = "Annotate images with labels"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    # 上限暫鎖 <2.13 / <0.28：torch 2.13.0 / torchvision 0.28.0 於 2026-07-08 當天釋出，
-    # PyTorch R2 CDN 仍在同步、下載會 hash mismatch；待 CDN 穩定後可移除上限升級。
-    "torch>=2.10,<2.13",
-    "torchvision>=0.25,<0.28",
+    # CVE-2025-3000 (Low)：torch <=2.12.1 有安全問題，故升到 2.13 並搭配 CUDA 13 以上。
+    # torchvision 0.28.0 硬性要求 torch==2.13.0，兩者必須同步升級。
+    # 因 torch 版本相容性反覆出過問題，這裡改用 == 固定版本，升級時務必兩者一起改。
+    "torch==2.13",
+    "torchvision==0.28",
     "opencv-python>=4.11.0.86",
     "PyQt6>=6.8.1",
     "dicttoxml>=1.7.16",
@@ -30,3 +31,9 @@ torchvision = [{ index = "pytorch-cu130" }]
 name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"
 explicit = true
+
+# CVE-2026-59890 (Moderate)：setuptools <83.0.0 有安全問題。
+# 本專案不直接 import setuptools（由 torch 間接帶入），故用 constraint 拉下限，
+# 不把它宣告成直接相依。
+[tool.uv]
+constraint-dependencies = ["setuptools>=83.0.0"]
