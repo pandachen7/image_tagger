@@ -72,14 +72,9 @@ class MainWindow(QMainWindow):
         # 儲存
         self.save_action = QAction("Save", self)
         self.save_action.setToolTip(
-            "儲存目前影像與標註; 依 Label Mode 決定存整張圖或裁切 (Cropped)"
+            "儲存目前影像與標註 (依 Label Mode); 整張圖模式沒有框時等同存一張背景樣本"
         )
         self.save_action.triggered.connect(self.saveImgAndLabels)
-
-        # 存背景圖: 明確把「沒有物件的畫面」收為訓練背景樣本
-        self.save_bg_action = QAction("Save Background", self)
-        self.save_bg_action.setToolTip("將目前畫面存成背景樣本 (需無任何標註)")
-        self.save_bg_action.triggered.connect(self.saveBackground)
 
         # Auto Save 依附於 Auto Detect, 只管自動產生的標註落檔, 故初始為 disabled
         self.auto_save_action = QAction("Auto Save", self)
@@ -122,7 +117,6 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(self.auto_detect_action)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.save_action)
-        self.toolbar.addAction(self.save_bg_action)
 
         # 播放控制
         self.timer = QTimer()
@@ -291,7 +285,6 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.open_file_by_index_action)
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.save_action)
-        self.file_menu.addAction(self.save_bg_action)
         # Auto Save 已移至 Ai 選單, 緊接 Auto Detect 之下
         if cfg.enable_mask_tools:
             self.file_menu.addAction(self.save_mask_action)
@@ -788,22 +781,6 @@ class MainWindow(QMainWindow):
         status_message = f"Annotations saved to {xml_path}"
         self.statusbar.showMessage(status_message)
 
-    def saveBackground(self):
-        """將目前畫面存成背景樣本 (整張圖 + 空標註 XML)。
-
-        畫面上若有任何 bbox/polygon 則拒絕, 避免把含物件的圖誤收為背景污染訓練集。
-        不受 Label Mode 影響: 背景本來就沒有框可裁, 一律存整張圖。
-        """
-        current_path = file_h.current_image_path()
-        if not current_path:
-            self.statusbar.showMessage("Background: 尚未載入影像")
-            return
-        if self.image_widget.bboxes or self.image_widget.polygons:
-            self.statusbar.showMessage("Background: 畫面有標註，請先清除後再存背景")
-            return
-        self._saveFullImage(current_path)
-        self.statusbar.showMessage(f"背景樣本已儲存: {Path(current_path).name}")
-
     def _saveCropped(self, current_path: str):
         """Cropped 模式儲存：只裁切有框 (bbox/polygon) 的區域，各自存成小圖 + VOC XML。
 
@@ -1089,8 +1066,6 @@ class MainWindow(QMainWindow):
             self.close()
         elif event.key() == Qt.Key.Key_S:
             self.saveImgAndLabels()
-        elif event.key() == Qt.Key.Key_G:
-            self.saveBackground()
         elif event.key() == Qt.Key.Key_A:
             self.app_state.toggle_auto_save()
         elif event.key() == Qt.Key.Key_D:
