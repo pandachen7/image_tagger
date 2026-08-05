@@ -1,5 +1,5 @@
-# 通用小工具：unicode 路徑影像讀寫、同名配對、xml/mask 路徑推導
-# 更新日期: 2026-07-14
+# 通用小工具：unicode 路徑影像讀寫、同名配對、xml/mask 路徑推導、路徑同一性判斷
+# 更新日期: 2026-08-06
 import os
 from pathlib import Path
 
@@ -76,3 +76,29 @@ def getXmlPath(image_path) -> Path:
 def getMaskPath(image_path) -> Path:
     path_tmp = Path(image_path)
     return path_tmp.parent / f"{path_tmp.stem}_mask.png"
+
+
+def is_same_path(path_a, path_b) -> bool:
+    """判斷兩個路徑是否指向同一個檔案或資料夾。
+
+    兩者都存在時走 os.path.samefile (可正確處理 symlink / junction / 大小寫 /
+    Windows 8.3 短檔名); 只要有一邊尚未建立就退回 resolve + normcase 的字串比較。
+
+    Args:
+        path_a: 路徑 A (str 或 Path)
+        path_b: 路徑 B (str 或 Path)
+
+    Returns:
+        bool: 兩者是否指向同一個目標, 無法判斷時回 False
+    """
+    try:
+        pa, pb = Path(path_a), Path(path_b)
+        if pa.exists() and pb.exists():
+            return os.path.samefile(pa, pb)
+        # 尚未建立的路徑無法問檔案系統, 只能正規化後比字串 (Windows 大小寫不敏感)
+        return os.path.normcase(str(pa.resolve())) == os.path.normcase(
+            str(pb.resolve())
+        )
+    except Exception as e:
+        log.error(f"比對路徑失敗 ({path_a} vs {path_b}): {e}")
+        return False

@@ -44,7 +44,7 @@ from src.utils.cropper import CROP_MODE_FIXED, compute_crops
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.file_handler import file_h
 from src.utils.img_handler import inferencer
-from src.utils.func import getMaskPath, getXmlPath, imwrite_unicode
+from src.utils.func import getMaskPath, getXmlPath, imwrite_unicode, is_same_path
 from src.utils.global_param import g_param
 from src.utils.logger import getUniqueLogger
 from src.utils.model import FileType, ModelType, PlayState, ShowImageCmd, ViewMode
@@ -731,10 +731,20 @@ class MainWindow(QMainWindow):
     def _saveFullImage(self, current_path: str):
         """整張圖模式儲存：把原圖 (或影片當前幀) 放進 save_folder, 並寫出對應 VOC XML。
 
+        save_folder 若是絕對路徑, Path() 會忽略前面的 folder_path, 因此輸出資料夾
+        可能正好就是目前開啟的資料夾 (例如直接開 output 回頭改標籤)。此時來源與目的
+        是同一個檔案, 複製會失敗, 只需原地覆寫 XML。
+
         Args:
             current_path: 目前影像或影片的路徑
         """
-        Path(file_h.folder_path, cfg.save_folder).mkdir(parents=True, exist_ok=True)
+        out_dir = Path(file_h.folder_path, cfg.save_folder)
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            log.e(f"建立輸出資料夾失敗 ({out_dir}): {e}")
+            self.statusbar.showMessage("無法建立輸出資料夾，請查看 log")
+            return
         # Save BBox annotations (XML)
         if self.image_widget.file_type == FileType.VIDEO:
             # 儲存影片當前幀
@@ -742,15 +752,25 @@ class MainWindow(QMainWindow):
             pure_name = Path(current_path).stem
             frame_number = int(self.image_widget.cap.get(cv2.CAP_PROP_POS_FRAMES))
             frame_filename = f"{pure_name}_frame{frame_number}.jpg"
-            save_path = Path(
-                file_h.folder_path, cfg.save_folder, frame_filename
-            ).as_posix()
-            frame.save(save_path)
+            save_path = (out_dir / frame_filename).as_posix()
+            if not frame.save(save_path):
+                log.e(f"寫入影片幀失敗: {save_path}")
+                self.statusbar.showMessage("影像儲存失敗，請查看 log")
+                return
         else:
-            # 搬移圖片
+            # 搬移圖片; 來源與目的同檔時跳過複製 (shutil.copy 會拋 SameFileError),
+            # 後面照樣覆寫 XML, 等同原地更新標註
             file_name = Path(current_path).name
-            save_path = Path(file_h.folder_path, cfg.save_folder, file_name).as_posix()
-            shutil.copy(current_path, save_path)
+            save_path = (out_dir / file_name).as_posix()
+            if is_same_path(current_path, save_path):
+                log.i(f"來源與輸出為同一檔案, 僅更新標註: {save_path}")
+            else:
+                try:
+                    shutil.copy(current_path, save_path)
+                except Exception as e:
+                    log.e(f"複製圖片失敗 ({save_path}): {e}")
+                    self.statusbar.showMessage("圖片儲存失敗，請查看 log")
+                    return
 
         # 儲存xml
         xml_path = getXmlPath(save_path)
@@ -814,7 +834,19 @@ class MainWindow(QMainWindow):
             return
 
         out_dir = Path(file_h.folder_path, cfg.save_folder)
-        out_dir.mkdir(parents=True, exist_ok=True)
+        # Cropped 每次都產生新檔名 (_cropN), 若輸出資料夾就是目前資料夾, 會把裁切過的圖
+        # 再裁一次 (a_crop0 → a_crop0_crop0) 無限疊加, 因此直接擋掉不存
+        if is_same_path(out_dir, file_h.folder_path):
+            self.statusbar.showMessage(
+                "Cropped: 輸出資料夾與目前資料夾相同，請調整 save_folder 或改開其他資料夾"
+            )
+            return
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            log.e(f"建立輸出資料夾失敗 ({out_dir}): {e}")
+            self.statusbar.showMessage("無法建立輸出資料夾，請查看 log")
+            return
 
         # 檔名前綴：影片再加上 frame 編號，避免不同幀互相覆蓋
         stem = Path(current_path).stem
