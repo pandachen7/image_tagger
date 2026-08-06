@@ -64,6 +64,7 @@ uv run main.py
 | Train YOLO (GUI) | 直接在 GUI 內呼叫 ultralytics 訓練，可設定基本參數與進階參數（優化器 / 增強 / cache 等），訓練中顯示進度與 mAP；支援指定既有 `.pt` 做 Resume / Fine-tune 再訓練 |
 | Categorize Media | 用 YOLO/SAM3 模型偵測後，依最多次物件名稱自動分類到子資料夾 |
 | 影片標註 | 逐幀標註，支援自動抽幀儲存 |
+| 刪除圖片與標籤 | 把畫錯的圖與同名 XML 成對丟到資源回收筒（File → Delete Image & Label），刪除前跳視窗確認 |
 
 ## 快捷鍵
 
@@ -79,6 +80,8 @@ uv run main.py
 | `p` | Polygon 繪製模式 |
 | `數字鍵` | 快速切換預設 label（支援多碼，如 `12`、`111`） |
 | `Esc` | 取消正在繪製的 BBox / Polygon |
+| `Delete` | 刪除選取的標註（Select 模式）|
+| `Ctrl+Delete` | 把目前的圖片與同名 XML 一起丟到資源回收筒（需確認）|
 | `PgUp/PgDn` 或 `←/→` | 上/下一個檔案 |
 | `Home/End` | 第一個/最後一個檔案 |
 | `Space` | 影片 Play/Pause |

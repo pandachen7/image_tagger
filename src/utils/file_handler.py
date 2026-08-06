@@ -1,5 +1,5 @@
-# 檔案讀寫、VOC XML 產生與 VOC→YOLO 格式轉換
-# 更新日期: 2026-04-11
+# 檔案讀寫、清單維護、VOC XML 產生與 VOC→YOLO 格式轉換
+# 更新日期: 2026-08-06
 import math
 import os
 import xml.etree.ElementTree as ET
@@ -65,10 +65,32 @@ class FileHandler:
                 return True
         elif cmd == ShowImageCmd.SAME_INDEX:
             # 用於刪除時
+            if not self.image_files:
+                # 全部刪光了, 否則下面會把索引設成 -1 而讀到最後一個不存在的項目
+                self.current_index = 0
+                return False
             if self.current_index > len(self.image_files) - 1:
                 self.current_index = len(self.image_files) - 1
             return True
         return False
+
+    def drop_current(self) -> bool:
+        """把目前檔案從清單移除 (實體檔案已刪除後才呼叫)。
+
+        索引留在原位, 因此接著會顯示原本的下一張; 刪到最後一張時退回新的最後一張。
+
+        Returns:
+            bool: 移除後清單是否還有檔案
+        """
+        if not self.image_files:
+            return False
+        try:
+            self.image_files.pop(self.current_index)
+        except IndexError as e:
+            log.e(f"移除清單項目失敗 (index={self.current_index}): {e}")
+            return bool(self.image_files)
+        # 索引修正沿用 SAME_INDEX 那一套: 停在原位以顯示下一張, 超出範圍才退回最後一張
+        return self.show_image(ShowImageCmd.SAME_INDEX)
 
     def generate_voc_xml(
         self, bboxes: list[Bbox], image_path, polygons: list[Polygon] = None

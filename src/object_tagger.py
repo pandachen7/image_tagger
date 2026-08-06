@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from ruamel.yaml import YAML
+from send2trash import send2trash
 
 from src.config import cfg
 from src.core import AppState
@@ -75,6 +76,15 @@ class MainWindow(QMainWindow):
             "儲存目前影像與標註 (依 Label Mode); 整張圖模式沒有框時等同存一張背景樣本"
         )
         self.save_action.triggered.connect(self.saveImgAndLabels)
+
+        # 刪除畫錯的圖與標籤; 快捷鍵刻意與「刪除標註」的 Delete 區隔開, 避免想刪一個框
+        # 卻誤刪整張圖。QAction 的 shortcut 會先於 keyPressEvent 攔到 Ctrl+Delete
+        self.delete_pair_action = QAction("Delete Image && Label", self)
+        self.delete_pair_action.setShortcut("Ctrl+Delete")
+        self.delete_pair_action.setToolTip(
+            "把目前的圖片與同名 .xml 一起丟到資源回收筒 (刪除前會先確認)"
+        )
+        self.delete_pair_action.triggered.connect(self.deletePairOfImgXml)
 
         # Auto Save 依附於 Auto Detect, 只管自動產生的標註落檔, 故初始為 disabled
         self.auto_save_action = QAction("Auto Save", self)
@@ -288,6 +298,8 @@ class MainWindow(QMainWindow):
         # Auto Save 已移至 Ai 選單, 緊接 Auto Detect 之下
         if cfg.enable_mask_tools:
             self.file_menu.addAction(self.save_mask_action)
+        self.file_menu.addSeparator()
+        self.file_menu.addAction(self.delete_pair_action)
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.quit_action)
 
@@ -1033,21 +1045,72 @@ class MainWindow(QMainWindow):
             self.updateFocusedAnnotation()
 
     def deletePairOfImgXml(self):
-        """
-        只有在擁有圖片跟有同名.xml的情況下, 才能一起刪除
+        """把目前的圖片與同名標註成對丟到資源回收筒, 刪除前先跳視窗確認。
+
+        只處理目前開啟的資料夾, 不會去動 save_folder 裡的輸出。沒有同名 .xml 時只刪
+        圖片 (畫錯的圖就算還沒存過標註也該能清掉)。影片不支援刪除: 一個影片是整批素材
+        的來源, 且標註是存到 save_folder 的抽幀, 沒有「成對」可言。
         """
         current_path = file_h.current_image_path()
-        xml_path = getXmlPath(current_path)
-        if not current_path or not Path(xml_path).is_file():
-            QMessageBox.warning(self, "Warning", "No img or no .xml")
+        if not current_path:
+            self.statusbar.showMessage("Delete: 尚未載入影像")
+            return
+        if self.image_widget.file_type == FileType.VIDEO:
+            self.statusbar.showMessage("Delete: 影片不支援刪除，請直接在檔案總管處理")
             return
 
-        Path(xml_path).unlink(missing_ok=True)
-        Path(current_path).unlink(missing_ok=True)
+        # 圖片一定刪, xml 與 mask 存在才列入
+        targets = [Path(current_path)]
+        xml_path = getXmlPath(current_path)
+        has_xml = xml_path.is_file()
+        if has_xml:
+            targets.append(xml_path)
+        mask_path = getMaskPath(current_path)
+        if cfg.enable_mask_tools and mask_path.is_file():
+            targets.append(mask_path)
 
-        file_h.image_files.pop(file_h.current_index)
-        log.i(f"delete {current_path} and his .xml")
-        self.show_image(ShowImageCmd.SAME_INDEX)
+        note = "" if has_xml else "\n\n此圖沒有對應的 .xml，只會刪除圖片。"
+        reply = QMessageBox.question(
+            self,
+            "Delete Image & Label",
+            "確定將以下檔案移到資源回收筒？\n\n"
+            + "\n".join(f"  • {p.name}" for p in targets)
+            + f"\n\n位置：{file_h.folder_path}{note}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            # 預設焦點落在 No, 避免順手按 Enter 就刪掉
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            send2trash([str(p) for p in targets])
+        except Exception as e:
+            log.e(f"移到資源回收筒失敗 ({current_path}): {e}")
+            QMessageBox.warning(self, "Delete", "刪除失敗，請查看 log")
+            return
+        log.i(f"已刪除 {[p.name for p in targets]} 於 {file_h.folder_path}")
+
+        # 標註已隨檔案消失, 必須清掉 user_labeling: 否則之後的換圖流程會觸發儲存,
+        # 把畫面上這批舊的框寫進「下一張圖」的 XML
+        g_param.user_labeling = False
+        self.resetStates()
+        file_h.drop_current()
+        # 不走 self.show_image(): 它開頭會先儲存標註, 剛刪掉的檔案會被重新寫回來。
+        # 清單空掉時 current_image_path() 回 None, load_image 會清空畫面
+        next_path = file_h.current_image_path()
+        self.image_widget.load_image(next_path)
+        deleted = "、".join(p.name for p in targets)
+        if next_path:
+            settings.file_system.file_index = file_h.current_index
+            save_settings()
+            self.statusbar.showMessage(
+                f"已刪除 {deleted} → "
+                f"[{file_h.current_index + 1} / {len(file_h.image_files)}] "
+                f"{Path(next_path).name}"
+            )
+        else:
+            self.statusbar.showMessage(f"已刪除 {deleted}，資料夾已無可顯示的檔案")
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_PageDown:
@@ -1076,8 +1139,8 @@ class MainWindow(QMainWindow):
                 if self.image_widget.deleteSelectedAnnotation():
                     self.statusbar.showMessage("已刪除選取的標註")
                     return
-            # 不要刪除img和xml
-            # self.deletePairOfImgXml()
+            # Delete 只負責標註; 刪圖片與 xml 是 Ctrl+Delete (delete_pair_action),
+            # 分開才不會想刪一個框卻誤刪整張圖
         elif event.key() == Qt.Key.Key_Space:
             self.toggle_play_pause()
         elif event.key() == Qt.Key.Key_L:
