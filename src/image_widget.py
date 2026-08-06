@@ -1,5 +1,5 @@
 # 圖片畫布元件：負責繪製影像、bbox、polygon、mask，以及滑鼠互動（繪製、選取、拖曳、旋轉）
-# 更新日期: 2026-07-14
+# 更新日期: 2026-08-06
 import math
 import time
 import xml.etree.ElementTree as ET
@@ -540,13 +540,14 @@ class ImageWidget(QWidget):
             # 因此用傳統的方式來把opencv frame轉成pixmap
             self.file_type = FileType.VIDEO
 
+            # 換片前先關掉舊的解碼器, 否則連續切換影片會一直累積沒釋放的 cap
+            if self.cap:
+                self.cap.release()
             self.cap = cv2.VideoCapture(file_path)
             ret, self.cv_img = self.cap.read()
             self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30
             # log.info(f"Video FPS: {self.fps}")
-
-            if self.on_video_loaded_callback:
-                self.on_video_loaded_callback(self.get_total_msec())
+            # on_video_loaded_callback 移到下方 cv_img 檢查之後才呼叫
         else:
             self.file_type = FileType.IMAGE
             # imread_unicode 支援中文路徑（cv2.imread 在 Windows 走 ANSI code page，中文會回 None）
@@ -560,6 +561,12 @@ class ImageWidget(QWidget):
             self.pixmap = None
             self.update()
             return
+
+        # 影片: 確認第一幀真的讀到了才通知外面。callback 會設定 progress bar 範圍,
+        # 而它的副作用會覆寫 cv_img; 若擺在上面的檢查之前, 就分不清是影片真的載入失敗
+        # 還是只是被 callback 改掉
+        if self.file_type == FileType.VIDEO and self.on_video_loaded_callback:
+            self.on_video_loaded_callback(self.get_total_msec())
 
         height, width, channel = self.cv_img.shape
         bytesPerLine = 3 * width

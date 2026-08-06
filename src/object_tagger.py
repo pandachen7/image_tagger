@@ -560,6 +560,8 @@ class MainWindow(QMainWindow):
 
     def resetStates(self):
         g_param.auto_save_counter = 0
+        # timer 不停的話, play_state 已是 STOP 但 timer 仍以每幀間隔持續空轉
+        self.timer.stop()
         self.play_state = PlayState.STOP
         self.image_widget.clearBboxes()
 
@@ -911,11 +913,14 @@ class MainWindow(QMainWindow):
             return
         self.progress_bar.blockSignals(True)
         iw.cap.set(cv2.CAP_PROP_POS_MSEC, position)
-        ret, iw.cv_img = iw.cap.read()
+        # 先接到區域變數: seek 超過尾端時 read 會回 (False, None), 直接寫進 iw.cv_img
+        # 會把現有影像清掉, 讓後續流程誤以為影像載入失敗
+        ret, frame = iw.cap.read()
         iw.clearBboxes()
         self.progress_bar.blockSignals(False)
         self.progress_bar.setValue(position)
         if ret:
+            iw.cv_img = frame
             h, w, _ = iw.cv_img.shape
             qImg = QImage(
                 iw.cv_img.data, w, h, 3 * w, QImage.Format.Format_RGB888
@@ -1352,8 +1357,11 @@ class MainWindow(QMainWindow):
 
     def cbVideoLoaded(self, total_msec: int):
         """Callback when a video is loaded."""
-        self.progress_bar.setRange(0, total_msec)
+        # setRange 必須在 blockSignals 之後: 換到比目前播放位置更短的影片時, Qt 會把
+        # value clamp 進新範圍並發出 valueChanged, 進而讓 set_media_position 對剛開好
+        # 的 cap seek 到尾端、read 失敗, load_image 就誤判成載入失敗而彈錯誤 + 畫面全黑
         self.progress_bar.blockSignals(True)
+        self.progress_bar.setRange(0, total_msec)
         self.progress_bar.setValue(0)
         self.image_widget.cap.set(cv2.CAP_PROP_POS_MSEC, 0)
         self.progress_bar.blockSignals(False)
