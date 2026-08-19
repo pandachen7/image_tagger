@@ -1,6 +1,6 @@
 # 系統設定載入：cfg/system.yaml 不存在時自動生成預設範本（含註解）；
 # 存在時依 schema migrate（補新欄位、移除過時欄位），保留使用者既有設定值與註解。
-# 更新日期: 2026-04-25
+# 更新日期: 2026-08-18
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -46,6 +46,9 @@ show_fps: false
 # 儲存圖片與標籤的資料夾（可用相對或絕對路徑）
 save_folder: ./output
 
+# 標註 undo / redo 的最大步數 (每張影像各自計算, 換檔即清空)
+undo_limit: 60
+
 # 是否啟用 Draw / Erase / Fill 遮罩工具
 enable_mask_tools: false
 
@@ -69,6 +72,7 @@ class Config(BaseModel):
     auto_save_per_second: float = -1
     show_fps: bool = False
     save_folder: str = "./output"
+    undo_limit: int = 60
     enable_mask_tools: bool = False
     enable_obb: bool = False
     enable_sam3: bool = False

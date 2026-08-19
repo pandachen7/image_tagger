@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-08-06
+# 更新日期: 2026-08-18
 import random
 import re
 import shutil
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import cv2
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QAction, QActionGroup, QImage, QPixmap
+from PyQt6.QtGui import QAction, QActionGroup, QImage, QKeySequence, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -86,6 +86,21 @@ class MainWindow(QMainWindow):
         )
         self.delete_pair_action.triggered.connect(self.deletePairOfImgXml)
 
+        # 標註的 undo / redo; QAction 的 shortcut 會先於 keyPressEvent 攔到,
+        # 所以不必再去 keyPressEvent 裡處理 Ctrl+Z / Ctrl+Y
+        self.undo_action = QAction("Undo", self)
+        self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self.undo_action.setToolTip("還原上一步標註變更 (換檔後歸零)")
+        self.undo_action.triggered.connect(self.undoAnnotation)
+
+        self.redo_action = QAction("Redo", self)
+        # Ctrl+Y 是 Windows 慣例, Ctrl+Shift+Z 是繪圖工具慣例, 兩個都收
+        self.redo_action.setShortcuts(
+            [QKeySequence("Ctrl+Shift+Z"), QKeySequence("Ctrl+Y")]
+        )
+        self.redo_action.setToolTip("重做被還原的標註變更")
+        self.redo_action.triggered.connect(self.redoAnnotation)
+
         # Auto Save 依附於 Auto Detect, 只管自動產生的標註落檔, 故初始為 disabled
         self.auto_save_action = QAction("Auto Save", self)
         self.auto_save_action.setCheckable(True)
@@ -110,6 +125,9 @@ class MainWindow(QMainWindow):
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
         self.statusbar.showMessage("Ready")
+        # 常駐在右側而非 showMessage: 縮放倍率要一直看得到, 不能被其他訊息蓋掉
+        self.zoom_label = QLabel("")
+        self.statusbar.addPermanentWidget(self.zoom_label)
 
         # 中央 Widget
         self.central_widget = QWidget()
@@ -243,6 +261,7 @@ class MainWindow(QMainWindow):
         # 主選單
         self.menu = self.menuBar()
         self.file_menu = self.menu.addMenu("File")
+        self.edit_menu = self.menu.addMenu("Edit")
         self.label_menu = self.menu.addMenu("Label")
         self.ai_menu = self.menu.addMenu("Ai")
         self.train_menu = self.menu.addMenu("Train")
@@ -302,6 +321,9 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.delete_pair_action)
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.quit_action)
+
+        self.edit_menu.addAction(self.undo_action)
+        self.edit_menu.addAction(self.redo_action)
 
         # 變更標籤
         self.edit_label_action = QAction("Edit Label", self)
@@ -433,6 +455,7 @@ class MainWindow(QMainWindow):
         self.image_widget.set_callbacks(
             on_mouse_press=self.cbMousePress,
             on_wheel_event=self.cbWheelEvent,
+            on_view_changed=self.cbViewChanged,
             on_video_loaded=self.cbVideoLoaded,
             on_image_loaded=self.cbImageLoaded,
         )
@@ -537,6 +560,9 @@ class MainWindow(QMainWindow):
 
     def _run_detect(self):
         """執行偵測並更新 statusbar"""
+        # runInference 會把 bboxes / polygons 整批換掉, 誤按 D 會蓋掉手工標註,
+        # 所以偵測前先記一步 undo
+        self.image_widget.pushHistory()
         self.image_widget.runInference()
         nb = len(self.image_widget.bboxes) + len(self.image_widget.polygons)
         self.statusbar.showMessage(f"Detect ({inferencer.active_model_type}): {nb} annotations")
@@ -946,7 +972,19 @@ class MainWindow(QMainWindow):
             self.timer.start(self.refresh_interval)  # 重新啟動定時器
 
     def updateFocusedAnnotation(self):
-        """更新選取中的bbox或polygon的標籤名稱（支援多選）"""
+        """更新選取中的標籤名稱, 並記錄一步 undo
+
+        實際的套用邏輯在 _applyLabelToSelection; 這一層只負責歷史, 免得在原本
+        那一串 early return 裡每個分支都要各記一次。
+        """
+        iw = self.image_widget
+        iw.pushHistory()
+        self._applyLabelToSelection()
+        # 點到空白處或標籤沒變時不留下空的 undo 步驟
+        iw.dropHistoryIfUnchanged()
+
+    def _applyLabelToSelection(self):
+        """把 last_used_label 套用到選取中的 bbox 或 polygon（支援多選）"""
         iw = self.image_widget
         label = self.app_state.last_used_label
 
@@ -1117,6 +1155,26 @@ class MainWindow(QMainWindow):
         else:
             self.statusbar.showMessage(f"已刪除 {deleted}，資料夾已無可顯示的檔案")
 
+    def undoAnnotation(self):
+        """還原上一步標註變更, 並在狀態列回報結果"""
+        if self.image_widget.undo():
+            iw = self.image_widget
+            self.statusbar.showMessage(
+                f"已還原 → {len(iw.bboxes)} 個框 / {len(iw.polygons)} 個 polygon"
+            )
+        else:
+            self.statusbar.showMessage("沒有可還原的步驟 (換檔後歷史會歸零)")
+
+    def redoAnnotation(self):
+        """重做被還原的標註變更, 並在狀態列回報結果"""
+        if self.image_widget.redo():
+            iw = self.image_widget
+            self.statusbar.showMessage(
+                f"已重做 → {len(iw.bboxes)} 個框 / {len(iw.polygons)} 個 polygon"
+            )
+        else:
+            self.statusbar.showMessage("沒有可重做的步驟")
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_PageDown:
             self.show_image(ShowImageCmd.NEXT)
@@ -1138,6 +1196,8 @@ class MainWindow(QMainWindow):
             self.app_state.toggle_auto_save()
         elif event.key() == Qt.Key.Key_D:
             self.manual_detect()
+        elif event.key() == Qt.Key.Key_F:
+            self.image_widget.fitView()
         elif event.key() == Qt.Key.Key_Delete:
             # SELECT模式下先嘗試刪除選取的標註
             if self.image_widget.drawing_mode == DrawingMode.SELECT:
@@ -1343,7 +1403,20 @@ class MainWindow(QMainWindow):
         dialog = TrainYoloDialog(self, default_folder)
         dialog.exec()
 
+    def cbViewChanged(self, zoom: float):
+        """畫布縮放 / 平移後更新狀態列的倍率指示
+
+        Args:
+            zoom: 目前的縮放倍率 (1.0 = 原圖 1 pixel 對 1 螢幕 pixel)
+        """
+        self.zoom_label.setText(f"zoom {zoom * 100:.0f}%")
+
     def cbWheelEvent(self, wheel_up):
+        """Ctrl+滾輪 切換檔案 (單純滾輪已改為縮放)
+
+        Args:
+            wheel_up: 是否往上滾 (往上 = 上一個檔案)
+        """
         if self.app_state.auto_save or g_param.user_labeling:
             self.saveImgAndLabels()
         if wheel_up:
