@@ -116,7 +116,7 @@ wheels = [
 [[package]]
 name = "clip"
 version = "1.0"
-source = { git = "https://github.com/ultralytics/CLIP.git#488e81a6711eea7346872b46ea928b367da8889d" }
+source = { git = "https://github.com/ultralytics/CLIP.git?rev=488e81a6711eea7346872b46ea928b367da8889d#488e81a6711eea7346872b46ea928b367da8889d" }
 dependencies = [
     { name = "ftfy" },
     { name = "regex" },
@@ -476,19 +476,19 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "clip", git = "https://github.com/ultralytics/CLIP.git" },
-    { name = "dicttoxml", specifier = ">=1.7.16" },
-    { name = "opencv-python", specifier = ">=4.11.0.86" },
-    { name = "orjson" },
-    { name = "pydantic" },
-    { name = "pyqt6", specifier = ">=6.8.1" },
-    { name = "python-dotenv" },
-    { name = "ruamel-yaml" },
-    { name = "send2trash", specifier = ">=2.1.0" },
-    { name = "timm" },
-    { name = "torch", specifier = "==2.13", index = "https://download.pytorch.org/whl/cu130" },
-    { name = "torchvision", specifier = "==0.28", index = "https://download.pytorch.org/whl/cu130" },
-    { name = "ultralytics" },
+    { name = "clip", git = "https://github.com/ultralytics/CLIP.git?rev=488e81a6711eea7346872b46ea928b367da8889d" },
+    { name = "dicttoxml", specifier = "==1.7.16" },
+    { name = "opencv-python", specifier = "==5.0.0.93" },
+    { name = "orjson", specifier = "==3.11.9" },
+    { name = "pydantic", specifier = "==2.13.4" },
+    { name = "pyqt6", specifier = "==6.11.0" },
+    { name = "python-dotenv", specifier = "==1.2.2" },
+    { name = "ruamel-yaml", specifier = "==0.19.1" },
+    { name = "send2trash", specifier = "==2.1.0" },
+    { name = "timm", specifier = "==1.0.28" },
+    { name = "torch", specifier = "==2.13.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "torchvision", specifier = "==0.28.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "ultralytics", specifier = "==8.4.90" },
 ]
 
 [[package]]
