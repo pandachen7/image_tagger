@@ -1,5 +1,5 @@
 # 原始影像 pixel <-> widget pixel 的唯一換算處 (zoom + pan)。
-# 更新日期: 2026-08-19
+# 更新日期: 2026-08-21
 #
 # 不變量 (改動本檔以外的地方時請維持):
 #
@@ -145,6 +145,37 @@ class ViewTransform:
         """
         self.off_x = (view.width() - self.span_x) / 2.0
         self.off_y = (view.height() - self.span_y) / 2.0
+
+    def follow_view_resize(self, old_view: QSize, new_view: QSize) -> None:
+        """視窗尺寸改變時, 讓影像跟著等比例縮放
+
+        不變量是「相對於 fit 的倍率」: 視窗放大多少影像就放大多少, 使用者看到的
+        構圖 (影像的哪個範圍落在畫面上) 在 resize 前後保持一致。若只保住 zoom,
+        放大視窗只會在影像周圍長出空白, 還得再手動滾一次滾輪。
+
+        比例取 fit_zoom 的變化而不是單純的寬 (或高) 比例: 只拉寬視窗時, 能容納的
+        影像大小其實仍受高度限制, fit_zoom 已經把長寬比算進去了。
+
+        錨點取視窗中心, 中心的原圖點在 resize 後仍留在中心。
+
+        Args:
+            old_view: 變動前的 widget 尺寸
+            new_view: 變動後的 widget 尺寸
+        """
+        # 首次 resize 的 oldSize 是 (-1, -1), 視窗最小化時則會是 0
+        if min(old_view.width(), old_view.height()) <= 0:
+            return
+        if min(new_view.width(), new_view.height()) <= 0:
+            return
+        old_fit = self.fit_zoom(old_view)
+        new_fit = self.fit_zoom(new_view)
+        if old_fit <= 0 or new_fit <= 0 or old_fit == new_fit:
+            return
+        center_o = self.v2o(old_view.width() / 2.0, old_view.height() / 2.0)
+        self.zoom = max(MIN_ZOOM, min(self.zoom * (new_fit / old_fit), MAX_ZOOM))
+        # 與 zoom_by 一樣由錨點反推 offset, 連續 resize 才不會累積誤差
+        self.off_x = new_view.width() / 2.0 - center_o.x() * self.zoom
+        self.off_y = new_view.height() / 2.0 - center_o.y() * self.zoom
 
     def zoom_by(
         self, factor: float, anchor: QPointF, min_zoom: float = MIN_ZOOM

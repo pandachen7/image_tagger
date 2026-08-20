@@ -2,7 +2,7 @@
 # 標註的每次變更都會先在 self.history 記下變更前的快照, 供 undo / redo 還原
 # 影像的縮放與平移集中在 self.tf (ViewTransform); 原圖 <-> widget 的換算只走
 # _scale_to_original / _scale_to_widget, 不在別處自行乘 zoom 或加 offset
-# 更新日期: 2026-08-19
+# 更新日期: 2026-08-21
 import math
 import time
 import xml.etree.ElementTree as ET
@@ -13,7 +13,15 @@ from typing import Optional
 import cv2
 import numpy as np
 from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
-from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QPolygonF
+from PyQt6.QtGui import (
+    QColor,
+    QImage,
+    QPainter,
+    QPen,
+    QPixmap,
+    QPolygonF,
+    QResizeEvent,
+)
 from PyQt6.QtWidgets import (
     QLabel,
     QMessageBox,
@@ -373,8 +381,12 @@ class ImageWidget(QWidget):
         self._notifyViewChanged()
         self.update()
 
-    def resizeEvent(self, event):
-        """視窗尺寸變動時維持檢視合理: 還沒 fit 過就 fit, 否則只夾住 offset"""
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """視窗尺寸變動時維持檢視合理
+
+        還沒 fit 過就 fit; 否則讓影像跟著視窗等比例縮放 (視窗放大影像就放大),
+        再夾住 offset。
+        """
         super().resizeEvent(event)
         if not self.pixmap:
             return
@@ -382,6 +394,7 @@ class ImageWidget(QWidget):
             self.tf.fit(self.size())
             self._needs_fit = False
         else:
+            self.tf.follow_view_resize(event.oldSize(), self.size())
             self.tf.clamp_offset(self.size())
         self._notifyViewChanged()
 
