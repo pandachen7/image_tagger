@@ -135,7 +135,7 @@ class Inferencer:
                     )
             # Polygon（僅 segment model，masks.xy 已轉換至原圖座標）
             if is_seg and result.masks is not None:
-                tolerance = settings.models.yolo_polygon_tolerance or 0.002
+                tolerance = settings.models.yolo_polygon_tolerance or 0.01
                 for i, poly_xy in enumerate(result.masks.xy):
                     if len(poly_xy) < 3:
                         continue
@@ -175,7 +175,7 @@ class Inferencer:
                     mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                 )
                 if contours:
-                    tolerance = settings.models.sam3_polygon_tolerance or 0.002
+                    tolerance = settings.models.sam3_polygon_tolerance or 0.01
                     for poly_pts in mask_to_polygon(contours, tolerance):
                         points = [(float(x), float(y)) for x, y in poly_pts]
                         polygons.append(Polygon(points, label, conf))

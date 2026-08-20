@@ -1,5 +1,5 @@
 # Param 對話框：調整模型輸出的後處理參數
-# 更新日期: 2026-04-12
+# 更新日期: 2026-08-21
 from PyQt6.QtWidgets import (
     QDialog,
     QDoubleSpinBox,
@@ -31,7 +31,7 @@ class ParamDialog(QDialog):
         self.polygon_tolerance_spin.setRange(0.001, 0.1)
         self.polygon_tolerance_spin.setDecimals(3)
         self.polygon_tolerance_spin.setSingleStep(0.001)
-        self.polygon_tolerance_spin.setValue(settings.models.sam3_polygon_tolerance or 0.002)
+        self.polygon_tolerance_spin.setValue(settings.models.sam3_polygon_tolerance or 0.01)
 
         tolerance_tip = (
             "越小越精密, 越大越粗糙\n"

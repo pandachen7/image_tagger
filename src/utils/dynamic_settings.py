@@ -26,12 +26,12 @@ class ModelsSettings(BaseModel):
     # YOLO
     model_path: Optional[str] = None
     yolo_label_mode: Optional[str] = "bbox"  # "seg", "bbox", "all"
-    yolo_polygon_tolerance: Optional[float] = 0.002
+    yolo_polygon_tolerance: Optional[float] = 0.01
     # 信心值門檻, 低於此值的偵測結果會被丟棄 (ultralytics predict 預設 0.25)
     yolo_conf: Optional[float] = 0.25
     # SAM3
     sam3_model_path: Optional[str] = None
-    sam3_polygon_tolerance: Optional[float] = 0.002
+    sam3_polygon_tolerance: Optional[float] = 0.01
     sam3_label_mode: Optional[str] = "seg"  # "seg", "bbox", "all"
     # SAM3 的分數是 pred_logits.sigmoid() * presence_logit.sigmoid(),
     # presence 分數會整體壓低數值, 門檻的手感與 YOLO 不同

@@ -89,7 +89,7 @@ class SetYoloModelDialog(QDialog):
         self.tolerance_spin.setRange(0.001, 0.1)
         self.tolerance_spin.setDecimals(3)
         self.tolerance_spin.setSingleStep(0.001)
-        self.tolerance_spin.setValue(settings.models.yolo_polygon_tolerance or 0.002)
+        self.tolerance_spin.setValue(settings.models.yolo_polygon_tolerance or 0.01)
         tolerance_info = QLabel("\u2139")
         tolerance_info.setToolTip(
             "Polygon 簡化程度（僅 seg model 有效）\n"
