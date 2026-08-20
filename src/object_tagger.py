@@ -125,7 +125,10 @@ class MainWindow(QMainWindow):
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
         self.statusbar.showMessage("Ready")
-        # 常駐在右側而非 showMessage: 縮放倍率要一直看得到, 不能被其他訊息蓋掉
+        # 常駐在右側而非 showMessage: 幀數與縮放倍率要一直看得到, 不能被其他
+        # 訊息蓋掉。影片播放時每幀更新, 只是改 QLabel 文字, 成本可忽略
+        self.frame_label = QLabel("")
+        self.statusbar.addPermanentWidget(self.frame_label)
         self.zoom_label = QLabel("")
         self.statusbar.addPermanentWidget(self.zoom_label)
 
@@ -727,6 +730,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.blockSignals(True)  # 暫時阻止信號傳遞
             self.progress_bar.setValue(int(position))
             self.progress_bar.blockSignals(False)  # 恢復信號傳遞
+            self._update_frame_label()
 
             # 自動儲存邏輯
             if self.app_state.auto_save and cfg.auto_save_per_second > 0:
@@ -952,6 +956,7 @@ class MainWindow(QMainWindow):
                 iw.cv_img.data, w, h, 3 * w, QImage.Format.Format_RGB888
             ).rgbSwapped()
             iw.pixmap = QPixmap.fromImage(qImg)
+        self._update_frame_label()
         iw.update()
 
     def _update_refresh_interval(self) -> None:
@@ -1403,6 +1408,24 @@ class MainWindow(QMainWindow):
         dialog = TrainYoloDialog(self, default_folder)
         dialog.exec()
 
+    def _update_frame_label(self):
+        """更新狀態列的「目前幀 / 總幀數」; 非影片時清空"""
+        iw = self.image_widget
+        if iw.file_type != FileType.VIDEO or not iw.cap:
+            self.frame_label.setText("")
+            return
+        total = iw.total_frames
+        current = iw.current_frame_index()
+        if total > 0:
+            # 標籤要跟畫面一致: 剛載入時 cbVideoLoaded 會把 cap 位置 seek 回 0,
+            # 但畫面上顯示的是已經讀出來的第一幀, 所以下限取 1; seek 到尾端時
+            # POS_FRAMES 也可能超過總數, 一併夾住
+            current = max(1, min(current, total))
+            self.frame_label.setText(f"frame {current} / {total}")
+        else:
+            # 總幀數探測不到時仍報目前位置, 至少看得出播到哪
+            self.frame_label.setText(f"frame {current}")
+
     def cbViewChanged(self, zoom: float):
         """畫布縮放 / 平移後更新狀態列的倍率指示
 
@@ -1446,6 +1469,7 @@ class MainWindow(QMainWindow):
         self.speed_control.setEnabled(True)
         icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
         self.play_pause_action.setIcon(icon)
+        self._update_frame_label()
 
     def cbImageLoaded(self):
         """Callback when an image is loaded."""
@@ -1458,6 +1482,7 @@ class MainWindow(QMainWindow):
         self.speed_control.setEnabled(False)
         icon = self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton)
         self.play_pause_action.setIcon(icon)
+        self._update_frame_label()
 
 
 def main():

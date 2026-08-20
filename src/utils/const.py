@@ -1,5 +1,11 @@
-# 角落方塊半徑(螢幕px), 繪製與命中判斷共用; 方塊邊長 = CORNER_SIZE*2
+# 控制點方塊半徑(螢幕px), 繪製與命中判斷共用; 方塊邊長 = CORNER_SIZE*2
 CORNER_SIZE = 5
+# 邊控制點要出現, 該方向在畫面上至少要有這麼長 (螢幕px)。
+# 塞不下「角-邊-角」三個方塊時, 邊的中點會跟兩個角疊在一起, 想拖角卻拖到邊
+EDGE_HANDLE_MIN_SPAN = CORNER_SIZE * 6
+# resize 的最小寬高 (原圖px)。只是防 0: 拖過對邊時框會翻到另一側而非變負值,
+# 建立時的尺寸門檻另有 cfg.minimal_bbox_length 把關
+MIN_RESIZE_LENGTH = 1
 # 旋轉控制點相關常數
 ROTATION_HANDLE_RADIUS = 6  # 旋轉控制點圓圈半徑
 ROTATION_HANDLE_DISTANCE = 30  # 旋轉控制點距離 bbox 頂部的距離

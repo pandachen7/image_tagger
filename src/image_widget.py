@@ -25,6 +25,8 @@ from src.config import cfg
 from src.core import AppState
 from src.utils.const import (
     CORNER_SIZE,
+    EDGE_HANDLE_MIN_SPAN,
+    MIN_RESIZE_LENGTH,
     POLYGON_CLOSE_THRESHOLD,
     POLYGON_SELECT_PADDING,
     POLYGON_VERTEX_RADIUS,
@@ -76,6 +78,34 @@ def cv_mat_to_qimage(cv_mat: np.ndarray) -> QImage:
 
 
 class ImageWidget(QWidget):
+    # resize 控制點: 名稱 -> 在 bbox 局部座標中的位置比例 (-0.5 ~ +0.5)。
+    # 這一份同時決定「畫在哪」「點得到哪」「拖了會動哪條邊界」, 三者不會走鐘。
+    # 角落排在前面: 角落與邊的熱區在角附近會重疊, 角落優先才不會想拉兩個方向
+    # 卻只拉到一個。
+    _RESIZE_HANDLES = {
+        "top_left": (-0.5, -0.5),
+        "top_right": (0.5, -0.5),
+        "bottom_right": (0.5, 0.5),
+        "bottom_left": (-0.5, 0.5),
+        "top": (0.0, -0.5),
+        "bottom": (0.0, 0.5),
+        "left": (-0.5, 0.0),
+        "right": (0.5, 0.0),
+    }
+
+    # hover 到控制點上要顯示的游標。旋轉後的框不跟著轉游標: 那要按實際角度挑
+    # 八個方向, 收益遠小於複雜度
+    _HANDLE_CURSORS = {
+        "top_left": Qt.CursorShape.SizeFDiagCursor,
+        "bottom_right": Qt.CursorShape.SizeFDiagCursor,
+        "top_right": Qt.CursorShape.SizeBDiagCursor,
+        "bottom_left": Qt.CursorShape.SizeBDiagCursor,
+        "top": Qt.CursorShape.SizeVerCursor,
+        "bottom": Qt.CursorShape.SizeVerCursor,
+        "left": Qt.CursorShape.SizeHorCursor,
+        "right": Qt.CursorShape.SizeHorCursor,
+    }
+
     def __init__(self, app_state: AppState):
         super().__init__()
         self.setMouseTracking(True)  # 即使沒按住按鍵也能追蹤滑鼠移動
@@ -84,10 +114,6 @@ class ImageWidget(QWidget):
         self.image_label = QLabel()
         self.pixmap = None
         self.bboxes: list[Bbox] = []
-        # start_pos / end_pos 現在只服務 resize (原圖座標) 與 mask 筆刷;
-        # BBOX 兩點模式改用下面的 draw_start / draw_end
-        self.start_pos = None
-        self.end_pos = None
         self.drawing = False
         # BBOX 兩點模式進行中的兩個角 (原圖座標)。存原圖而非 widget 座標:
         # 畫到一半縮放或平移時, widget 座標會整組錯位
@@ -98,12 +124,11 @@ class ImageWidget(QWidget):
         self.resizing = False
         self.rotating = False  # 旋轉狀態
         self.selected_bbox: Optional[Bbox] = None
-        self.resizing_corner = None
-        self.original_bbox = None  # 儲存原始 bbox 資訊
+        self.resizing_handle: str | None = None  # 正在拖的控制點名稱
+        self.original_bbox = None  # 拖曳前的 (x, y, width, height)
         self.original_angle = None  # 儲存原始角度
         self.rotation_start_angle = None  # 旋轉開始時的滑鼠角度
         self.current_mouse_pos = None  # 儲存滑鼠當前位置
-        self.fixed_corner_pos = None  # 儲存resize時固定的對角點位置（原始座標）
 
         # Mask drawing properties
         self.drawing_mode = DrawingMode.SELECT
@@ -164,6 +189,7 @@ class ImageWidget(QWidget):
         self.on_image_loaded_callback = None
         self.file_type = FileType.IMAGE
         self.fps = 30
+        self.total_frames = 0  # 影片總幀數, 換檔時算一次
         # (x, y)--->┌－－－－－－－┐ ╮
         #           │             │ │
         #           │<---width--->│  height
@@ -255,6 +281,73 @@ class ImageWidget(QWidget):
         if not self.pixmap:
             return QPointF(point)
         return self.tf.o2v(point.x(), point.y())
+
+    def _clampToImage(self, p: QPointF) -> QPointF:
+        """把原圖座標夾進影像範圍內
+
+        標註不該跑到影像外: 存進 VOC XML 會出現負座標或超過 size 的值, 下游轉
+        YOLO 正規化後也會落在 [0,1] 之外。
+
+        Args:
+            p: 原圖座標
+
+        Returns:
+            QPointF: 夾進 [0, img_w] x [0, img_h] 的座標
+        """
+        if not self.pixmap:
+            return p
+        return QPointF(
+            min(max(p.x(), 0.0), float(self.tf.img_w)),
+            min(max(p.y(), 0.0), float(self.tf.img_h)),
+        )
+
+    def _clampBboxToImage(self, bbox: Bbox) -> None:
+        """把未旋轉的 bbox 裁進影像範圍 (就地修改)
+
+        是「裁切邊界」而不是「整個平移回來」: 框超出邊界通常代表物體被影像邊緣
+        截斷, 裁掉溢出的部分後框仍貼著可見的那一半; 平移的話框會整個跑離物體。
+        移動操作要的才是平移 (框不該變形), 那由 _clampMoveDelta 夾位移量處理。
+
+        旋轉過的框不在這裡處理: 要裁的是旋轉後的四個角, 而把角拉回來會連帶改變
+        角度或讓框變形 —— 那不是拖控制點時預期的結果。旋轉框改為在拖曳時夾游標
+        位置, 邊界因此也不會離影像太遠。
+
+        Args:
+            bbox: 要裁的 bbox (就地修改)
+        """
+        if not self.pixmap or bbox.angle != 0:
+            return
+        x1 = min(max(bbox.x, 0), self.tf.img_w)
+        y1 = min(max(bbox.y, 0), self.tf.img_h)
+        x2 = min(max(bbox.x + bbox.width, 0), self.tf.img_w)
+        y2 = min(max(bbox.y + bbox.height, 0), self.tf.img_h)
+        bbox.x, bbox.y = x1, y1
+        bbox.width = max(1, x2 - x1)
+        bbox.height = max(1, y2 - y1)
+
+    def _clampPolygonToImage(self, polygon: Polygon) -> None:
+        """把 polygon 的所有頂點夾進影像範圍 (就地修改)
+
+        Args:
+            polygon: 要夾的 polygon (就地修改)
+        """
+        if not self.pixmap:
+            return
+        w, h = float(self.tf.img_w), float(self.tf.img_h)
+        polygon.points = [
+            (min(max(px, 0.0), w), min(max(py, 0.0), h)) for px, py in polygon.points
+        ]
+
+    def _clampAnnotationsToImage(self) -> None:
+        """把目前所有標註夾進影像範圍
+
+        畫面上不該出現超出影像的框, 不論它是怎麼來的 —— 讀進來的 XML、偵測結果、
+        還是手動畫的。旋轉過的框 (OBB) 例外, 理由見 _clampBboxToImage。
+        """
+        for b in self.bboxes:
+            self._clampBboxToImage(b)
+        for p in self.polygons:
+            self._clampPolygonToImage(p)
 
     def _min_zoom(self) -> float:
         """這張影像允許的最小 zoom
@@ -374,8 +467,8 @@ class ImageWidget(QWidget):
         """把位移夾住, 讓整組標註不被拖出影像外
 
         對整組算一次而不是各自夾: 各自夾的話碰到邊界的那幾個會先停下、其他繼續走,
-        整組的相對位置就散掉了。整組本來就超出影像時 (偵測結果常貼邊) 不夾, 否則
-        一按下去就會被強制推回來。
+        整組的相對位置就散掉了。整組本來就超出影像時不夾, 否則一按下去就會被強制
+        推回來 —— 讀檔與偵測都已經先夾過, 所以這只會發生在 OBB 上。
 
         Args:
             dx: 原圖座標的 x 位移
@@ -384,6 +477,14 @@ class ImageWidget(QWidget):
         Returns:
             tuple: 夾過的 (dx, dy)
         """
+        # 組裡有旋轉框就整組不夾: OBB 的角落本來就可能落在影像外 (貼著邊緣的斜物體),
+        # 夾住會讓那種標註根本畫不出來。理由與 _clampBboxToImage 相同
+        if any(
+            0 <= idx < len(self.bboxes) and self.bboxes[idx].angle
+            for idx, _ in self.move_orig_boxes
+        ):
+            return dx, dy
+
         lo_xs, hi_xs, lo_ys, hi_ys = [], [], [], []
         for idx, (ox, oy) in self.move_orig_boxes:
             if 0 <= idx < len(self.bboxes):
@@ -453,32 +554,79 @@ class ImageWidget(QWidget):
         self.rotation_start_angle = math.degrees(math.atan2(dy, dx))
         self.update()
 
-    def _beginResize(self, pos: QPoint, bbox: Bbox, corner: str) -> None:
-        """開始拖曳角落控制點改大小
+    def _beginResize(self, pos: QPoint, bbox: Bbox, handle: str) -> None:
+        """開始拖曳控制點改大小
 
         Args:
             pos: 按下的 widget 座標
             bbox: 目標 bbox
-            corner: 命中的角落名稱
+            handle: 命中的控制點名稱 (見 _RESIZE_HANDLES)
         """
         self.selected_bbox = bbox
         bbox.color_pen = ColorPen.YELLOW
         self.pushHistory()
-        self.resizing_corner = corner
+        self.resizing_handle = handle
         self.original_bbox = (bbox.x, bbox.y, bbox.width, bbox.height)
-        self.start_pos = self._scale_to_original(pos)
-        if bbox.angle != 0:
-            rot_corners = self._getRotatedCorners(bbox)
-            corner_map = {
-                "top_left": 2,
-                "top_right": 3,
-                "bottom_right": 0,
-                "bottom_left": 1,
-            }
-            fixed_idx = corner_map.get(corner, 0)
-            self.fixed_corner_pos = rot_corners[fixed_idx]
         self.resizing = True
         self.update()
+
+    def _applyResize(self, pos: QPoint) -> None:
+        """把游標位置套用到正在 resize 的 bbox
+
+        角落與邊、旋轉與未旋轉走同一條路: 都在 bbox 的局部座標系 (以拖曳前的
+        中心為原點、反旋轉) 裡改邊界。角落動兩條邊界、邊只動一條, 差別完全來自
+        _RESIZE_HANDLES 裡的位置比例, 所以「畫在哪」與「拖了會動哪」不會走鐘。
+
+        邊界一律從拖曳前的 original_bbox 重算而非逐次累加, 免得取整誤差疊起來。
+
+        Args:
+            pos: 目前的 widget 座標
+        """
+        bbox = self.selected_bbox
+        if bbox is None or self.original_bbox is None:
+            return
+        ox, oy, ow, oh = self.original_bbox
+        cx = ox + ow / 2
+        cy = oy + oh / 2
+
+        # 游標先夾進影像再轉局部座標: 邊界跟著游標走, 游標不出界框就不出界
+        p = self._clampToImage(self._scale_to_original_f(pos))
+        angle_rad = math.radians(bbox.angle)
+        cos_i, sin_i = math.cos(-angle_rad), math.sin(-angle_rad)
+        mdx, mdy = p.x() - cx, p.y() - cy
+        mx = mdx * cos_i - mdy * sin_i
+        my = mdx * sin_i + mdy * cos_i
+
+        # 拖曳前的四條邊界 (局部座標), 再讓這個控制點負責的那幾條跟著游標走
+        x_lo, x_hi = -ow / 2.0, ow / 2.0
+        y_lo, y_hi = -oh / 2.0, oh / 2.0
+        fx, fy = self._RESIZE_HANDLES.get(self.resizing_handle, (0.0, 0.0))
+        if fx < 0:
+            x_lo = mx
+        elif fx > 0:
+            x_hi = mx
+        if fy < 0:
+            y_lo = my
+        elif fy > 0:
+            y_hi = my
+
+        # abs 而非夾住: 拖過對邊時框翻到另一側, 不會產生負的寬高寫進 XML
+        new_w = max(abs(x_hi - x_lo), MIN_RESIZE_LENGTH)
+        new_h = max(abs(y_hi - y_lo), MIN_RESIZE_LENGTH)
+        lcx = (x_lo + x_hi) / 2.0
+        lcy = (y_lo + y_hi) / 2.0
+
+        # 新中心轉回全域座標
+        cos_a, sin_a = math.cos(angle_rad), math.sin(angle_rad)
+        ncx = lcx * cos_a - lcy * sin_a + cx
+        ncy = lcx * sin_a + lcy * cos_a + cy
+
+        bbox.width = int(round(new_w))
+        bbox.height = int(round(new_h))
+        bbox.x = int(round(ncx - new_w / 2))
+        bbox.y = int(round(ncy - new_h / 2))
+        # 收尾再夾一次: 取整與 MIN_RESIZE_LENGTH 的下限都可能讓邊界溢出個位數 px
+        self._clampBboxToImage(bbox)
 
     def _startPan(self, pos: QPointF) -> None:
         """開始平移檢視
@@ -524,42 +672,65 @@ class ImageWidget(QWidget):
             result = cv2.pointPolygonTest(polygon, point, False)
             return result >= 0
 
-    def _isInCorner(self, pos, bbox: Bbox) -> str:
-        """檢查滑鼠是否在角落，並且resize (以螢幕像素判斷, 與繪製的方塊大小一致)"""
-        if bbox.angle == 0:
-            # 四個角落轉為 widget 座標, 在螢幕像素下判斷命中
-            corner_pts = {
-                "top_left": QPoint(bbox.x, bbox.y),
-                "top_right": QPoint(bbox.x + bbox.width, bbox.y),
-                "bottom_left": QPoint(bbox.x, bbox.y + bbox.height),
-                "bottom_right": QPoint(
-                    bbox.x + bbox.width, bbox.y + bbox.height
-                ),
-            }
-            for corner, cpt in corner_pts.items():
-                wpt = self._scale_to_widget(cpt)
-                rect = QRect(
-                    wpt.x() - CORNER_SIZE,
-                    wpt.y() - CORNER_SIZE,
-                    CORNER_SIZE * 2,
-                    CORNER_SIZE * 2,
-                )
-                if rect.contains(pos):
-                    return corner
-            return None
-        else:
-            # 旋轉的情況，使用角點距離檢測 (widget 座標)
-            corners = self._getRotatedCorners(bbox)
-            corner_names = ["top_left", "top_right", "bottom_right", "bottom_left"]
+    def _resizeHandlePoints(self, bbox: Bbox) -> dict[str, tuple[float, float]]:
+        """這個 bbox 目前提供的 resize 控制點 -> 原圖座標
 
-            for i, (cx, cy) in enumerate(corners):
-                wpt = self._scale_to_widget(QPoint(int(cx), int(cy)))
-                dx = pos.x() - wpt.x()
-                dy = pos.y() - wpt.y()
-                distance = (dx * dx + dy * dy) ** 0.5
-                if distance <= CORNER_SIZE * 2:
-                    return corner_names[i]
-            return None
+        繪製與命中判斷共用這一份, 兩邊才不會對不上。旋轉的框也走同一條路,
+        差別只是位置先繞中心轉過。
+
+        Args:
+            bbox: 目標 bbox
+
+        Returns:
+            dict: 控制點名稱 -> (原圖 x, 原圖 y); 角落在前、邊在後
+        """
+        cx = bbox.x + bbox.width / 2
+        cy = bbox.y + bbox.height / 2
+        angle_rad = math.radians(bbox.angle)
+        cos_a, sin_a = math.cos(angle_rad), math.sin(angle_rad)
+
+        # 框在畫面上太窄/太扁時就不給那個方向的邊控制點
+        wide_enough = self.tf.o2v_len(bbox.width) >= EDGE_HANDLE_MIN_SPAN
+        tall_enough = self.tf.o2v_len(bbox.height) >= EDGE_HANDLE_MIN_SPAN
+
+        pts = {}
+        for name, (fx, fy) in self._RESIZE_HANDLES.items():
+            if name in ("top", "bottom") and not wide_enough:
+                continue
+            if name in ("left", "right") and not tall_enough:
+                continue
+            dx = fx * bbox.width
+            dy = fy * bbox.height
+            pts[name] = (
+                cx + dx * cos_a - dy * sin_a,
+                cy + dx * sin_a + dy * cos_a,
+            )
+        return pts
+
+    def _hitResizeHandle(self, pos, bbox: Bbox) -> str | None:
+        """檢查滑鼠是否落在某個 resize 控制點上
+
+        以螢幕像素判斷, 與繪製的方塊大小一致 —— 熱區不隨影像縮放脹縮, 也不會
+        大於看得到的方塊。
+
+        Args:
+            pos: widget 座標
+            bbox: 目標 bbox
+
+        Returns:
+            控制點名稱 (見 _RESIZE_HANDLES), 沒命中則 None
+        """
+        for name, (ox, oy) in self._resizeHandlePoints(bbox).items():
+            wpt = self._scale_to_widget(QPoint(int(ox), int(oy)))
+            rect = QRect(
+                wpt.x() - CORNER_SIZE,
+                wpt.y() - CORNER_SIZE,
+                CORNER_SIZE * 2,
+                CORNER_SIZE * 2,
+            )
+            if rect.contains(pos):
+                return name
+        return None
 
     def _getRotationHandlePos(self, bbox: Bbox) -> QPoint:
         """取得旋轉控制點的位置（原始座標）"""
@@ -768,6 +939,11 @@ class ImageWidget(QWidget):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to parse XML: {e}")
 
+            # 讀進來的標註也夾: 畫面上不該出現超出影像的框, 不論它是怎麼來的。
+            # 這裡刻意不設 user_labeling —— 只是翻過去看一眼就把檔案改掉不合理;
+            # 一旦真的動過標註, 存檔時寫出去的自然就是夾過的值
+            self._clampAnnotationsToImage()
+
             if self.bboxes or self.polygons:
                 return True
             else:
@@ -812,6 +988,9 @@ class ImageWidget(QWidget):
                 self.bboxes = bboxes
                 self.polygons = polygons
 
+        # 偵測結果偶爾會溢出影像邊界, 一併夾回來 —— 那些框會直接被存成 XML
+        self._clampAnnotationsToImage()
+
         # 過濾掉太小的偵測結果
         min_len = cfg.minimal_bbox_length
         self.bboxes = [
@@ -849,6 +1028,43 @@ class ImageWidget(QWidget):
             log.error(f"probe video duration failed: {e}")
             total_msec = 0
         return total_msec
+
+    def get_total_frames(self) -> int:
+        """取得影片總幀數
+
+        Returns:
+            int: 總幀數; 非影片或探測失敗時回傳 0
+        """
+        if not self.cap or self.file_type != FileType.VIDEO:
+            return 0
+        try:
+            total = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            if total and total > 0:
+                return int(total)
+            # 部分編碼/串流的 CAP_PROP_FRAME_COUNT 會回傳 0 或負值, 此時用
+            # get_total_msec() 探測出來的長度換算 (它會 seek 到尾端再還原位置)
+            fps = self.fps or 30
+            return int(self.get_total_msec() * fps / 1000)
+        except Exception as e:
+            log.e(f"probe video frame count failed: {e}")
+            return 0
+
+    def current_frame_index(self) -> int:
+        """取得目前的幀序號 (1-based)
+
+        CAP_PROP_POS_FRAMES 是「下一個要讀的幀」, read() 之後剛好等於已讀到的
+        那一幀的 1-based 編號, 與存檔檔名用的編號一致。
+
+        Returns:
+            int: 幀序號; 非影片或取不到時回傳 0
+        """
+        if not self.cap or self.file_type != FileType.VIDEO:
+            return 0
+        try:
+            return int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
+        except Exception as e:
+            log.e(f"read video frame position failed: {e}")
+            return 0
 
     def set_drawing_mode(self, mode: DrawingMode):
         """切換繪圖模式"""
@@ -895,6 +1111,9 @@ class ImageWidget(QWidget):
             self.pixmap = None
             self.update()
             return
+
+        # 總幀數在這裡算一次就好: 探測失敗時要 seek 到尾端, 不適合每幀重算
+        self.total_frames = self.get_total_frames() if self.file_type == FileType.VIDEO else 0
 
         # 影片: 確認第一幀真的讀到了才通知外面。callback 會設定 progress bar 範圍,
         # 而它的副作用會覆寫 cv_img; 若擺在上面的檢查之前, 就分不清是影片真的載入失敗
@@ -952,9 +1171,8 @@ class ImageWidget(QWidget):
         self._move_pushed = False
         self.resizing = False
         self.rotating = False
-        self.resizing_corner = None
+        self.resizing_handle = None
         self.original_bbox = None
-        self.fixed_corner_pos = None
 
     def clearBboxes(self):
         """重置 Bounding Box 與 Polygon 資訊 (換檔 / 換幀), 並清空 undo 歷史
@@ -1212,25 +1430,13 @@ class ImageWidget(QWidget):
                     handle_pos_widget, ROTATION_HANDLE_RADIUS, ROTATION_HANDLE_RADIUS
                 )
 
-            # SELECT模式下繪製角落拖曳方塊
+            # SELECT模式下繪製 resize 控制點 (四角 + 四邊)
             if self.drawing_mode == DrawingMode.SELECT:
                 painter.setPen(QPen(QColor(255, 255, 0), 1))
                 painter.setBrush(QColor(255, 255, 255, 200))
-                if focused_bbox.angle == 0:
-                    corner_pts = [
-                        QPoint(focused_bbox.x, focused_bbox.y),
-                        QPoint(focused_bbox.x + focused_bbox.width, focused_bbox.y),
-                        QPoint(focused_bbox.x, focused_bbox.y + focused_bbox.height),
-                        QPoint(
-                            focused_bbox.x + focused_bbox.width,
-                            focused_bbox.y + focused_bbox.height,
-                        ),
-                    ]
-                else:
-                    rot_corners = self._getRotatedCorners(focused_bbox)
-                    corner_pts = [QPoint(int(x), int(y)) for x, y in rot_corners]
-                for cpt in corner_pts:
-                    wpt = self._scale_to_widget(cpt)
+                # 與命中判斷共用同一份幾何, 畫得到的就點得到
+                for ox, oy in self._resizeHandlePoints(focused_bbox).values():
+                    wpt = self._scale_to_widget(QPoint(int(ox), int(oy)))
                     painter.drawRect(
                         wpt.x() - CORNER_SIZE,
                         wpt.y() - CORNER_SIZE,
@@ -1588,9 +1794,9 @@ class ImageWidget(QWidget):
                     if cfg.enable_obb and self._isOnRotationHandle(pos, focused_bbox):
                         self._beginRotate(pos, focused_bbox)
                         return
-                    corner = self._isInCorner(pos, focused_bbox)
-                    if corner:
-                        self._beginResize(pos, focused_bbox, corner)
+                    handle = self._hitResizeHandle(pos, focused_bbox)
+                    if handle:
+                        self._beginResize(pos, focused_bbox, handle)
                         return
 
                 # 3. 多選狀態下點在任一選取項上 → 整批一起移動, 不打散選取
@@ -1677,15 +1883,13 @@ class ImageWidget(QWidget):
                     self.current_polygon_points = []
                     g_param.user_labeling = True
                 else:
-                    # Add vertex (存原圖座標)
+                    # Add vertex (存原圖座標, 夾在影像內)
                     self.current_polygon_points.append(
-                        self._scale_to_original_f(pos)
+                        self._clampToImage(self._scale_to_original_f(pos))
                     )
                 self.update()
                 return
             elif self.drawing_mode in [DrawingMode.MASK_DRAW, DrawingMode.MASK_ERASE]:
-                self.start_pos = event.pos()
-                self.end_pos = event.pos()
                 self.drawing = True
                 scaled_pos = self._scale_to_original(event.pos())
                 self.last_pos = scaled_pos
@@ -1696,12 +1900,17 @@ class ImageWidget(QWidget):
                 # BBOX模式：純粹兩點建立，不處理resize/rotate
                 if self.drawing:
                     # 第二次click：建立bbox
-                    self.draw_end = self._scale_to_original_f(event.pos())
+                    self.draw_end = self._clampToImage(
+                        self._scale_to_original_f(event.pos())
+                    )
                     self.drawing = False
                     self._finalizeBbox()
                 else:
-                    # 第一次click：記錄起點 (原圖座標)
-                    self.draw_start = self._scale_to_original_f(event.pos())
+                    # 第一次click：記錄起點 (原圖座標, 夾在影像內)。在記錄時就夾,
+                    # 拖曳中的預覽框與面積數字才會跟最後建出來的框一致
+                    self.draw_start = self._clampToImage(
+                        self._scale_to_original_f(event.pos())
+                    )
                     self.draw_end = QPointF(self.draw_start)
                     self.drawing = True
 
@@ -1750,10 +1959,12 @@ class ImageWidget(QWidget):
         # SELECT模式: polygon頂點拖曳
         if self.drawing_mode == DrawingMode.SELECT and self.dragging_vertex_idx >= 0:
             if 0 <= self.idx_focus_polygon < len(self.polygons):
-                orig_pos = self._scale_to_original(event.pos())
+                orig_pos = self._clampToImage(
+                    self._scale_to_original_f(event.pos())
+                )
                 self.polygons[self.idx_focus_polygon].points[
                     self.dragging_vertex_idx
-                ] = (float(orig_pos.x()), float(orig_pos.y()))
+                ] = (orig_pos.x(), orig_pos.y())
                 self.update()
                 return
 
@@ -1788,12 +1999,10 @@ class ImageWidget(QWidget):
                         self.setCursor(Qt.CursorShape.CrossCursor)
                         cursor_changed = True
                     else:
-                        corner = self._isInCorner(event.pos(), focused_bbox)
-                        if corner in ("top_left", "bottom_right"):
-                            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-                            cursor_changed = True
-                        elif corner in ("top_right", "bottom_left"):
-                            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+                        handle = self._hitResizeHandle(event.pos(), focused_bbox)
+                        shape = self._HANDLE_CURSORS.get(handle)
+                        if shape is not None:
+                            self.setCursor(shape)
                             cursor_changed = True
             # 落在選取中的標註上 → 提示可以拖著整體移動
             if not cursor_changed and idle and self._hitMovableTarget(event.pos()):
@@ -1805,95 +2014,11 @@ class ImageWidget(QWidget):
         if self.drawing and self.drawing_mode == DrawingMode.BBOX:
             # BBOX兩點模式：只在滑鼠按鍵未按住時（第一點已釋放後移動）才顯示預覽
             if not (event.buttons() & Qt.MouseButton.LeftButton):
-                self.draw_end = self._scale_to_original_f(event.pos())
+                self.draw_end = self._clampToImage(
+                    self._scale_to_original_f(event.pos())
+                )
         elif self.resizing:
-            pos = self._scale_to_original(event.pos())
-
-            if self.selected_bbox.angle == 0:
-                # 未旋轉的情況，使用原有邏輯
-                dx = pos.x() - self.start_pos.x()
-                dy = pos.y() - self.start_pos.y()
-
-                # 根據不同的角落調整大小
-                if self.resizing_corner == "top_left":
-                    self.selected_bbox.x = self.original_bbox[0] + dx
-                    self.selected_bbox.y = self.original_bbox[1] + dy
-                    self.selected_bbox.width = self.original_bbox[2] - dx
-                    self.selected_bbox.height = self.original_bbox[3] - dy
-                elif self.resizing_corner == "top_right":
-                    self.selected_bbox.y = self.original_bbox[1] + dy
-                    self.selected_bbox.width = self.original_bbox[2] + dx
-                    self.selected_bbox.height = self.original_bbox[3] - dy
-                elif self.resizing_corner == "bottom_left":
-                    self.selected_bbox.x = self.original_bbox[0] + dx
-                    self.selected_bbox.width = self.original_bbox[2] - dx
-                    self.selected_bbox.height = self.original_bbox[3] + dy
-                elif self.resizing_corner == "bottom_right":
-                    self.selected_bbox.width = self.original_bbox[2] + dx
-                    self.selected_bbox.height = self.original_bbox[3] + dy
-            else:
-                # 旋轉的情況，固定對角點進行resize
-                # 獲取固定點和滑鼠位置
-                fixed_x, fixed_y = self.fixed_corner_pos
-                mouse_x, mouse_y = pos.x(), pos.y()
-
-                # 計算當前bbox的中心點（用於座標轉換）
-                orig_center_x = self.original_bbox[0] + self.original_bbox[2] / 2
-                orig_center_y = self.original_bbox[1] + self.original_bbox[3] / 2
-
-                # 將固定點和滑鼠點轉換到局部座標系（相對於原始中心，反旋轉）
-                angle_rad = -math.radians(self.selected_bbox.angle)  # 反向旋轉
-
-                # 固定點的局部座標
-                fixed_dx = fixed_x - orig_center_x
-                fixed_dy = fixed_y - orig_center_y
-                local_fixed_x = fixed_dx * math.cos(angle_rad) - fixed_dy * math.sin(
-                    angle_rad
-                )
-                local_fixed_y = fixed_dx * math.sin(angle_rad) + fixed_dy * math.cos(
-                    angle_rad
-                )
-
-                # 滑鼠點的局部座標
-                mouse_dx = mouse_x - orig_center_x
-                mouse_dy = mouse_y - orig_center_y
-                local_mouse_x = mouse_dx * math.cos(angle_rad) - mouse_dy * math.sin(
-                    angle_rad
-                )
-                local_mouse_y = mouse_dx * math.sin(angle_rad) + mouse_dy * math.cos(
-                    angle_rad
-                )
-
-                # 在局部座標系中計算新的寬高
-                new_width = abs(local_mouse_x - local_fixed_x)
-                new_height = abs(local_mouse_y - local_fixed_y)
-
-                # 設置最小值
-                new_width = max(new_width, 10)
-                new_height = max(new_height, 10)
-
-                # 計算新的中心點（局部座標）
-                new_local_center_x = (local_mouse_x + local_fixed_x) / 2
-                new_local_center_y = (local_mouse_y + local_fixed_y) / 2
-
-                # 將新的中心點轉換回全局座標系（旋轉）
-                angle_rad = math.radians(self.selected_bbox.angle)  # 正向旋轉
-                new_center_x = (
-                    new_local_center_x * math.cos(angle_rad)
-                    - new_local_center_y * math.sin(angle_rad)
-                    + orig_center_x
-                )
-                new_center_y = (
-                    new_local_center_x * math.sin(angle_rad)
-                    + new_local_center_y * math.cos(angle_rad)
-                    + orig_center_y
-                )
-
-                # 更新bbox
-                self.selected_bbox.width = int(new_width)
-                self.selected_bbox.height = int(new_height)
-                self.selected_bbox.x = int(new_center_x - new_width / 2)
-                self.selected_bbox.y = int(new_center_y - new_height / 2)
+            self._applyResize(event.pos())
 
         elif self.rotating:
             # 計算當前滑鼠相對於 bbox 中心的角度
@@ -1956,9 +2081,8 @@ class ImageWidget(QWidget):
             if self.resizing:
                 self.resizing = False
                 self.selected_bbox = None
-                self.resizing_corner = None
+                self.resizing_handle = None
                 self.original_bbox = None
-                self.fixed_corner_pos = None
                 self.dropHistoryIfUnchanged()
 
             elif self.rotating:
