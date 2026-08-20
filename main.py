@@ -17,6 +17,7 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 # 用 setdefault 是為了保留從外部環境變數覆寫成 0 的餘地。
 os.environ.setdefault("ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS", "1")
 
+import logging
 import sys
 
 import torch  # torch必須比pyqt還早, 以免索引出錯
@@ -25,6 +26,21 @@ from src.object_tagger import main
 from src.utils.logger import getUniqueLogger
 
 log = getUniqueLogger(__file__)
+
+
+def _silence_ultralytics_skip_notice() -> None:
+    """濾掉 ultralytics 每次跳過 requirements 檢查印出的那一行。
+
+    上面關掉 AutoUpdate 後, check_requirements 每被呼叫一次就印一行, 而 SAM3 的
+    ViTDet 是每個 Block 各檢查一次 timm, 載入一次就洗出三十幾行。這裡只濾掉那一
+    句, ultralytics 其餘訊息照常顯示。
+    logger 名稱固定是 "ultralytics", 用標準 logging 取到的是同一個物件, 不必為了
+    加 filter 先付 import ultralytics 的代價。
+    """
+    def _drop(record: logging.LogRecord) -> bool:
+        return "SKIP_REQUIREMENTS_CHECKS" not in record.getMessage()
+
+    logging.getLogger("ultralytics").addFilter(_drop)
 
 
 def _install_excepthook() -> None:
@@ -47,6 +63,7 @@ def _install_excepthook() -> None:
 # module-level 的 print 會被印很多次，所以放進 __main__ guard。
 if __name__ == "__main__":
     _install_excepthook()
+    _silence_ultralytics_skip_notice()
     print("torch version:", torch.__version__)
     print("cuda available:", torch.cuda.is_available())
     print("cuda version:", torch.version.cuda)
