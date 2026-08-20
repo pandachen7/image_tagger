@@ -94,7 +94,7 @@ class Inferencer:
                         task="segment",
                         mode="predict",
                         model=self.sam_model_path,
-                        half=True,
+                        quantize=16,  # 16 = FP16, 取代已 deprecated 的 half=True
                         verbose=False,
                     )
                     self._sam_predictor = SAM3SemanticPredictor(overrides=overrides)

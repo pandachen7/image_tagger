@@ -211,7 +211,8 @@ class CategorizeMediaDialog(QDialog):
                 overrides = dict(
                     conf=settings.models.sam3_conf or 0.25,
                     imgsz=630, task="segment",
-                    mode="predict", model=model_path, half=True, verbose=False,
+                    # quantize=16 即 FP16, 取代已 deprecated 的 half=True
+                    mode="predict", model=model_path, quantize=16, verbose=False,
                 )
                 model = SAM3SemanticPredictor(overrides=overrides)
             else:
