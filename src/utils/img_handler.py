@@ -1,5 +1,5 @@
 # 管理 YOLO/SAM3 模型推論, 包含 mask 轉 polygon 功能
-# updated: 2026-04-02
+# updated: 2026-08-20
 import time
 from typing import Optional
 
@@ -27,6 +27,19 @@ def mask_to_polygon(contours, tolerance=0.01):
         if len(approx) >= 3:
             polygons.append(approx.squeeze().tolist())
     return polygons
+
+
+def sam3_label_conf(boxes_np, idx: int, labels: list[str]) -> tuple[str, float]:
+    """
+    由 SAM3 的 pred_boxes 取出第 idx 個偵測的 (label, confidence)。
+    boxes_np: (N, 6) = xyxy + score + cls, 其中 cls 為 text prompt 的索引。
+    """
+    fallback = labels[-1] if labels else "object"
+    if boxes_np is None or idx >= len(boxes_np):
+        return fallback, -1.0
+    cls_idx = int(boxes_np[idx][5])
+    label = labels[cls_idx] if 0 <= cls_idx < len(labels) else fallback
+    return label, float(boxes_np[idx][4])
 
 
 class Inferencer:
@@ -76,7 +89,7 @@ class Inferencer:
                     from ultralytics.models.sam import SAM3SemanticPredictor
 
                     overrides = dict(
-                        conf=0.25,
+                        conf=settings.models.sam3_conf or 0.25,
                         imgsz=630,  # 設愈高, VRAM容易不夠, 建議14倍數的630
                         task="segment",
                         mode="predict",
@@ -99,7 +112,8 @@ class Inferencer:
 
     def infer_yolo(self, cv_img) -> tuple[list[Bbox], list[Polygon]]:
         """YOLO inference. 依 model task 與 yolo_label_mode 回傳 bbox / polygon / all。"""
-        results = self._yolo_model.predict(cv_img, verbose=False)
+        conf = settings.models.yolo_conf or 0.25
+        results = self._yolo_model.predict(cv_img, conf=conf, verbose=False)
         is_seg = self._yolo_model.task == "segment"
         bboxes, polygons = [], []
 
@@ -140,6 +154,8 @@ class Inferencer:
         """SAM3 inference. image: np.ndarray (BGR) or file path str.
         Returns (list of Bbox, list of Polygon)."""
         self._sam_predictor.set_image(image)
+        # 直接改 predictor.args.conf, 調門檻就不必重建 predictor 重載整個 SAM3
+        self._sam_predictor.args.conf = settings.models.sam3_conf or 0.25
         # 使用 dict.fromkeys 保序去重, 避免 set() 順序不確定導致標籤錯亂
         labels = list(dict.fromkeys(settings.class_names.text_prompts or []))
         bboxes, polygons = [], []
@@ -147,10 +163,13 @@ class Inferencer:
         masks, boxes = self._sam_predictor.inference_features(
             self._sam_predictor.features, src_shape=src_shape, text=labels
         )
+        # boxes 為 (N, 6) = xyxy + score + cls, cls 是 text prompt 的索引 (非偵測序號);
+        # masks 與 boxes 經過同一組 conf 過濾與 NMS, 兩者索引一一對應
+        boxes_np = boxes.cpu().numpy() if boxes is not None else None
         if masks is not None:
             masks_np = masks.cpu().numpy()
             for i, mask in enumerate(masks_np):
-                label = labels[i] if i < len(labels) else labels[-1]
+                label, conf = sam3_label_conf(boxes_np, i, labels)
                 mask_uint8 = (np.squeeze(mask) * 255).astype(np.uint8)
                 contours, _ = cv2.findContours(
                     mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
@@ -159,14 +178,13 @@ class Inferencer:
                     tolerance = settings.models.sam3_polygon_tolerance or 0.002
                     for poly_pts in mask_to_polygon(contours, tolerance):
                         points = [(float(x), float(y)) for x, y in poly_pts]
-                        polygons.append(Polygon(points, label, -1.0))
-        if boxes is not None:
-            boxes_np = boxes.cpu().numpy()
+                        polygons.append(Polygon(points, label, conf))
+        if boxes_np is not None:
             for i, box in enumerate(boxes_np):
-                label = labels[i] if i < len(labels) else labels[-1]
+                label, conf = sam3_label_conf(boxes_np, i, labels)
                 x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
                 if (x2 - x1) > 0 and (y2 - y1) > 0:
-                    bboxes.append(Bbox(x1, y1, x2 - x1, y2 - y1, label, -1.0))
+                    bboxes.append(Bbox(x1, y1, x2 - x1, y2 - y1, label, conf))
         log.d(f"SAM3 inference time: {time.time() - t1}")
         return bboxes, polygons
 

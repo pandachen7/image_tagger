@@ -1,5 +1,5 @@
-# Set YOLO Model 對話框：設定 YOLO 模型路徑、輸出模式、Polygon Tolerance
-# 更新日期: 2026-04-12
+# Set YOLO Model 對話框：設定 YOLO 模型路徑、Confidence、輸出模式、Polygon Tolerance
+# 更新日期: 2026-08-20
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -50,6 +50,25 @@ class SetYoloModelDialog(QDialog):
         # --- 參數 ---
         param_group = QGroupBox("參數")
         param_layout = QFormLayout()
+
+        conf_row = QHBoxLayout()
+        self.conf_spin = QDoubleSpinBox()
+        self.conf_spin.setRange(0.01, 1.00)
+        self.conf_spin.setDecimals(2)
+        self.conf_spin.setSingleStep(0.05)
+        self.conf_spin.setValue(settings.models.yolo_conf or 0.25)
+        conf_info = QLabel("\u2139")
+        conf_info.setToolTip(
+            "信心值門檻, 低於此值的偵測結果會被丟棄\n"
+            "0.25: ultralytics 預設, 一般情況\n"
+            "0.10~0.20: 多抓一點, 誤報也變多\n"
+            "        (夜拍紅外線、小目標、半遮蔽的個體)\n"
+            "0.40~0.60: 只留高可信度, 模糊的個體會被漏掉\n"
+            "標註流程通常先設低再手動刪, 比漏抓後補畫快"
+        )
+        conf_row.addWidget(self.conf_spin)
+        conf_row.addWidget(conf_info)
+        param_layout.addRow("Confidence:", conf_row)
 
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("BBox — 只產生 Bounding Box", "bbox")
@@ -109,6 +128,7 @@ class SetYoloModelDialog(QDialog):
         model_path = self.model_edit.text().strip()
         if model_path:
             settings.models.model_path = model_path
+        settings.models.yolo_conf = self.conf_spin.value()
         settings.models.yolo_label_mode = self.mode_combo.currentData()
         settings.models.yolo_polygon_tolerance = self.tolerance_spin.value()
         self.accept()

@@ -1,5 +1,5 @@
 # 動態設定管理：載入/儲存 settings.yaml，自動同步 schema 變更（補新欄位、移除過時欄位）
-# 更新日期: 2026-07-14
+# 更新日期: 2026-08-20
 from pathlib import Path
 from typing import Optional
 
@@ -27,10 +27,15 @@ class ModelsSettings(BaseModel):
     model_path: Optional[str] = None
     yolo_label_mode: Optional[str] = "bbox"  # "seg", "bbox", "all"
     yolo_polygon_tolerance: Optional[float] = 0.002
+    # 信心值門檻, 低於此值的偵測結果會被丟棄 (ultralytics predict 預設 0.25)
+    yolo_conf: Optional[float] = 0.25
     # SAM3
     sam3_model_path: Optional[str] = None
     sam3_polygon_tolerance: Optional[float] = 0.002
     sam3_label_mode: Optional[str] = "seg"  # "seg", "bbox", "all"
+    # SAM3 的分數是 pred_logits.sigmoid() * presence_logit.sigmoid(),
+    # presence 分數會整體壓低數值, 門檻的手感與 YOLO 不同
+    sam3_conf: Optional[float] = 0.25
 
 
 class ClassNamesSettings(BaseModel):

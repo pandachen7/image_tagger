@@ -1,5 +1,5 @@
-# Set SAM3 Model 對話框：設定 SAM3 模型路徑、輸出模式、Polygon Tolerance、Text Prompts
-# 更新日期: 2026-04-12
+# Set SAM3 Model 對話框：設定 SAM3 模型路徑、Confidence、輸出模式、Polygon Tolerance、Text Prompts
+# 更新日期: 2026-08-20
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -46,6 +46,25 @@ class SetSam3ModelDialog(QDialog):
         # --- SAM3 Output Mode + Polygon Tolerance ---
         param_group = QGroupBox("參數")
         param_layout = QFormLayout()
+
+        conf_row = QHBoxLayout()
+        self.conf_spin = QDoubleSpinBox()
+        self.conf_spin.setRange(0.01, 1.00)
+        self.conf_spin.setDecimals(2)
+        self.conf_spin.setSingleStep(0.05)
+        self.conf_spin.setValue(settings.models.sam3_conf or 0.25)
+        conf_info = QLabel("\u2139")
+        conf_info.setToolTip(
+            "SAM3 分數 = 概念分數 x presence 分數,\n"
+            "presence 會把整體數值壓低, 手感與 YOLO 不同\n"
+            "0.25: 官方預設起點, 建議在 0.25~0.50 之間試\n"
+            "調高: 抑制「圖中根本沒有該概念卻硬找」的誤報\n"
+            "調低: 抓得到小目標/遮蔽個體, 但同一隻容易被重複框\n"
+            "prompt 越抽象 (如 animal) 分數越低, 門檻要跟著降"
+        )
+        conf_row.addWidget(self.conf_spin)
+        conf_row.addWidget(conf_info)
+        param_layout.addRow("Confidence:", conf_row)
 
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("BBox — 只產生 Bounding Box", "bbox")
@@ -160,6 +179,9 @@ class SetSam3ModelDialog(QDialog):
         if model_path:
             settings.models.sam3_model_path = model_path
         self.model_path = model_path
+
+        # Confidence
+        settings.models.sam3_conf = self.conf_spin.value()
 
         # Output mode
         settings.models.sam3_label_mode = self.mode_combo.currentData()

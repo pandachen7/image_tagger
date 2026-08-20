@@ -1,5 +1,5 @@
 # Categorize Media 對話框：依 YOLO/SAM3 偵測結果將媒體檔案分類到子資料夾
-# 更新日期: 2026-04-12
+# 更新日期: 2026-08-20
 from __future__ import annotations
 
 import shutil
@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 from src.utils.const import ALL_EXTS, IMAGE_EXTS, VIDEO_EXTS
 from src.utils.dynamic_settings import settings
 from src.utils.func import imread_unicode
+from src.utils.img_handler import sam3_label_conf
 from src.utils.logger import getUniqueLogger
 
 log = getUniqueLogger(__file__)
@@ -208,7 +209,8 @@ class CategorizeMediaDialog(QDialog):
                     self.start_btn.setEnabled(True)
                     return
                 overrides = dict(
-                    conf=0.25, imgsz=630, task="segment",
+                    conf=settings.models.sam3_conf or 0.25,
+                    imgsz=630, task="segment",
                     mode="predict", model=model_path, half=True, verbose=False,
                 )
                 model = SAM3SemanticPredictor(overrides=overrides)
@@ -317,7 +319,8 @@ class CategorizeMediaDialog(QDialog):
     @staticmethod
     def _count_detections(model, img, counts: Counter):
         """對單一影像跑 YOLO 推論並累加 class_name 計數"""
-        results = model.predict(img, verbose=False)
+        conf = settings.models.yolo_conf or 0.25
+        results = model.predict(img, conf=conf, verbose=False)
         for r in results:
             if r.boxes is not None:
                 for box in r.boxes:
@@ -358,12 +361,13 @@ class CategorizeMediaDialog(QDialog):
         masks, boxes = predictor.inference_features(
             predictor.features, src_shape=src_shape, text=labels
         )
-        if boxes is not None:
-            for i in range(boxes.shape[0]):
-                box = boxes[i].cpu().numpy() if hasattr(boxes[i], "cpu") else boxes[i]
+        # boxes 為 (N, 6) = xyxy + score + cls, cls 是 text prompt 的索引 (非偵測序號)
+        boxes_np = boxes.cpu().numpy() if boxes is not None else None
+        if boxes_np is not None:
+            for i, box in enumerate(boxes_np):
                 x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
                 if (x2 - x1) > 0 and (y2 - y1) > 0:
-                    label = labels[i] if i < len(labels) else labels[-1]
+                    label, _ = sam3_label_conf(boxes_np, i, labels)
                     counts[label] += 1
 
     def _sample_frame_indices(self, total: int) -> list[int]:
