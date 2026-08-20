@@ -6,13 +6,6 @@
     "files.eol": "\n",
     // 由於yaml通常是空兩個空白, 因此不加下面這行, 需要的可以自己加
     // "editor.tabSize": 4,
-
-    // 加載lib路徑, 以進行索引
-    // "python.analysis.extraPaths": [
-    //     "./st_lit",
-    //     "./web_api"
-    // ],
-    // "python.analysis.extraPaths": ["./src"],
     
     // 自動修正格式
     "[python]": {
@@ -84,46 +77,5 @@
             "italic": false
         }
     ],
-
-    // TODO相關文字上色
-    "todo-tree.highlights.customHighlight": {
-        "TODO": {
-            //待作清單
-            "foreground": "#FFEB38",
-            "type": "line"
-        },
-        "BUG": {
-            "icon": "bug",
-            "foreground": "#F56C6C",
-            "type": "line"
-        },
-        "TEST": {
-            "icon": "versions",
-            "foreground": "#E040FB",
-            "type": "line"
-        },
-        "FIXME": {
-            "icon": "flame",
-            "foreground": "#E91E63",
-            "type": "line"
-        },
-        "NOTE": {
-            // 標籤快速搜尋
-            "icon": "tag",
-            "foreground": "#00ff4c",
-            "type": "line"
-        },
-        "!": {
-            "background": "#222",
-            "foreground": "#d9444a",
-            "iconColour": "#d9444a",
-            "icon": "check",
-            "type": "text-and-comment",
-            "hideFromTree": true
-        },
-    },
-    "todo-tree.highlights.defaultHighlight": {},
-    "todo-tree.general.tags": ["BUG", "TEST", "FIXME", "TODO", "NOTE", "/!"],
-    "todo-tree.general.tagGroups": {},
     "python-envs.pythonProjects": []
 }
