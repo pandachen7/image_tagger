@@ -14,6 +14,12 @@ dependencies = [
     "PyQt6>=6.8.1",
     "dicttoxml>=1.7.16",
     "ultralytics",
+    # SAM3 到執行期才 import 的相依: clip 給 text encoder, timm 給 ViTDet backbone。
+    # 兩者缺少時 ultralytics 會自行 AutoUpdate 安裝, 但 uv sync 會把不在 lock 內的
+    # 套件清掉, 於是每次 sync 後第一次跑 SAM3 都要重裝, 故在此顯性宣告。
+    # clip 是 ultralytics 的 fork, PyPI 上沒有, 來源見下方 tool.uv.sources。
+    "clip",
+    "timm",
     "ruamel.yaml",
     "python-dotenv",
     "pydantic",
@@ -28,6 +34,9 @@ dependencies = [
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu130" }]
 torchvision = [{ index = "pytorch-cu130" }]
+# clip 只發佈在 git 上, 版本號固定為 1.0 不會變動,
+# 實際鎖定的 commit 記在 uv.lock, 要更新請跑 uv lock --upgrade-package clip
+clip = { git = "https://github.com/ultralytics/CLIP.git" }
 
 [[tool.uv.index]]
 name = "pytorch-cu130"
