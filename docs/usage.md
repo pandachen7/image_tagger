@@ -31,10 +31,21 @@ python main.py
 ### YOLO 偵測
 
 1. **快捷鍵 `d`** 或 **Ai → Detect**：對目前的影像執行偵測（首次會自動下載 `yolo26s.pt` 預設模型）
-2. **Ai → Select YOLO Model**：選擇自定義的 `.pt` 模型（必須是 Ultralytics 相容的模型）
+2. **Ai → Set YOLO Model**：設定模型路徑與偵測參數（見下表）
 3. **Ai → Auto Detect**：開啟後，切換檔案時自動偵測
 
 > 如果圖片旁已有同名的 `.xml` 標籤檔且內含 bbox，Auto Detect 不會覆蓋，會優先使用 XML 的標註。
+
+**Set YOLO Model 的欄位**
+
+| 欄位 | 說明 |
+|---|---|
+| Model | `.pt` 模型路徑（必須是 Ultralytics 相容的模型）；`Reset` 鈕可回到預設的 `yolo26s.pt` |
+| Confidence | 信心值門檻，低於此值的偵測結果會被丟棄。預設 `0.25`（ultralytics 的預設值） |
+| Output Mode | `bbox` / `seg` / `all`；seg 與 all 需使用 segment model（如 `yolo26m-seg.pt`） |
+| Polygon Tolerance | polygon 簡化程度，越小越精密、頂點越多。預設 `0.01`（中等） |
+
+> **Confidence 怎麼調**：標註流程通常**先設低（0.1~0.2）多抓一點再手動刪**，比漏抓後重新補畫快；夜拍紅外線、小目標、半遮蔽的個體都需要較低的門檻。要只留高可信度的結果就往 0.4~0.6 調，代價是模糊的個體會被漏掉。
 
 ### SAM3 語義分割
 
@@ -44,13 +55,11 @@ https://huggingface.co/facebook/sam3
 
 > 需要先在 `cfg/system.yaml` 中設定 `enable_sam3: true`
 
-1. **Ai → Select SAM3 Model**：選擇 SAM3 的 `.pt` 模型檔
+1. **Ai → Set SAM3 Model**：一次設定模型路徑、Confidence、Output Mode、Polygon Tolerance 與 **Text Prompts**（要偵測的類別名稱，如 person、cat、dog）
 2. **Ai → Use SAM3**：切換為 SAM3 模式
-3. **Ai → Edit Text Prompts**：設定要偵測的類別名稱（如 person、cat、dog）
-4. **Ai → Detect**：執行 SAM3 推論
+3. **Ai → Detect**：執行 SAM3 推論
 
-SAM3 會根據文字描述自動產生 segmentation mask 並轉為 polygon。
-在 `cfg/settings.yaml` 中可設定輸出模式：
+SAM3 會根據文字描述自動產生 segmentation mask 並轉為 polygon。Output Mode（對應 `cfg/settings.yaml` 的 `sam3_label_mode`）決定產出什麼：
 
 | `sam3_label_mode` | 行為 |
 |---|---|
@@ -59,6 +68,10 @@ SAM3 會根據文字描述自動產生 segmentation mask 並轉為 polygon。
 | `all` | 同時產生 polygon 和 bbox |
 
 > 訓練 segment 時建議用 `seg` 模式，避免 `all` 模式在轉換時產生重複標註。
+
+> **SAM3 的 Confidence 與 YOLO 不是同一個尺度。** 它的分數是「概念分數 × presence 分數」，presence 代表「這張圖到底有沒有這個概念」，會把整體數值壓低 —— 別把 YOLO 用慣的門檻直接搬過來。官方建議從 `0.25`~`0.5` 之間試。調高特別擅長殺掉「圖裡根本沒有這個東西卻硬找出來」的誤報；prompt 越抽象（`animal` 相對於 `dog`）分數越低，門檻要跟著降。
+>
+> **prompt 不要有上下位關係。** 同時放 `dog` 和 `animal` 時，同一隻狗會被兩個 prompt 各框一次、座標完全相同。這種跨 prompt 的重複框調 Confidence 壓不掉（NMS 只在同類別之間作用），最省事的作法是兩者擇一。
 
 ---
 
@@ -79,6 +92,8 @@ SAM3 會根據文字描述自動產生 segmentation mask 並轉為 polygon。
 
 - **換到尺寸相同的影像會保留縮放與位置**，逐張比對同一個區域時不必每張重新找一次；
   尺寸不同才重新還原檢視。
+- **改變視窗大小時，影像跟著等比例放大縮小**，維持原本看到的構圖，不必再滾一次滾輪把影像放大回來。
+  只拉寬（或只拉高）視窗時倍率不變 —— 那個方向多出來的空間並不會讓影像顯示得更大。
 - 縮放下限是「還原檢視」倍率的 1/4，上限 40 倍；平移不會把影像拖出畫面外，
   影像比視窗小時自動置中。
 - 標註座標永遠是**原圖像素**，縮放只影響顯示。放大後畫的框、拖的頂點都會換算回原圖，

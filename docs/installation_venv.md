@@ -39,6 +39,14 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
 ## 3. 安裝其餘相依
 
+> **先手動裝 `clip`**（SAM3 的 text encoder）。它是 ultralytics 的 GitHub fork，PyPI 上沒有 —— PyPI 上那個 `clip` 是無關的剪貼板工具，最新版停在 2013 年的 0.2.0。`pyproject.toml` 是用 `[tool.uv.sources]` 指向 git 的，而 **pip 不讀那段設定**，不先裝好的話下一行 `pip install .` 會因為在 PyPI 找不到 `clip==1.0` 而整個失敗（連其他套件都裝不了）：
+>
+> ```bash
+> pip install git+https://github.com/ultralytics/CLIP.git
+> ```
+>
+> 裝好後版本正是 `1.0`，剛好滿足 `pyproject.toml` 的 `clip==1.0`，pip 就不會再去 PyPI 找。用 uv 的話不需要這一步。
+
 其餘相依定義在 `pyproject.toml`，直接安裝本專案即可（torch / torchvision 已在上一步裝好，不會被覆蓋）：
 
 ```bash

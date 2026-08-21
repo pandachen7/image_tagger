@@ -41,7 +41,7 @@ uv run main.py
 ```
 
 1. **File → Open Folder** 開啟含有圖片的資料夾
-2. **Ai → Set YOLO Model** 設定模型路徑（首次會自動下載 `yolo26s.pt` 預設模型）；如需使用 SAM3，透過 **Ai → Set SAM3 Model** 一併設定模型、輸出模式、Polygon Tolerance 與 Text Prompts
+2. **Ai → Set YOLO Model** 設定模型路徑與 Confidence 門檻（首次會自動下載 `yolo26s.pt` 預設模型）；如需使用 SAM3，透過 **Ai → Set SAM3 Model** 一併設定模型、Confidence、輸出模式、Polygon Tolerance 與 Text Prompts
 3. **按 `d` 或 Ai → Detect** 偵測物件
 4. 手動微調框的位置、名稱後，**File → Save** 或按 `s` 儲存為 VOC XML
 5. **Train → VOC to YOLO** 在對話框中設定 Class Mapping（class_name → class_id）、選擇資料夾、輸出模式與 train/val 比例（預設 80/20）→ 自動轉換並產生 `dataset.yaml`
@@ -54,8 +54,8 @@ uv run main.py
 
 | 功能 | 說明 |
 |------|------|
-| YOLO 自動偵測 | 載入 `.pt` 模型，支援 detect 與 seg model；seg model 可輸出 bbox / polygon / all，透過 Set YOLO Model 設定 |
-| SAM3 語義分割 | 透過文字描述自動產生 polygon / bbox；Set SAM3 Model 整合模型、輸出模式、tolerance、prompts |
+| YOLO 自動偵測 | 載入 `.pt` 模型，支援 detect 與 seg model；seg model 可輸出 bbox / polygon / all。信心值門檻、輸出模式、polygon 精細度都在 Set YOLO Model 裡調 |
+| SAM3 語義分割 | 透過文字描述自動產生 polygon / bbox；Set SAM3 Model 整合模型、信心值門檻、輸出模式、tolerance、prompts |
 | 手動 BBox | 左鍵拖曳畫框，角落可調整大小 |
 | 手動 Polygon | 左鍵點擊頂點，靠近起點自動封閉 |
 | Cropped 裁切儲存 | 只裁切有框的區域存成小圖 + VOC XML（Label → Label Mode），每個框外擴 padding 或補至 640、碰邊往對邊補；相鄰框自動合併，適合小物件 ROI dataset |

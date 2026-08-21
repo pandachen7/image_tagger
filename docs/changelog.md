@@ -1,6 +1,34 @@
 # 更新記錄
 
 2026/8
+- **自動偵測的信心值 (Confidence) 改為可設定**：**Ai → Set YOLO Model** 與 **Ai → Set SAM3 Model** 各加一個 Confidence 欄位，先前寫死 0.25，要調只能改程式碼
+  - 兩個模型的門檻各自獨立、也不該互相參考：SAM3 的分數是 `pred_logits.sigmoid() × presence_logit.sigmoid()`，presence（這張圖到底有沒有這個概念）會把數值整體壓低，同一個數字在兩邊的鬆緊度不一樣
+  - SAM3 官方建議從 0.25~0.5 之間試；prompt 越抽象（`animal` 相對於 `dog`）分數越低，門檻要跟著降
+  - YOLO 走 `predict(conf=...)`；SAM3 除了建立 predictor 時的 overrides，每次推論前再同步一次 `predictor.args.conf` —— 改門檻不必重建 predictor 把整個 SAM3 重載一遍
+  - **Ai → Categorize Media** 的批次偵測吃同一組設定，不另開一份門檻
+- **修正 SAM3 多個 text prompt 時的標籤錯位**（會影響先前存出的標註）
+  - `inference_features()` 回傳的 boxes 是 `(N, 6)` = `xyxy + score + cls`，**cls 才是 text prompt 的索引**；原本用偵測序號 `i` 去取 `labels[i]`，等於把「第幾個框」當成「第幾個 prompt」
+  - prompts 為 `[cat, dog, car, animal]` 時，一張只有狗的圖會被標成 `cat` / `dog` / `car`。**先前用多個 prompt 存出去的 XML 需要重新檢查**
+  - 分數原本一律填 `-1.0`（bbox 畫面上固定顯示 `(-1.00)`），現在帶 `boxes[i][4]` 的真實值 —— 否則調 Confidence 也看不出效果
+- **視窗縮放時影像跟著等比例放大縮小**：先前 resize 只夾住 offset、zoom 不動，把視窗拉大只是在影像周圍長出空白，還得再滾一次滾輪
+  - 不變量是「相對於 fit 的倍率」：fit 狀態下 resize 後仍是 fit；手動放大到 3x fit 的話，resize 後仍是 3x fit
+  - 比例取 `fit_zoom` 的變化而不是寬（或高）的比例：**只拉寬視窗時 zoom 不變**，因為能顯示的影像大小其實仍受高度限制
+  - 錨點取視窗中心，中心的原圖點 resize 前後不動；與滾輪縮放一樣由錨點反推 offset，連續拖動邊框不累積浮點誤差
+- **Polygon Tolerance 預設從 0.002 改為 0.01**：0.002 幾乎是原樣保留 mask 輪廓、頂點過密，改成 tooltip 標示的「中等」精度。實測 SAM3 的 polygon 從 35~41 個頂點降到 11~19 個
+- **Auto Save 選單文字改為 `Auto Save (if Auto Detect)`**：這個選項在 Auto Detect 關閉時是灰的，但原因原本只寫在 tooltip 裡，得 hover 才看得到
+  - 順帶把它真正的功能講清楚（見 [使用說明 → 儲存](./usage.md#儲存)）：**它不是「自動存檔」的總開關**。手動動過的標註一律會存；它決定的是「你什麼都沒動、畫面上只有模型偵測結果」的那些圖要不要落檔
+- **SAM3 的執行期相依 `clip` / `timm` 宣告進 `pyproject.toml`**
+  - ultralytics 會在 import 失敗的當下自己 pip 裝這兩個套件，但 `uv sync` 會清掉不在 lock 內的套件，於是**每次 sync 後第一次跑 SAM3 都要重下載一次**，裝的版本也不受 lock 控制
+  - `clip` 是 ultralytics 的 fork，PyPI 上沒有（PyPI 的 `clip` 是個無關的剪貼板工具，最新版停在 2013 年），走 `[tool.uv.sources]` 指 git。它的版本號永遠是 `1.0` 不會遞增，真正釘死的是 `rev` 的 commit
+  - **venv + pip 路線因此多一步手動安裝**：pip 不讀 `[tool.uv.sources]`（見 [venv 安裝指南](./installation_venv.md#3-安裝其餘相依)）
+- **直接相依一律釘死版本**：先前只有 torch / torchvision 用 `==`，其餘不是 `>=` 就是沒寫。放寬的版本會跟套件自帶的相依範圍互相拉扯，uv 每次重解都可能給出不同組合，出問題時難以重現
+  - 順帶發現 `opencv-python` 早就從宣告的 `>=4.11.0.86` 漂到 **5.0.0.93**，大版本是什麼時候跳過去的沒有紀錄
+  - `setuptools` 維持 `constraint-dependencies` 的 `>=83.0.0`：它是為了 CVE 拉間接相依的下限，釘成 `==` 反而會擋掉需要更新版本的套件
+- **關掉 ultralytics 的執行期 AutoUpdate**（`ULTRALYTICS_SKIP_REQUIREMENTS_CHECKS=1`，設在 `main.py`）：缺套件時當場 `ModuleNotFoundError`，代表 `pyproject.toml` 漏宣告，早點爆比較好修
+  - 放 `main.py` 而不是 `.env`：專案的 dotenv 只用 `dotenv_values()` 讀成 dict 給 logger 判斷 `LOG_LEVEL`，不會注入 `os.environ`
+  - **只擋套件安裝，不擋模型下載**：權重走 `attempt_download_asset`（GitHub release assets），打模型名稱就自動下載的便利不受影響
+  - 一併濾掉它每次檢查都印的那行提示：SAM3 的 ViTDet 有 32 個 Block、每個都檢查一次 `timm`，載入一次就洗出 32 行，把真正該看的訊息推出畫面
+- SAM3 建立 predictor 的 `half=True` 改為 **`quantize=16`**：ultralytics 8.4.90 已把 `half` 標為 deprecated，`quantize` 是替代品（predict 路徑就是判斷 `args.quantize == 16` 才走 `model.half()`），16 即 FP16，行為不變
 - **標註一律留在影像範圍內**：畫新框、加多邊形頂點、拖控制點改大小、拖著移動、偵測結果、讀進來的 `.xml`，六個入口全部處理
   - 座標在**記錄時**就夾（而不是等落檔才修）：BBOX 兩點與多邊形頂點都存夾過的原圖座標，所以拖曳中的預覽框、面積數字、最後建出來的框三者一致
   - resize 改成先把**游標**夾進影像再算邊界 —— 邊界跟著游標走，游標不出界框就不出界；收尾再裁一次，補掉取整與最小尺寸下限造成的個位數 px 溢出

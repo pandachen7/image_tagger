@@ -1,6 +1,6 @@
 # 安裝指南
 
-<!-- 最後更新：2026-08-05 -->
+<!-- 最後更新：2026-08-21 -->
 
 ## 環境需求
 
@@ -9,6 +9,7 @@
 - 用 uv 的話需要 **uv >= 0.12**，並建議定期 `uv self update`（原因見 [使用 uv 安裝 → 請保持 uv 為最新版](./installation_uv.md#請保持-uv-為最新版)）
 - NVIDIA driver 需支援 **CUDA 13.0** 以上（PyTorch 從 cu130 index 安裝）
 - 有 NVIDIA 顯卡可大幅加速推論
+- 需要系統可用的 **`git`**：SAM3 用的 `clip` 只發佈在 GitHub 上，`uv sync` 要靠 git 把它 clone 下來（venv + pip 路線同樣需要）
 
 ## uv vs venv — 我該選哪個？
 

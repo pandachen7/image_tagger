@@ -49,6 +49,7 @@ uv sync
 - 依 `.python-version`（3.12）建立 `.venv`
 - 從 PyTorch 官方 cu130 index 安裝含 CUDA 13.0 的 `torch` / `torchvision`
 - 從 PyPI 安裝其餘相依（ultralytics、PyQt6、opencv-python…）
+- 從 GitHub clone 並安裝 `clip`（SAM3 的 text encoder，PyPI 上沒有），因此**需要系統可用的 `git`**
 
 > PyTorch cu130 相依較大，首次安裝需要一些時間。
 >
