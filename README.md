@@ -76,7 +76,7 @@ uv run main.py
 |------|------|
 | `q` | 離開 |
 | `s` | 儲存（整張圖模式下沒有框時等同存背景樣本）|
-| `a` | 切換 Auto Save（需先開啟 Auto Detect）|
+| `a` | 切換 Auto Save — 讓沒動過手、只有偵測結果的圖也落檔（需先開啟 Auto Detect；手動動過的標註本來就會存）|
 | `d` | 執行偵測 (Detect) |
 | `l` | 編輯選取框的 label 名稱 |
 | `v` | Select 選取模式 |
