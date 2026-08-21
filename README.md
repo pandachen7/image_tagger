@@ -9,7 +9,7 @@
 
 > 詳細安裝步驟請見 [安裝指南](./docs/installation.md)
 
-**建議使用 [uv](https://docs.astral.sh/uv/)**：安裝套件快，且會依 `pyproject.toml` 自動裝好含 **CUDA 13.0** 的 PyTorch。
+本專案以 **[uv](https://docs.astral.sh/uv/)** 管理相依：安裝套件快，且會依 `pyproject.toml` 自動裝好含 **CUDA 13.0** 的 PyTorch。另需系統可用的 `git`（SAM3 的 `clip` 只在 GitHub 上）。
 
 ```bash
 # 保持 uv 為最新版（本專案需 uv >= 0.12）
@@ -22,17 +22,7 @@ uv sync
 uv run main.py
 ```
 
-> **請定期更新 uv。** uv 改版頻繁，舊版遇到 PyTorch index 的邊緣狀況時，錯誤訊息往往指向錯誤的原因（例如把「index 沒發布 hash」報成 `Hash mismatch`）。`uv sync` 出現無法理解的相依錯誤時，先 `uv self update` 再試一次。細節見 [安裝指南](./docs/installation_uv.md#請保持-uv-為最新版)。
-
-> **Fallback（不使用 uv 時）**：改用 Python 內建 venv + pip。注意 PyTorch CUDA 版要自行從 cu130 index 安裝，pip 不會讀取 `pyproject.toml` 裡的 uv index 設定。
->
-> ```bash
-> python -m venv .venv
-> .venv\Scripts\Activate.ps1                                                    # Windows PowerShell
-> pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
-> pip install .
-> python main.py
-> ```
+> **請定期更新 uv。** uv 改版頻繁，舊版遇到 PyTorch index 的邊緣狀況時，錯誤訊息往往指向錯誤的原因（例如把「index 沒發布 hash」報成 `Hash mismatch`）。`uv sync` 出現無法理解的相依錯誤時，先 `uv self update` 再試一次。細節見 [安裝指南](./docs/installation.md#請保持-uv-為最新版)。
 
 ## 基本使用流程
 

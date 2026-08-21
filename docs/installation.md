@@ -2,41 +2,93 @@
 
 <!-- 最後更新：2026-08-21 -->
 
+本專案以 **uv** 管理相依。所有套件（含 CUDA 13.0 的 PyTorch）都寫在 `pyproject.toml`、版本鎖在 `uv.lock`，`uv sync` 一行就會建立 `.venv` 並裝好全部。
+
 ## 環境需求
 
-- Python >= 3.12
-- 建議使用獨立的虛擬環境（uv 或 venv）
-- 用 uv 的話需要 **uv >= 0.12**，並建議定期 `uv self update`（原因見 [使用 uv 安裝 → 請保持 uv 為最新版](./installation_uv.md#請保持-uv-為最新版)）
+- **uv >= 0.12**，並建議定期 `uv self update`（原因見 [請保持 uv 為最新版](#請保持-uv-為最新版)）
+- Python >= 3.12 — 不必事先裝好，`uv sync` 會依 `.python-version` 自行準備
+- 系統可用的 **`git`**：SAM3 用的 `clip` 只發佈在 GitHub 上，`uv sync` 要靠 git 把它 clone 下來
 - NVIDIA driver 需支援 **CUDA 13.0** 以上（PyTorch 從 cu130 index 安裝）
 - 有 NVIDIA 顯卡可大幅加速推論
-- 需要系統可用的 **`git`**：SAM3 用的 `clip` 只發佈在 GitHub 上，`uv sync` 要靠 git 把它 clone 下來（venv + pip 路線同樣需要）
 
-## uv vs venv — 我該選哪個？
+> **為什麼不提供 pip / venv 的步驟**
+>
+> 專案的直接相依全部用 `==` 釘死、間接相依鎖在 `uv.lock`，而 `pip install .` 既讀不到 lock，也不讀 `[tool.uv.sources]` —— SAM3 的 `clip` 就是靠那段指向 ultralytics 的 GitHub fork（PyPI 上那個同名套件是無關的剪貼板工具，最新版停在 2013 年）。所以 pip 不但裝不出可重現的環境，還會在找不到 `clip==1.0` 時整個失敗。
+>
+> 真的無法使用 uv 時，可自行參照 `pyproject.toml` 手動安裝，順序是：先從 cu130 index 裝 `torch` / `torchvision` → `pip install git+https://github.com/ultralytics/CLIP.git` → `pip install .`。這條路徑不在維護範圍內。
 
-**建議用 [uv](https://docs.astral.sh/uv/)。** 相依（含 CUDA 13.0 的 PyTorch）都寫在 `pyproject.toml` 裡，`uv sync` 一行就能裝好全部；venv + pip 則需自行分步安裝 PyTorch CUDA 版。
+## 1. 安裝 uv
 
-| | uv（建議） | venv（Python 內建） |
-|---|---|---|
-| 安裝門檻 | 需先安裝 uv 工具 | 不需額外安裝，Python 自帶 |
-| 速度 | 安裝套件速度快 10–100 倍 | 一般 |
-| PyTorch CUDA 版 | `pyproject.toml` 自動指向 cu130 index，`uv sync` 直接裝好 | 需自行從 cu130 index 手動安裝 |
-| 指令風格 | `uv sync` / `uv run` | `pip install ...` |
-| 適合對象 | 追求效率、想要一鍵安裝 | 初學者、不想裝額外工具 |
+如果尚未安裝 uv，請先安裝：
 
-> **簡單來說**：優先用 **uv**（一行 `uv sync` 搞定含 CUDA 的所有相依）；如果不想裝 uv，才退回用 Python 內建的 **venv**。
-
----
-
-- [使用 uv 安裝（建議）](./installation_uv.md)
-- [使用 Python venv 安裝（fallback）](./installation_venv.md)
-
----
-
-## 驗證結果
-
-安裝完成後執行（uv 環境請在前面加上 `uv run`）：
 ```bash
-python scripts/cuda_info.py
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Linux / macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+> 安裝完成後重新開啟終端，確認 `uv --version` 有正確輸出。
+
+### 請保持 uv 為最新版
+
+**本專案需要 uv >= 0.12**，且建議養成定期更新的習慣：
+
+```bash
+uv self update
+```
+
+> 若 uv 是用其他方式安裝的（如 pipx、Homebrew、scoop），`uv self update` 會失效，請改用原本的管道更新。
+
+uv 改版很快（每一兩週就有新版），而 PyTorch 這類套件的 index 又常有邊緣狀況，**舊版 uv 的錯誤訊息經常無法反映真正的原因**。實際遇過的例子：
+
+- PyTorch cu130 index 沒有發布 `torchvision` Windows wheel 的 `#sha256`（Linux wheel 則正常）。uv <= 0.7.x 遇到這種缺 hash 的 wheel，會退而拿下載檔去比對該版本「其他平台」的 hash，於是必然 mismatch，報出 `Hash mismatch for torchvision==...`，看起來像檔案損毀或 CDN 有問題，實際上檔案完全正常。升到 uv 0.12.1 後即正常安裝。
+
+所以 **`uv sync` 出現無法理解的相依 / hash 錯誤時，第一步先更新 uv 再試一次**，通常比去改 `pyproject.toml` 有效。
+
+## 2. 安裝所有相依
+
+在專案根目錄執行：
+
+```bash
+uv sync
+```
+
+`uv sync` 會：
+
+- 依 `.python-version`（3.12）建立 `.venv`
+- 從 PyTorch 官方 cu130 index 安裝含 CUDA 13.0 的 `torch` / `torchvision`
+- 從 PyPI 安裝其餘相依（ultralytics、PyQt6、opencv-python…）
+- 從 GitHub clone 並安裝 `clip`（SAM3 的 text encoder，PyPI 上沒有），因此**需要系統可用的 `git`**
+
+> PyTorch cu130 相依較大，首次安裝需要一些時間。
+>
+> cu130 是給 NVIDIA driver 支援 CUDA 13.0（含以上）的環境。若你的 driver 較舊，請到 [PyTorch 官網](https://pytorch.org/get-started/locally/) 查看可用的 CUDA 版本，並將 `pyproject.toml` 中 `[[tool.uv.index]]` 的 `url` 改成對應版本（例如 `.../whl/cu124`）後再 `uv sync`。
+
+> `uv sync` 會移除所有不在 `uv.lock` 內的套件。因此不要用 pip 手動往 `.venv` 裡加東西 —— 下次 sync 就會被清掉。需要新套件請寫進 `pyproject.toml`。
+
+## 3. 啟動程式
+
+```bash
+uv run main.py
+```
+
+> `uv run` 會自動使用專案的 `.venv`，不需手動 activate。
+> 如果偏好手動啟動，仍可 `.venv\Scripts\Activate.ps1`（Windows）/ `source .venv/bin/activate`（Linux）後直接 `python main.py`。
+
+## 4. Linux 額外相依
+
+如果 PyQt6 出現錯誤：
+```bash
+sudo apt-get install -y libxcb-cursor-dev
+```
+
+## 5. 驗證安裝
+
+```bash
+uv run scripts/cuda_info.py
 ```
 
 正常輸出應該像這樣：
@@ -72,19 +124,13 @@ nvidia-smi
 
 安裝或升級某個套件時（尤其用了 `-U` flag），可能會把 `torch` 換成 CPU 版。
 
-檢查方式(linux 或 git-bash)：
+檢查方式：
 ```bash
-pip list | grep torch
+uv pip list | grep torch
 ```
 
-如果版本號沒有 `+cuXXX` 後綴，就是 CPU 版。解決方式：
+如果版本號沒有 `+cuXXX` 後綴，就是 CPU 版。重新同步即可（`pyproject.toml` 已指定 cu130 index）：
 
-```bash
-pip uninstall torch torchvision -y
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
-```
-
-uv 版的話，直接重新同步即可（`pyproject.toml` 已指定 cu130 index）：
 ```bash
 uv sync --reinstall-package torch --reinstall-package torchvision
 ```

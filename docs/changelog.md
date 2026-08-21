@@ -20,7 +20,7 @@
 - **SAM3 的執行期相依 `clip` / `timm` 宣告進 `pyproject.toml`**
   - ultralytics 會在 import 失敗的當下自己 pip 裝這兩個套件，但 `uv sync` 會清掉不在 lock 內的套件，於是**每次 sync 後第一次跑 SAM3 都要重下載一次**，裝的版本也不受 lock 控制
   - `clip` 是 ultralytics 的 fork，PyPI 上沒有（PyPI 的 `clip` 是個無關的剪貼板工具，最新版停在 2013 年），走 `[tool.uv.sources]` 指 git。它的版本號永遠是 `1.0` 不會遞增，真正釘死的是 `rev` 的 commit
-  - **venv + pip 路線因此多一步手動安裝**：pip 不讀 `[tool.uv.sources]`（見 [venv 安裝指南](./installation_venv.md#3-安裝其餘相依)）
+  - pip 不讀 `[tool.uv.sources]`，會去 PyPI 找 `clip==1.0` 而失敗（PyPI 上那個 `clip` 是無關的剪貼板工具）。這是下面**安裝文件改為單一 uv 路線**的直接原因
 - **直接相依一律釘死版本**：先前只有 torch / torchvision 用 `==`，其餘不是 `>=` 就是沒寫。放寬的版本會跟套件自帶的相依範圍互相拉扯，uv 每次重解都可能給出不同組合，出問題時難以重現
   - 順帶發現 `opencv-python` 早就從宣告的 `>=4.11.0.86` 漂到 **5.0.0.93**，大版本是什麼時候跳過去的沒有紀錄
   - `setuptools` 維持 `constraint-dependencies` 的 `>=83.0.0`：它是為了 CVE 拉間接相依的下限，釘成 `==` 反而會擋掉需要更新版本的套件
@@ -28,6 +28,13 @@
   - 放 `main.py` 而不是 `.env`：專案的 dotenv 只用 `dotenv_values()` 讀成 dict 給 logger 判斷 `LOG_LEVEL`，不會注入 `os.environ`
   - **只擋套件安裝，不擋模型下載**：權重走 `attempt_download_asset`（GitHub release assets），打模型名稱就自動下載的便利不受影響
   - 一併濾掉它每次檢查都印的那行提示：SAM3 的 ViTDet 有 32 個 Block、每個都檢查一次 `timm`，載入一次就洗出 32 行，把真正該看的訊息推出畫面
+- **安裝文件改為單一 uv 路線**：移除 `installation_uv.md` / `installation_venv.md`，內容整併回 `installation.md`
+  - pip 路線其實已經斷了一段時間而沒人發現（`clip==1.0` 在 PyPI 找不到）—— 它沒有 CI、沒人跑，壞了不會有人知道
+  - 更關鍵的是**「相依釘死」的保證在 pip 路線只生效一半**：`pip install .` 讀得到 `[project] dependencies` 的 `==`，卻讀不到 `uv.lock`，所有間接相依的版本仍然浮動
+  - 原本的文件把門檻寫反了：venv 那欄寫「適合初學者、不想裝額外工具」，但裝 uv 只有一行指令，而 pip 路線要依序處理四個坑（手動指 cu130 index、順序不能錯否則 torch 被降級成 CPU 版、torchvision 容易漏、手動裝 clip）
+  - 仍需要 pip 的人可參照 `installation.md` 裡列出的手動順序，但那條路徑不在維護範圍內
+- **移除三個已無選單入口的 dialog**：`sam3_mode.py` / `text_prompts.py` / `param.py`。功能在 2026/4 就被 Set YOLO Model / Set SAM3 Model 吸收，但檔案還留著、`dialogs/__init__.py` 也還匯出
+  - 留著的代價是搜尋 tolerance 或 text prompts 會撈到三份平行實作，改設定時容易改到沒人用的那一份（這次調 polygon tolerance 預設就白改了 `param.py` 一處）
 - SAM3 建立 predictor 的 `half=True` 改為 **`quantize=16`**：ultralytics 8.4.90 已把 `half` 標為 deprecated，`quantize` 是替代品（predict 路徑就是判斷 `args.quantize == 16` 才走 `model.half()`），16 即 FP16，行為不變
 - **標註一律留在影像範圍內**：畫新框、加多邊形頂點、拖控制點改大小、拖著移動、偵測結果、讀進來的 `.xml`，六個入口全部處理
   - 座標在**記錄時**就夾（而不是等落檔才修）：BBOX 兩點與多邊形頂點都存夾過的原圖座標，所以拖曳中的預覽框、面積數字、最後建出來的框三者一致
