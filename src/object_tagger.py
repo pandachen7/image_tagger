@@ -101,11 +101,15 @@ class MainWindow(QMainWindow):
         self.redo_action.setToolTip("重做被還原的標註變更")
         self.redo_action.triggered.connect(self.redoAnnotation)
 
-        # Auto Save 依附於 Auto Detect, 只管自動產生的標註落檔, 故初始為 disabled
-        self.auto_save_action = QAction("Auto Save", self)
+        # Auto Save 依附於 Auto Detect, 只管自動產生的標註落檔, 故初始為 disabled。
+        # 依附關係寫進選單文字, 選項灰掉時不必 hover 才知道原因
+        self.auto_save_action = QAction("Auto Save (if Auto Detect)", self)
         self.auto_save_action.setCheckable(True)
         self.auto_save_action.setEnabled(False)
-        self.auto_save_action.setToolTip("自動儲存偵測結果與影片抽幀 (需先開啟 Auto Detect)")
+        self.auto_save_action.setToolTip(
+            "開啟後, 自動偵測到的標註會直接落檔 (影片還含定時抽幀)。\n"
+            "手動畫過的框本來就會存, 不受這個開關影響"
+        )
         self.auto_save_action.triggered.connect(self.app_state.toggle_auto_save)
 
         self.save_mask_action = QAction("Save Mask", self)
