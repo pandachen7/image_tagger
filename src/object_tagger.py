@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-08-18
+# 更新日期: 2026-08-22
 import random
 import re
 import shutil
@@ -113,6 +113,9 @@ class MainWindow(QMainWindow):
         self.auto_save_action.triggered.connect(self.app_state.toggle_auto_save)
 
         self.save_mask_action = QAction("Save Mask", self)
+        self.save_mask_action.setToolTip(
+            "把目前畫出來的 mask 圖層單獨存成同名的 PNG (不含標註檔)"
+        )
         self.save_mask_action.triggered.connect(self.saveMask)
 
         # 自動使用偵測 (GPU不好速度就會慢)
@@ -123,6 +126,9 @@ class MainWindow(QMainWindow):
 
         # 檔案相關動作
         self.open_folder_action = QAction("Open Folder", self)
+        self.open_folder_action.setToolTip(
+            "選擇要標註的素材資料夾, 從第一個檔開始; 下次啟動會自動回到上次的位置"
+        )
         self.open_folder_action.triggered.connect(self.open_folder)
 
         # 狀態列
@@ -259,10 +265,17 @@ class MainWindow(QMainWindow):
 
         # 退出
         self.quit_action = QAction("Quit", self)
+        self.quit_action.setToolTip(
+            "關閉程式 (快捷鍵 Q); 離開前會存下手動標註過的內容與目前的資料夾位置"
+        )
         self.quit_action.triggered.connect(self.close)
 
         # 偵測
         self.detect_action = QAction("Detect", self)
+        self.detect_action.setToolTip(
+            "對目前影像跑一次偵測 (快捷鍵 D)。結果會整批取代畫面上的標註,\n"
+            "但偵測前會先記一步, 誤按可用 Undo 還原"
+        )
         self.detect_action.triggered.connect(self.manual_detect)
 
         # 主選單
@@ -280,6 +293,7 @@ class MainWindow(QMainWindow):
         self.view_action_group.setExclusive(True)
 
         self.view_all_action = QAction("Show All", self)
+        self.view_all_action.setToolTip("bbox 與 segmentation 全部畫出來")
         self.view_all_action.setCheckable(True)
         self.view_all_action.setChecked(True)
         self.view_all_action.triggered.connect(
@@ -288,6 +302,9 @@ class MainWindow(QMainWindow):
         self.view_action_group.addAction(self.view_all_action)
 
         self.view_bbox_action = QAction("Show BBox Only", self)
+        self.view_bbox_action.setToolTip(
+            "只畫 bbox, 暫時把 segmentation 藏起來 (只影響顯示, 不會刪掉標註)"
+        )
         self.view_bbox_action.setCheckable(True)
         self.view_bbox_action.triggered.connect(
             lambda: self.image_widget.set_view_mode(ViewMode.BBOX)
@@ -295,6 +312,9 @@ class MainWindow(QMainWindow):
         self.view_action_group.addAction(self.view_bbox_action)
 
         self.view_seg_action = QAction("Show Seg Only", self)
+        self.view_seg_action.setToolTip(
+            "只畫 segmentation 的 polygon, 暫時把 bbox 藏起來 (只影響顯示)"
+        )
         self.view_seg_action.setCheckable(True)
         self.view_seg_action.triggered.connect(
             lambda: self.image_widget.set_view_mode(ViewMode.SEG)
@@ -306,15 +326,25 @@ class MainWindow(QMainWindow):
         self.view_menu.addAction(self.view_seg_action)
 
         self.convert_voc_yolo_action = QAction("VOC to YOLO", self)
+        self.convert_voc_yolo_action.setToolTip(
+            "把標好的 VOC .xml 轉成 YOLO .txt, 並依 train / val 比例整理成\n"
+            "dataset 資料夾與 data.yaml (訓練前的準備步驟)"
+        )
         self.convert_voc_yolo_action.triggered.connect(self.convert_voc_to_yolo)
 
         self.train_yolo_action = QAction("Train YOLO", self)
+        self.train_yolo_action.setToolTip(
+            "用上面轉好的 dataset 訓練 YOLO 模型 (ultralytics); 開啟後可設 epoch 等參數"
+        )
         self.train_yolo_action.triggered.connect(self.train_yolo)
 
         self.train_menu.addAction(self.convert_voc_yolo_action)
         self.train_menu.addAction(self.train_yolo_action)
 
         self.open_file_by_index_action = QAction("Open File by Index", self)
+        self.open_file_by_index_action.setToolTip(
+            "輸入編號直接跳到資料夾裡的第幾個檔 (從 1 起算), 免得用翻頁鍵一路按過去"
+        )
         self.open_file_by_index_action.triggered.connect(self.open_file_by_index)
 
         self.file_menu.addAction(self.open_folder_action)
@@ -334,10 +364,17 @@ class MainWindow(QMainWindow):
 
         # 變更標籤
         self.edit_label_action = QAction("Edit Label", self)
+        self.edit_label_action.setToolTip(
+            "改選取標註的類別名稱 (快捷鍵 L); 沒選任何標註時, 等於設定下一個框要用的名稱"
+        )
         self.edit_label_action.triggered.connect(self.promptInputLabel)
 
         # 標註儲存模式設定 (整張圖 / Cropped)
         self.label_mode_action = QAction("Label Mode…", self)
+        self.label_mode_action.setToolTip(
+            "設定存檔方式: 整張圖 (連沒框的也存, 當背景樣本) 或 Cropped\n"
+            "(只把有框的區域裁成小圖); 對話框裡有詳細說明與裁切參數"
+        )
         self.label_mode_action.triggered.connect(self.open_label_mode)
 
         self.label_menu.addAction(self.edit_label_action)
@@ -349,6 +386,9 @@ class MainWindow(QMainWindow):
         self.model_action_group.setExclusive(True)
 
         self.use_yolo_action = QAction("Use YOLO", self)
+        self.use_yolo_action.setToolTip(
+            "偵測改用 YOLO; 選下去會立刻載入模型, 載入期間 UI 會凍結幾秒"
+        )
         self.use_yolo_action.setCheckable(True)
         self.use_yolo_action.triggered.connect(
             lambda: self._set_model(ModelType.YOLO)
@@ -356,6 +396,10 @@ class MainWindow(QMainWindow):
         self.model_action_group.addAction(self.use_yolo_action)
 
         self.use_sam_action = QAction("Use SAM3", self)
+        self.use_sam_action.setToolTip(
+            "偵測改用 SAM3 (吃文字提示的分割模型, 適合訓練前先粗標);\n"
+            "選下去會立刻載入模型, 載入期間 UI 會凍結幾秒"
+        )
         self.use_sam_action.setCheckable(True)
         self.use_sam_action.triggered.connect(
             lambda: self._set_model(ModelType.SAM3)
@@ -368,9 +412,17 @@ class MainWindow(QMainWindow):
         self.ai_menu.addSeparator()
 
         self.set_yolo_model_action = QAction("Set YOLO Model", self)
+        self.set_yolo_model_action.setToolTip(
+            "選 YOLO 權重 (.pt) 與 confidence、輸出模式 (bbox / polygon) 等參數;\n"
+            "填官方權重名稱而檔案不在時會自動下載"
+        )
         self.set_yolo_model_action.triggered.connect(self.set_yolo_model)
 
         self.set_sam3_model_action = QAction("Set SAM3 Model", self)
+        self.set_sam3_model_action.setToolTip(
+            "選 SAM3 權重 (.pt) 與 confidence、輸出模式、polygon tolerance,\n"
+            "以及要偵測哪些物件的 text prompts"
+        )
         self.set_sam3_model_action.triggered.connect(self.set_sam3_model)
 
         self.ai_menu.addAction(self.set_yolo_model_action)
@@ -385,6 +437,10 @@ class MainWindow(QMainWindow):
         self.ai_menu.addSeparator()
 
         self.categorize_media_action = QAction("Categorize Media", self)
+        self.categorize_media_action.setToolTip(
+            "先用模型掃過整個資料夾, 依偵測到的類別把圖片/影片搬到同名子資料夾\n"
+            "(沒偵測到的進 not_detected); 是搬移不是複製, 用來預先篩素材"
+        )
         self.categorize_media_action.triggered.connect(self.categorize_media)
         self.ai_menu.addAction(self.categorize_media_action)
 
@@ -472,6 +528,7 @@ class MainWindow(QMainWindow):
         # 所以只有真正加了說明的項目才看得到小框
         for menu in (
             self.file_menu,
+            self.edit_menu,
             self.label_menu,
             self.ai_menu,
             self.train_menu,
