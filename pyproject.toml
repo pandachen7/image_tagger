@@ -45,8 +45,27 @@ name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
+# 開發工具 (不進執行環境)。版本同樣用 == 釘死: ruff 每個小版都可能新增或改寫
+# 預設規則, 不釘住的話換台機器 lint 就跳出不同結果。
+[dependency-groups]
+dev = ["ruff==0.16.4"]
+
 # CVE-2026-59890 (Moderate)：setuptools <83.0.0 有安全問題。
 # 本專案不直接 import setuptools（由 torch 間接帶入），故用 constraint 拉下限，
 # 不把它宣告成直接相依。
 [tool.uv]
 constraint-dependencies = ["setuptools>=83.0.0"]
+
+# ruff: 只做 lint, 不套用 formatter (整份重排會蓋掉現有排版與 comment 對齊)
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# ruff 0.16 的預設規則集已含 UP / SIM / RUF 等, 這裡只關掉與本專案慣例相衝的:
+ignore = [
+    # 開發規範要求每個 try 都補上 except + log.error(), 廣泛捕捉是刻意的選擇
+    "BLE001",
+    # 本機標註工具, 時間只寫進 log 與檔名給人看, 不需要 tz-aware datetime
+    "DTZ005",
+]
