@@ -122,7 +122,7 @@ python src/for_training/train_yolo.py
 
 | 參數 | 說明 | 建議值 |
 |------|------|--------|
-| `epochs` | 訓練輪數 | 300~600，搭配 patience 早停 |
+| `epochs` | 訓練輪數（上限） | 300~600，GUI 預設 **500**；搭配 patience 早停，設大不會白跑 |
 | `patience` | 早停耐心值 | 50（連續 50 epoch 沒進步就停） |
 | `batch` | 批次大小 | VRAM 24GB → 32, 12GB → 16, 8GB → 8 |
 | `imgsz` | 輸入解析度 | 640（預設），小物件可提高到 1280 |
@@ -190,7 +190,8 @@ python src/for_training/val_yolo.py
 ### Ultralytics 對 Resume 的規則
 
 - Resume 要求 `last.pt` **同層的 `weights/` 上一層** 有 ultralytics 自動產出的 `args.yaml`，沒有的話 ultralytics 會直接報錯。
-- Resume 後大部分超參數會由 `args.yaml` 覆蓋，這個對話框的 epoch / batch / 增強等設定**不會生效**。要改參數就用 Fine-tune 模式。
+- Resume 後整份參數都以 `args.yaml` 為準，只有 ultralytics 白名單內的幾項能覆寫：`imgsz` / `batch` / `device` / `patience` / `save_period` / `workers` / `cache` / `close_mosaic` / `freeze` / `val` / `plots`。
+- **`epochs` 不在白名單**，Name 與所有 optimizer / lr / 增強參數也不在，填了會被丟掉；因此對話框在勾選 Resume 時會把這些欄位鎖住。想加訓練輪數或改增強請用 Fine-tune 模式。
 - 如果 dataset 結構變了（例如多/少 class、改路徑），Resume 會失敗，請改用 Fine-tune。
 
 ### 用 Python 腳本接續

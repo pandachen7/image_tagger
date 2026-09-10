@@ -1,5 +1,5 @@
 # Train YOLO Advanced 對話框：詳細訓練參數設定（優化器、增強、系統等），暫存至 settings.training
-# 更新日期: 2026-04-25
+# 更新日期: 2026-09-10
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
@@ -87,9 +87,11 @@ class TrainYoloAdvancedDialog(QDialog):
         for o in self.OPTIMIZERS:
             self.optimizer_combo.addItem(o, o)
         self.optimizer_combo.setToolTip(
-            "auto = 由 ultralytics 自動選擇 (預設 SGD)\n"
+            "auto = 由 ultralytics 依 class 數與迭代數自行決定 optimizer 與 lr0\n"
+            "  (通常是 AdamW, lr0 = 0.002*5/(4+nc); 此時下方 lr0 設了也會被忽略)\n"
             "AdamW 對複雜場景更穩定，但需搭配低 lr0"
         )
+        self.optimizer_combo.currentIndexChanged.connect(self._update_optimizer_state)
         form.addRow("Optimizer:", self.optimizer_combo)
 
         self.lr0_spin = QDoubleSpinBox()
@@ -98,6 +100,16 @@ class TrainYoloAdvancedDialog(QDialog):
         self.lr0_spin.setSingleStep(0.001)
         self.lr0_spin.setToolTip("初始學習率，default=0.01；AdamW 建議 0.001~0.002")
         form.addRow("lr0 (初始學習率):", self.lr0_spin)
+
+        # optimizer=auto 時 ultralytics 會明白地印 "ignoring lr0 and momentum" 並自行
+        # 算 lr, 這裡把欄位鎖起來, 免得以為改了有效 (預設值正好就是 auto)
+        self.lr0_hint = QLabel(
+            "optimizer=auto 時 ultralytics 會自行決定 lr0，此欄無效；"
+            "要自訂請改選 SGD / AdamW。"
+        )
+        self.lr0_hint.setStyleSheet("color: #b8860b; font-size: 11px;")
+        self.lr0_hint.setWordWrap(True)
+        form.addRow("", self.lr0_hint)
 
         self.lrf_spin = QDoubleSpinBox()
         self.lrf_spin.setRange(0.0001, 1.0)
@@ -264,7 +276,9 @@ class TrainYoloAdvancedDialog(QDialog):
         self.workers_spin = QSpinBox()
         self.workers_spin.setRange(0, 32)
         self.workers_spin.setToolTip(
-            "DataLoader worker 數, default=8\nWindows 上若有問題可設為 0"
+            "DataLoader worker 數, default=4\n"
+            "Windows 走 spawn, 每個 worker 都會重新 import 一次 main.py (含 torch 與 PyQt6),\n"
+            "數字開太大只是把時間花在啟動行程上。有問題時可設為 0"
         )
         form.addRow("workers:", self.workers_spin)
 
@@ -308,6 +322,12 @@ class TrainYoloAdvancedDialog(QDialog):
 
     # === Load / Save ===
 
+    def _update_optimizer_state(self) -> None:
+        """optimizer=auto 時鎖住 lr0 並顯示提示 (auto 會忽略使用者設的 lr0)"""
+        is_auto = (self.optimizer_combo.currentData() or "auto") == "auto"
+        self.lr0_spin.setEnabled(not is_auto)
+        self.lr0_hint.setVisible(is_auto)
+
     def _load_from_settings(self) -> None:
         """從 settings.training 把值灌到 UI"""
         t = settings.training
@@ -315,6 +335,7 @@ class TrainYoloAdvancedDialog(QDialog):
         # Optimizer
         idx = self.optimizer_combo.findData(t.optimizer)
         self.optimizer_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._update_optimizer_state()
         self.lr0_spin.setValue(t.lr0)
         self.lrf_spin.setValue(t.lrf)
         self.weight_decay_spin.setValue(t.weight_decay)

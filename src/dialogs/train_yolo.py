@@ -1,6 +1,6 @@
 # Train YOLO 對話框：選擇 dataset.yaml、設定訓練參數、執行 ultralytics 訓練並顯示進度與結果
 # 支援指定既有 .pt 來再訓練（fine-tune）或從中斷處續訓（resume）
-# 更新日期: 2026-07-13
+# 更新日期: 2026-09-10
 from __future__ import annotations
 
 import os
@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
 )
+from ruamel.yaml import YAML
 
 from src.dialogs.train_yolo_advanced import TrainYoloAdvancedDialog
 from src.utils.dynamic_settings import save_settings, settings
@@ -58,8 +59,17 @@ def _build_train_kwargs(name: str, resume: bool = False) -> dict:
     t = settings.training
     task = t.task or "detect"
     # 強制 project 指向工作目錄下的 runs/<task>，避免 ultralytics 全域 settings.json
-    # 把 runs_dir 記在其他磁碟造成輸出位置跑掉
+    # 把 runs_dir 記在其他磁碟造成輸出位置跑掉。
+    # 這裡的 task 只是預設值: 指定 .pt 再訓練時真正的 task 在權重裡, 由
+    # _TrainerThread._align_task() 載入模型後修正。
     project = str(Path.cwd() / "runs" / task)
+    epochs = t.epochs or 500
+    # close_mosaic >= epochs 時 ultralytics 會在第 0 個 epoch 就關掉 mosaic
+    # (trainer 的判斷是 epoch == epochs - close_mosaic), 等於整場都沒有 mosaic 增強,
+    # 而且不會有任何警告。夾成 epochs-1, 至少保留一輪。
+    close_mosaic = min(t.close_mosaic or 0, max(0, epochs - 1))
+    if close_mosaic != (t.close_mosaic or 0):
+        log.w(f"close_mosaic ({t.close_mosaic}) 不可 >= epochs ({epochs}), 已夾成 {close_mosaic}")
     kwargs = {
         # 資料與輸出
         "data": t.last_data_yaml,
@@ -68,7 +78,7 @@ def _build_train_kwargs(name: str, resume: bool = False) -> dict:
         "exist_ok": False,
         "plots": True,
         # 訓練核心
-        "epochs": t.epochs,
+        "epochs": epochs,
         "patience": t.patience,
         "batch": t.batch,
         "imgsz": t.imgsz,
@@ -100,7 +110,7 @@ def _build_train_kwargs(name: str, resume: bool = False) -> dict:
         "hsv_v": t.hsv_v,
         # 混合增強
         "mosaic": t.mosaic,
-        "close_mosaic": t.close_mosaic,
+        "close_mosaic": close_mosaic,
         "mixup": t.mixup,
         "copy_paste": t.copy_paste,
         # 系統
@@ -112,8 +122,11 @@ def _build_train_kwargs(name: str, resume: bool = False) -> dict:
         "freeze": t.freeze if (t.freeze or 0) > 0 else None,
     }
     if resume:
-        # ultralytics resume 會讀取 last.pt 旁邊的 args.yaml 接續訓練；
-        # 大多數 hyperparameter 由原訓練保留，但仍允許覆寫 epochs。
+        # ultralytics resume 會讀取 last.pt 旁邊的 args.yaml 接續訓練, 並且整份
+        # self.args 都以 args.yaml 為準; 只有 BaseTrainer.check_resume() 白名單內的
+        # 參數 (imgsz / batch / device / close_mosaic / save_period / workers /
+        # cache / patience / val / plots / freeze ...) 允許覆寫。
+        # epochs 與 optimizer / lr / 增強參數都不在白名單, 這裡傳了也會被丟掉。
         kwargs["resume"] = True
     return kwargs
 
@@ -136,28 +149,98 @@ def _parse_device(text: str):
         return text
 
 
+def _detect_dataset_label_type(yaml_path: str) -> str | None:
+    """讀 dataset.yaml 的 train 標籤，判斷這份 dataset 是 bbox 還是 seg 格式
+
+    YOLO 標籤一行 5 欄是 bbox (class cx cy w h), 更多欄則是 polygon。同一份
+    dataset 不會混格式, 取第一筆有內容的即可; 空標籤 (背景圖) 會跳過。
+
+    Args:
+        yaml_path: dataset.yaml 路徑
+
+    Returns:
+        "bbox" / "seg"; 讀不到或全是空標籤時回 None (呼叫端就不做檢查)
+    """
+    try:
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            data = YAML().load(f) or {}
+        train = data.get("train") or "images/train"
+        if isinstance(train, (list, tuple)):
+            train = train[0]
+        img_dir = Path(train)
+        if not img_dir.is_absolute():
+            img_dir = Path(data.get("path") or Path(yaml_path).parent) / img_dir
+
+        # 與 ultralytics 的 img2label_paths 同規則: 換掉路徑中最後一個 images
+        parts = list(img_dir.parts)
+        if "images" in parts:
+            parts[len(parts) - 1 - parts[::-1].index("images")] = "labels"
+        lbl_dir = Path(*parts)
+        if not lbl_dir.is_dir():
+            return None
+
+        for txt in sorted(lbl_dir.glob("*.txt"))[:50]:
+            for line in txt.read_text(encoding="utf-8").splitlines():
+                cols = line.split()
+                if len(cols) >= 5:
+                    return "bbox" if len(cols) == 5 else "seg"
+        return None
+    except Exception as e:
+        log.w(f"判斷 dataset 標籤格式失敗 ({yaml_path}): {e}")
+        return None
+
+
 class _TrainerThread(QThread):
     """背景執行 YOLO 訓練的 worker thread"""
 
     progress = pyqtSignal(int, int, str)  # epoch, total_epochs, message
     finished_train = pyqtSignal(bool, str, dict)  # success, msg, info
 
-    def __init__(self, model_info: str, train_kwargs: dict):
+    def __init__(
+        self, model_info: str, train_kwargs: dict, label_type: str | None = None
+    ):
         """初始化 trainer thread
 
         Args:
             model_info: 模型權重檔名 (例如 yolo26s.pt)
             train_kwargs: model.train() 的全部 kwargs
+            label_type: dataset 標籤格式 ("bbox" / "seg"), 用來與模型 task 交叉比對
         """
         super().__init__()
         self.model_info = model_info
         self.train_kwargs = train_kwargs
+        self.label_type = label_type
         self._stop = False
         self._save_dir: str = ""
 
     def stop(self) -> None:
         """請求中止訓練 (在下一個 epoch 結束後生效)"""
         self._stop = True
+
+    def _align_task(self, model) -> None:
+        """以實際載入的模型 task 修正輸出目錄，並比對 dataset 標籤格式
+
+        task 的真值在權重裡: 指定 .pt 再訓練時, 對話框的 Task 欄位是鎖住的舊值,
+        拿它決定 runs/<task>/ 會把 seg 的訓練結果丟進 runs/detect/。
+
+        Args:
+            model: 已載入的 YOLO 物件
+        """
+        task = getattr(model, "task", None)
+        if not task:
+            return
+        project = Path(self.train_kwargs.get("project", ""))
+        if project.name and project.name != task:
+            self.train_kwargs["project"] = str(project.parent / task)
+            log.i(f"依模型實際 task 修正輸出目錄: {project} -> {self.train_kwargs['project']}")
+
+        # 標籤格式與 task 不符只警告不擋: detect + polygon 標籤 ultralytics 會自動
+        # 取外接框照跑 (不報錯), 使用者未必知道自己訓出來的並不是 seg 模型
+        expect = {"detect": "bbox", "segment": "seg"}.get(task)
+        if self.label_type and expect and self.label_type != expect:
+            warn = f"注意: dataset 標籤是 {self.label_type} 格式, 但模型 task 是 {task}"
+            log.w(warn)
+            self.progress.emit(0, 0, warn)
 
     def run(self) -> None:
         """執行訓練主流程，透過 ultralytics callback 回報進度"""
@@ -170,6 +253,7 @@ class _TrainerThread(QThread):
 
         try:
             model = YOLO(self.model_info)
+            self._align_task(model)
             start = time.time()
 
             def on_train_start(trainer):
@@ -181,20 +265,33 @@ class _TrainerThread(QThread):
                     0, total, f"訓練開始，輸出資料夾: {self._save_dir}"
                 )
 
-            def on_epoch_end(trainer):
-                # 使用者要求停止：設定 ultralytics 內建 stop flag
-                if self._stop:
-                    try:
-                        trainer.stop = True
-                    except Exception:
-                        pass
+            def on_train_epoch_end(trainer):
+                """把使用者的停止請求交給 ultralytics 內建的 stop flag
+
+                trainer 之後是 `self.stop |= ...`, 所以這裡設 True 不會被蓋掉,
+                會在當前 epoch 驗證完後跳出訓練迴圈。
+                """
+                if not self._stop:
                     return
-                epoch = int(getattr(trainer, "epoch", 0)) + 1
+                try:
+                    trainer.stop = True
+                except Exception as e:
+                    log.w(f"設定 trainer.stop 失敗: {e}")
+
+            def on_fit_epoch_end(trainer):
+                """回報 epoch 進度與 mAP
+
+                掛 fit 而不是 train_epoch_end: ultralytics 的順序是
+                on_train_epoch_end -> validate() -> on_fit_epoch_end, 掛在前者拿到的
+                trainer.metrics 還是上一輪的值, 顯示的 mAP 會整整慢一個 epoch。
+                """
                 total = int(
                     getattr(trainer, "epochs", self.train_kwargs.get("epochs", 0))
                 )
+                # 訓練結束後的 final_eval 會把 epoch +1 再觸發一次這個 callback,
+                # 夾住才不會顯示成 "Epoch 501/500"
+                epoch = min(int(getattr(trainer, "epoch", 0)) + 1, total or 1)
                 msg = f"Epoch {epoch}/{total}"
-                # 嘗試讀取 metrics (epoch end 後的驗證結果)
                 try:
                     metrics = getattr(trainer, "metrics", None) or {}
                     map50 = (
@@ -208,7 +305,8 @@ class _TrainerThread(QThread):
                 self.progress.emit(epoch, total, msg)
 
             model.add_callback("on_train_start", on_train_start)
-            model.add_callback("on_train_epoch_end", on_epoch_end)
+            model.add_callback("on_train_epoch_end", on_train_epoch_end)
+            model.add_callback("on_fit_epoch_end", on_fit_epoch_end)
 
             results = model.train(**self.train_kwargs)
 
@@ -271,6 +369,8 @@ class TrainYoloDialog(QDialog):
         self._default_folder = default_folder
         self._thread: _TrainerThread | None = None
         self._save_dir: str = ""
+        # 使用者在訓練中按了關閉: 等 thread 收工後才真的關視窗
+        self._close_after_stop = False
 
         main_layout = QVBoxLayout(self)
 
@@ -350,6 +450,19 @@ class TrainYoloDialog(QDialog):
             "  - 以該權重為起點，使用此對話框的所有參數做新一輪訓練"
         )
         model_layout.addWidget(self.resume_check)
+
+        # Resume 時哪些欄位其實無效, 直接寫在 UI 上 (欄位本身也會被鎖住)
+        self.resume_hint = QLabel(
+            "Resume 模式：Epochs / Name / 進階參數 (optimizer、lr、增強) 全部沿用原訓練的 "
+            "args.yaml，改了也不會生效，因此已鎖住。\n"
+            "只有 Batch / Image Size / Device / Patience / Save Period 可以覆寫；"
+            "要改輪數或增強請取消 Resume 改用 Fine-tune。"
+        )
+        self.resume_hint.setStyleSheet("color: #b8860b; font-size: 11px;")
+        self.resume_hint.setWordWrap(True)
+        self.resume_hint.setVisible(False)
+        model_layout.addWidget(self.resume_hint)
+
         self.resume_pt_edit.textChanged.connect(self._update_resume_state)
         self.resume_check.toggled.connect(self._update_resume_state)
 
@@ -403,7 +516,13 @@ class TrainYoloDialog(QDialog):
         self.epochs_spin = QSpinBox()
         self.epochs_spin.setRange(1, 5000)
         self.epochs_spin.setToolTip(
-            "最大訓練輪數，搭配 Patience 提前停止。一般 100~600"
+            "最大訓練輪數 (預設 500)。\n"
+            "這是「上限」不是「一定要跑完」: 搭配 Patience，連續 N 輪 mAP 沒進步就會自動early stop，\n"
+            "所以設大一點只是留餘裕，不會白跑。\n"
+            "• 100 以下: 資料量少時通常還沒收斂，是精度不佳最常見的原因\n"
+            "• 300~600: 一般建議範圍\n"
+            "• 資料集越小 / 類別越多，需要的輪數越多\n"
+            "註: Resume 模式下此欄無效，輪數沿用原訓練的 args.yaml"
         )
         param_layout.addRow("Epochs:", self.epochs_spin)
 
@@ -566,6 +685,16 @@ class TrainYoloDialog(QDialog):
         self.resume_check.setEnabled(has_resume)
         if not has_resume:
             self.resume_check.setChecked(False)
+
+        # Resume 時 ultralytics 的 check_resume() 會整份沿用 last.pt 旁的 args.yaml,
+        # 只有白名單 (imgsz / batch / device / patience / save_period / workers /
+        # cache / close_mosaic / freeze / val / plots) 能覆寫。epochs、name 與所有
+        # optimizer / lr / 增強參數傳了也會被丟掉, 因此鎖起來避免誤會。
+        resume_mode = has_resume and self.resume_check.isChecked()
+        self.epochs_spin.setEnabled(not resume_mode)
+        self.name_edit.setEnabled(not resume_mode)
+        self.advanced_btn.setEnabled(not resume_mode)
+        self.resume_hint.setVisible(resume_mode)
         self._update_model_info_label()
 
     def _browse_resume_pt(self) -> None:
@@ -601,7 +730,7 @@ class TrainYoloDialog(QDialog):
         self.size_combo.setCurrentIndex(idx if idx >= 0 else 1)
 
         self.version_edit.setText(t.version or self.DEFAULT_VERSION)
-        self.epochs_spin.setValue(t.epochs or 100)
+        self.epochs_spin.setValue(t.epochs or 500)
         self.batch_spin.setValue(t.batch if t.batch is not None else 16)
         self.imgsz_spin.setValue(t.imgsz or 640)
         self.patience_spin.setValue(t.patience if t.patience is not None else 50)
@@ -648,6 +777,14 @@ class TrainYoloDialog(QDialog):
             QMessageBox.warning(self, "Warning", "請選擇有效的 dataset.yaml")
             return
 
+        # batch 沒有 0 這個合法值 (-1=自動偵測, 其餘要 >= 1)。ultralytics 不做驗證,
+        # 0 會一路傳到 DataLoader 才丟出看不懂的 batch_size 錯誤
+        if self.batch_spin.value() == 0:
+            QMessageBox.warning(
+                self, "Warning", "Batch 不可為 0，請填 -1 (自動) 或 1 以上"
+            )
+            return
+
         # 再訓練 .pt 檢查
         resume_pt = self.resume_pt_edit.text().strip()
         if resume_pt and not Path(resume_pt).is_file():
@@ -665,6 +802,25 @@ class TrainYoloDialog(QDialog):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
+
+        # Task 與 dataset 實際標籤格式的交叉檢查。指定 .pt 時 task 由權重決定 (這裡
+        # 讀不到, 不做無謂的確認), 改由 _TrainerThread._align_task() 載入後警告
+        label_type = _detect_dataset_label_type(yaml_path)
+        if not resume_pt and label_type:
+            expect = "seg" if self.task_combo.currentData() == "segment" else "bbox"
+            if label_type != expect:
+                reply = QMessageBox.question(
+                    self,
+                    "Task 與標籤格式不符",
+                    f"dataset 的標籤是 {label_type} 格式，但 Task 選的是 "
+                    f"{self.task_combo.currentText()}。\n\n"
+                    "• seg 標籤 + Detect：ultralytics 會自動取外接框訓練，不會報錯，"
+                    "但訓出來的是偵測模型\n"
+                    "• bbox 標籤 + Segment：訓練會直接失敗\n\n"
+                    "是否仍要繼續?",
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
 
         # 把基本參數寫回 settings 並持久化
         self._save_basic_to_settings()
@@ -701,15 +857,25 @@ class TrainYoloDialog(QDialog):
             self._set_running(False)
             return
 
-        self._thread = _TrainerThread(model_info, train_kwargs)
+        self._thread = _TrainerThread(model_info, train_kwargs, label_type)
         self._thread.progress.connect(self._on_progress)
         self._thread.finished_train.connect(self._on_finished)
         self._thread.start()
 
     def _on_progress(self, epoch: int, total: int, message: str) -> None:
-        """每個 epoch 完成的進度更新"""
+        """每個 epoch 完成的進度更新
+
+        Args:
+            epoch: 目前輪數; 0 代表訓練開始前的訊息 (輸出資料夾、格式警告等)
+            total: 總輪數
+            message: 要顯示的訊息
+        """
         if epoch == 0:
+            # 開跑前的訊息也留一份在結果框: 只寫 status_label 的話, 下一則訊息
+            # (或第一個 epoch) 一進來就被蓋掉, 標籤格式警告等於沒看到
             self.status_label.setText(message)
+            self.result_text.append(message)
+            self.result_text.setVisible(True)
             return
         if total > 0:
             self.progress_bar.setRange(0, total)
@@ -747,10 +913,24 @@ class TrainYoloDialog(QDialog):
                 text += f"\n\n建議：\n{hint}"
             QMessageBox.warning(self, "Warning", text)
 
+        # 訓練中按了關閉: thread 已收工, 這裡才真的關視窗
+        if self._close_after_stop:
+            # run() 正在返回途中, 這個 wait 幾乎立即結束。真的沒等到就不關,
+            # 免得 QThread 在執行中被銷毀 (Qt 會直接 abort 行程)
+            if self._thread and not self._thread.wait(5000):
+                log.w("訓練 thread 未在時限內結束, 暫不關閉視窗")
+                self._close_after_stop = False
+                self.status_label.setText("訓練 thread 尚未結束，請稍後再關閉視窗")
+                return
+            self.accept()
+
     def _on_stop(self) -> None:
         """請求中止訓練"""
         if self._thread and self._thread.isRunning():
-            self.status_label.setText("正在停止訓練 (將在當前 epoch 結束後停止)...")
+            tail = "，停止後會自動關閉視窗" if self._close_after_stop else ""
+            self.status_label.setText(
+                f"正在停止訓練 (將在當前 epoch 結束後停止){tail}..."
+            )
             self.stop_btn.setEnabled(False)
             self._thread.stop()
 
@@ -773,19 +953,37 @@ class TrainYoloDialog(QDialog):
             QMessageBox.warning(self, "Warning", f"無法開啟資料夾: {target}")
 
     def _on_close(self) -> None:
-        """關閉前若仍在訓練則確認"""
+        """關閉；訓練中則先請求中止，等 thread 真的結束才關掉視窗
+
+        不能只 wait 個兩秒就放行: 停止旗標要等當前 epoch 跑完才生效, 一個 epoch
+        動輒好幾分鐘。視窗先關掉的話訓練會在背景繼續、而且沒有 UI 可以再停它,
+        最後關主視窗時 QThread 還在跑就被銷毀, Qt 會直接 abort 整個行程。
+        """
         if self._thread and self._thread.isRunning():
             reply = QMessageBox.question(
                 self,
                 "確認",
-                "訓練尚未結束，確定要中止並關閉?\n"
-                "(目前 epoch 結束後才會真正停止)",
+                "訓練尚未結束，要中止嗎?\n"
+                "(會等目前 epoch 結束才真正停止，停止完成後視窗才會關閉)",
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-            self._thread.stop()
-            self._thread.wait(2000)
+            self._close_after_stop = True
+            self._on_stop()
+            return
         self.accept()
+
+    def closeEvent(self, event) -> None:
+        """視窗右上角的關閉鈕走與「關閉」按鈕相同的流程
+
+        Args:
+            event: Qt 的關閉事件; 訓練中一律 ignore, 改由 _on_close 決定
+        """
+        if self._thread and self._thread.isRunning():
+            event.ignore()
+            self._on_close()
+            return
+        event.accept()
 
     def _set_running(self, running: bool) -> None:
         """切換 UI 為訓練中/閒置狀態"""

@@ -1,6 +1,7 @@
 # 系統設定載入：cfg/system.yaml 不存在時自動生成預設範本（含註解）；
 # 存在時依 schema migrate（補新欄位、移除過時欄位），保留使用者既有設定值與註解。
-# 更新日期: 2026-08-18
+# 更新日期: 2026-09-10
+import multiprocessing as mp
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -88,8 +89,15 @@ def load_config(file_path: str = "cfg/system.yaml") -> Config:
         驗證過、補滿預設值的 Config 物件
     """
     path = Path(file_path)
+    # 訓練時 Windows 的 DataLoader worker 走 spawn, 子行程會重新 import 一次 main.py
+    # 而執行到這裡。多個行程同時寫同一份 yaml 有機會寫壞, 子行程一律只讀不寫。
+    is_child = mp.parent_process() is not None
+
     # 不存在則生成預設範本
     if not path.exists():
+        if is_child:
+            log.w(f"{file_path} not found in child process, using defaults.")
+            return Config()
         log.i(f"{file_path} not found, generating default template.")
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,8 +139,8 @@ def load_config(file_path: str = "cfg/system.yaml") -> Config:
         changed = True
         log.i(f"新增預設設定: {key} = {getattr(cfg_obj, key)}")
 
-    # 有變動才寫回，避免破壞原檔的時間戳與排版
-    if changed:
+    # 有變動才寫回，避免破壞原檔的時間戳與排版 (子行程不寫)
+    if changed and not is_child:
         try:
             with open(path, "w", encoding="utf-8") as f:
                 yaml.dump(data, f)

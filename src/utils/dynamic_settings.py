@@ -1,5 +1,6 @@
 # 動態設定管理：載入/儲存 settings.yaml，自動同步 schema 變更（補新欄位、移除過時欄位）
-# 更新日期: 2026-08-20
+# 更新日期: 2026-09-10
+import multiprocessing as mp
 from pathlib import Path
 from typing import Optional
 
@@ -70,7 +71,9 @@ class TrainingSettings(BaseModel):
     task: Optional[str] = "detect"          # "detect" / "segment"
     model_size: Optional[str] = "s"          # n/s/m/l/x
     version: Optional[str] = "yolo26"
-    epochs: Optional[int] = 100
+    # 500 是「跑到 patience 早停」為前提的上限值, 不是預期真的跑滿;
+    # 給太少 (如 10) 會在模型還沒收斂前就結束, 是精度不佳最常見的設定錯誤
+    epochs: Optional[int] = 500
     batch: Optional[int] = 16                # -1 = 自動
     imgsz: Optional[int] = 640
     patience: Optional[int] = 50
@@ -114,7 +117,9 @@ class TrainingSettings(BaseModel):
     copy_paste: Optional[float] = 0.0
 
     # === 進階：系統 ===
-    workers: Optional[int] = 8
+    # Windows 的 DataLoader worker 走 spawn, 每個子行程都會重新 import 一次 main.py
+    # (連帶 torch 與 PyQt6), 開太多只是把時間花在啟動行程上, 4 個通常就夠餵滿 GPU
+    workers: Optional[int] = 4
     cache: Optional[str] = "false"           # "false" / "ram" / "disk"
     rect: Optional[bool] = False
     amp: Optional[bool] = True
@@ -136,7 +141,15 @@ class Settings(BaseModel):
 def load_settings(file_path="cfg/settings.yaml"):
     """載入 settings，自動補齊新欄位並移除過時欄位，保持 yaml 與最新 schema 同步"""
     path = Path(file_path)
+    # 訓練時 Windows 的 DataLoader worker 走 spawn, 每個子行程都會重新 import 一次
+    # main.py, 連帶執行到這裡。多個行程同時寫同一份 yaml 有機會寫壞, 而且子行程本來
+    # 就不該改使用者設定 —— 只讀不寫。
+    is_child = mp.parent_process() is not None
+
     if not path.exists():
+        if is_child:
+            log.info(f"{file_path} not found in child process, using defaults.")
+            return Settings()
         log.info(f"{file_path} not found, generating default settings.")
         path.parent.mkdir(parents=True, exist_ok=True)
         default = Settings()
@@ -151,7 +164,7 @@ def load_settings(file_path="cfg/settings.yaml"):
 
     # 比對讀入資料與最新 schema，有差異就更新 yaml（補新欄位 / 移除過時欄位）
     current_dump = result.model_dump()
-    if data != current_dump:
+    if data != current_dump and not is_child:
         log.info(f"Schema changed, updating {file_path}.")
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(current_dump, f)
