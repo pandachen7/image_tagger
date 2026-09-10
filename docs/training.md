@@ -24,12 +24,28 @@
 **Train → VOC to YOLO**：選擇含有 VOC XML 的資料夾，在彈出的對話框中設定：
 - **Class Mapping**：在對話框內按「編輯 Mapping」設定 class name → class_id 的對應
 - **輸出模式**：BBox（Detection）或 Seg（Segmentation）
-- **Train / Val 比例**：預設 80%/20%，可調整
+- **Train / Val 比例**：預設 80%/20%，可設 50~95%（**val 一定會保留一部分**，理由見下方）
 
 工具會自動完成以下步驟：
 - 將 VOC XML 轉換為 YOLO `.txt`（所有座標為 0~1 正規化值）
 - 依比例將圖片和標籤移動到 `images/train`、`images/val` 和 `labels/train`、`labels/val`
 - 產生 `dataset_YYYY_MMDD_HHMMSS.yaml`
+- 轉檔前會先問要不要清空上一次的 split（保留舊檔會讓同一張圖同時出現在 train 與 val）
+- 刪除 ultralytics 的舊標籤快取 `labels/*.cache`（它的 hash 只看檔案大小與路徑，改了 class id 可能不會失效）
+
+**轉檔時的三個重要規則：**
+
+1. **`nc` / `names` 只含實際出現的類別，並重新編號成 0 起連號。**
+   Class Mapping 裡沒用到的類別不會寫進 yaml —— 除了讓模型多學幾個空類別，
+   `optimizer=auto` 還是用 `nc` 算學習率的（`lr = 0.002*5/(4+nc)`），
+   nc 從 2 變成 13 學習率就掉了 2.8 倍。
+2. **框的 class name 全部對不上 Class Mapping 的圖片，整張排除在 dataset 外。**
+   ultralytics 把「空標籤」和「沒有標籤檔」都當成背景圖，若寫出空 `.txt`，
+   圖裡的物件會被當成「背景」教給模型，比整張不收更糟。
+   刻意存的背景樣本（本來就沒框）不受影響，仍會保留空 `.txt`。
+3. **同一張原圖的裁切（`_cropN`）與同一段影片的幀（`_frameN`）會整組落在同一邊。**
+   這些檔案內容高度相似，被拆到 train / val 兩邊會讓驗證分數虛高，
+   進而誤導 early stopping 與 best.pt 的挑選。
 
 **YOLO 標籤格式：**
 
@@ -45,7 +61,7 @@ my_dataset/
 ├── dataset_2026_0406_153042.yaml
 ├── images/
 │   ├── train/
-│   └── val/       # 若 train 設為 100% 則不產生
+│   └── val/
 └── labels/
     ├── train/
     └── val/
@@ -56,7 +72,7 @@ my_dataset/
 ```yaml
 path: /data/my_dataset
 train: images/train
-val: images/val        # 若無 val split 則退回指向 images/train
+val: images/val
 
 nc: 3
 names:
@@ -65,8 +81,13 @@ names:
     2: dog
 ```
 
-> `names` 的編號來自 VOC to YOLO 對話框內的 **Class Mapping** 設定。
-> ultralytics 規定 `train` 與 `val` 兩個 key 必須存在；本工具產出的 yaml 永遠都會帶上 `val`。
+> `names` 的名稱來自 **Class Mapping**，但編號是依「實際出現的類別」重新編過的連號，
+> 不一定等於 Class Mapping 裡填的 class_id（對應關係會列在轉換完成的摘要視窗裡）。
+>
+> **為什麼 val 不能是空的**：ultralytics 用 val 的 mAP50-95 當 fitness，
+> `best.pt` 是 fitness 最高的那一輪、early stopping 也看它。
+> val 指向 train 的話 fitness 反映的是訓練集表現，早停永遠不會觸發，
+> best.pt 會挑到最過擬合的權重，訓練過程顯示的 mAP 也完全不能參考。
 
 ---
 
@@ -150,6 +171,24 @@ python src/for_training/val_yolo.py
 
 確認每張圖片都有對應的 `.txt`，且檔名一致（只有副檔名不同）。
 例如 `001.jpg` 對應 `001.txt`。沒有標註的背景圖可以放一個空的 `.txt`。
+
+### 訓練跑完了，但模型幾乎抓不到東西
+
+先看 `runs/<task>/<name>/labels.jpg`（各類別的實例數）與 `results.csv`。
+`train/dfl_loss`、`train/box_loss` 接近 0 表示**正樣本幾乎不存在**，也就是 dataset
+裡幾乎沒有有效標註 —— 通常是 class name 對不上 Class Mapping。訓練 log 裡的
+`... images, N backgrounds, 0 corrupt` 那一行，`N` 不該接近圖片總數。
+
+另一個常見原因是**總迭代數太少**：ultralytics 的 warmup 是
+`nw = max(round(warmup_epochs * nb), 100)`（`nb` = 每輪的 batch 數），
+有 100 次迭代的下限。資料量少又只跑十幾輪的話，整段訓練都還在 warmup，
+學習率從沒離開起跑點。Train YOLO 在開始前會幫你算這個數字並提醒。
+
+### 顯示的 mAP 很漂亮，實際拿去用卻很差
+
+檢查 val 是不是和 train 重疊或高度相似：同一段影片的相鄰幀、同一張原圖的多個裁切
+分到兩邊都會讓分數虛高。本工具轉檔時已經會依來源分組，但若整份資料只來自單一來源
+（例如只標了一段影片），就無法分組，摘要視窗會特別提醒。
 
 ### Detection 和 Segmentation 的標籤格式可以混用嗎？
 

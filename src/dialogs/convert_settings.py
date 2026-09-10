@@ -1,5 +1,5 @@
 # VOC → YOLO 轉換設定對話框：含 class mapping、資料夾選擇、dataset split 比例
-# 更新日期: 2026-04-12
+# 更新日期: 2026-09-10
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -91,15 +91,23 @@ class ConvertSettingsDialog(QDialog):
         split_group = QGroupBox("Train / Val 比例")
         split_layout = QFormLayout()
 
+        # 上限刻意設 95 而不是 100: val 為空 (或退回指向 train) 時, ultralytics 的
+        # fitness 反映的是訓練集表現, early stopping 永遠不會觸發, best.pt 也會挑到
+        # 最過擬合的那份權重, 訓練過程中看到的 mAP 更是完全不能參考。
         self.train_spin = QSpinBox()
-        self.train_spin.setRange(50, 100)
+        self.train_spin.setRange(50, 95)
         self.train_spin.setSuffix(" %")
         self.train_spin.setSingleStep(5)
         self.train_spin.setValue(80)
+        self.train_spin.setToolTip(
+            "train 佔的比例，最高 95%。\n"
+            "val 一定要留一部分：val 是空的或與 train 相同時，early stopping 與 "
+            "best.pt 的挑選都會失去意義"
+        )
         self.train_spin.valueChanged.connect(self._on_train_changed)
 
         self.val_spin = QSpinBox()
-        self.val_spin.setRange(0, 50)
+        self.val_spin.setRange(5, 50)
         self.val_spin.setSuffix(" %")
         self.val_spin.setValue(20)
         self.val_spin.setReadOnly(True)
@@ -113,7 +121,8 @@ class ConvertSettingsDialog(QDialog):
 
         hint = QLabel(
             "圖片會依比例移動到 images/train 和 images/val\n"
-            "Train 最少 50%，設為 100% 則不產生 val set"
+            "Train 可設 50~95%，val 一定會保留一部分 (val 為空會讓早停與 best.pt 失效)\n"
+            "同一張原圖的裁切 (_cropN) 與同一段影片的幀 (_frameN) 會整組落在同一邊"
         )
         hint.setStyleSheet("color: gray; font-size: 11px;")
         split_layout.addRow(hint)

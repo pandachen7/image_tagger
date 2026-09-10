@@ -3,8 +3,10 @@
 # 更新日期: 2026-09-10
 from __future__ import annotations
 
+import math
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -31,6 +33,7 @@ from PyQt6.QtWidgets import (
 from ruamel.yaml import YAML
 
 from src.dialogs.train_yolo_advanced import TrainYoloAdvancedDialog
+from src.utils.const import IMAGE_EXTS
 from src.utils.dynamic_settings import save_settings, settings
 from src.utils.logger import getUniqueLogger
 
@@ -149,8 +152,79 @@ def _parse_device(text: str):
         return text
 
 
-def _detect_dataset_label_type(yaml_path: str) -> str | None:
-    """讀 dataset.yaml 的 train 標籤，判斷這份 dataset 是 bbox 還是 seg 格式
+@dataclass
+class DatasetInfo:
+    """dataset.yaml 的體檢結果，用來在開始訓練前提醒明顯不合理的設定"""
+
+    # 標籤格式 "bbox" / "seg"; 讀不到或全是空標籤時為 None
+    label_type: str | None = None
+    n_train: int = 0
+    n_val: int = 0
+    # train 與 val 指向同一個路徑 (val 失去意義)
+    same_split: bool = False
+    # val 的標註筆數 (背景圖不計)
+    val_labels: int = 0
+
+
+def _resolve_split_dir(data: dict, yaml_path: str, key: str) -> Path | None:
+    """把 dataset.yaml 的 train / val 值解析成實際的圖片資料夾
+
+    Args:
+        data: 已解析的 yaml 內容
+        yaml_path: dataset.yaml 路徑 (沒有 path 欄位時當基準)
+        key: "train" 或 "val"
+
+    Returns:
+        Path: 圖片資料夾; 沒有該欄位時回 None
+    """
+    value = data.get(key)
+    if not value:
+        return None
+    if isinstance(value, (list, tuple)):
+        value = value[0]
+    img_dir = Path(str(value))
+    if not img_dir.is_absolute():
+        img_dir = Path(data.get("path") or Path(yaml_path).parent) / img_dir
+    return img_dir
+
+
+def _labels_dir_of(img_dir: Path) -> Path:
+    """由圖片資料夾推導標籤資料夾 (與 ultralytics 的 img2label_paths 同規則)
+
+    Args:
+        img_dir: 圖片資料夾
+
+    Returns:
+        Path: 把路徑中最後一個 images 換成 labels 後的資料夾
+    """
+    parts = list(img_dir.parts)
+    if "images" in parts:
+        parts[len(parts) - 1 - parts[::-1].index("images")] = "labels"
+    return Path(*parts)
+
+
+def _count_label_rows(lbl_dir: Path) -> int:
+    """統計標籤資料夾內的標註筆數 (空檔=背景圖不計)
+
+    Args:
+        lbl_dir: 標籤資料夾
+
+    Returns:
+        int: 標註筆數
+    """
+    if not lbl_dir.is_dir():
+        return 0
+    total = 0
+    for txt in lbl_dir.glob("*.txt"):
+        try:
+            total += sum(1 for line in txt.read_text(encoding="utf-8").splitlines() if line.split())
+        except Exception as e:
+            log.w(f"讀取標籤失敗 ({txt}): {e}")
+    return total
+
+
+def _read_dataset_info(yaml_path: str) -> DatasetInfo:
+    """讀 dataset.yaml，取得標籤格式與 train / val 的規模
 
     YOLO 標籤一行 5 欄是 bbox (class cx cy w h), 更多欄則是 polygon。同一份
     dataset 不會混格式, 取第一筆有內容的即可; 空標籤 (背景圖) 會跳過。
@@ -159,35 +233,42 @@ def _detect_dataset_label_type(yaml_path: str) -> str | None:
         yaml_path: dataset.yaml 路徑
 
     Returns:
-        "bbox" / "seg"; 讀不到或全是空標籤時回 None (呼叫端就不做檢查)
+        DatasetInfo: 讀取失敗時回全預設值 (呼叫端就不做檢查)
     """
+    info = DatasetInfo()
     try:
         with open(yaml_path, "r", encoding="utf-8") as f:
             data = YAML().load(f) or {}
-        train = data.get("train") or "images/train"
-        if isinstance(train, (list, tuple)):
-            train = train[0]
-        img_dir = Path(train)
-        if not img_dir.is_absolute():
-            img_dir = Path(data.get("path") or Path(yaml_path).parent) / img_dir
+        train_dir = _resolve_split_dir(data, yaml_path, "train")
+        val_dir = _resolve_split_dir(data, yaml_path, "val")
 
-        # 與 ultralytics 的 img2label_paths 同規則: 換掉路徑中最後一個 images
-        parts = list(img_dir.parts)
-        if "images" in parts:
-            parts[len(parts) - 1 - parts[::-1].index("images")] = "labels"
-        lbl_dir = Path(*parts)
-        if not lbl_dir.is_dir():
-            return None
+        for img_dir, attr in ((train_dir, "n_train"), (val_dir, "n_val")):
+            if img_dir and img_dir.is_dir():
+                setattr(info, attr, sum(
+                    1 for f in img_dir.iterdir()
+                    if f.is_file() and f.suffix.lower() in IMAGE_EXTS
+                ))
+        if train_dir and val_dir:
+            info.same_split = train_dir.resolve() == val_dir.resolve()
+        if val_dir:
+            info.val_labels = _count_label_rows(_labels_dir_of(val_dir))
 
-        for txt in sorted(lbl_dir.glob("*.txt"))[:50]:
-            for line in txt.read_text(encoding="utf-8").splitlines():
-                cols = line.split()
-                if len(cols) >= 5:
-                    return "bbox" if len(cols) == 5 else "seg"
-        return None
+        if train_dir:
+            lbl_dir = _labels_dir_of(train_dir)
+            if lbl_dir.is_dir():
+                for txt in sorted(lbl_dir.glob("*.txt"))[:50]:
+                    cols_len = 0
+                    for line in txt.read_text(encoding="utf-8").splitlines():
+                        cols = line.split()
+                        if len(cols) >= 5:
+                            cols_len = len(cols)
+                            break
+                    if cols_len:
+                        info.label_type = "bbox" if cols_len == 5 else "seg"
+                        break
     except Exception as e:
-        log.w(f"判斷 dataset 標籤格式失敗 ({yaml_path}): {e}")
-        return None
+        log.w(f"讀取 dataset 資訊失敗 ({yaml_path}): {e}")
+    return info
 
 
 class _TrainerThread(QThread):
@@ -770,6 +851,70 @@ class TrainYoloDialog(QDialog):
         dialog = TrainYoloAdvancedDialog(self)
         dialog.exec()
 
+    def _preflight_warnings(
+        self, info: DatasetInfo, resume_pt: str, resume_mode: bool
+    ) -> list[str]:
+        """開始訓練前挑出「不會報錯但會訓出爛模型」的組合
+
+        Args:
+            info: dataset.yaml 的體檢結果
+            resume_pt: 指定的再訓練 .pt 路徑 (空字串表示用預訓練模型)
+            resume_mode: 是否為 resume 模式 (輪數由 args.yaml 決定)
+
+        Returns:
+            list[str]: 警告文字; 空 list 表示沒問題
+        """
+        warns: list[str] = []
+
+        # val 與 train 同路徑: fitness 反映的是訓練集表現, 早停永遠不觸發,
+        # best.pt 會挑到最過擬合的權重, 畫面上的 mAP 也不能參考
+        if info.same_split:
+            warns.append(
+                "dataset.yaml 的 train 與 val 指向同一個路徑。驗證分數會是訓練集分數，"
+                "early stopping 永遠不會觸發，best.pt 也會挑到最過擬合的那一輪。"
+                "請重新用 Train → VOC to YOLO 產生帶 val 的 dataset"
+            )
+        # val 太小時 mAP 的雜訊很大: 某一輪僥倖的高分會把 best_epoch 釘住, 之後
+        # patience 就把訓練砍掉, best.pt 也留在那個雜訊點
+        elif info.n_val and (info.n_val < 20 or info.val_labels < 50):
+            warns.append(
+                f"val 只有 {info.n_val} 張 / {info.val_labels} 筆標註，mAP 會被雜訊主導。"
+                "某一輪僥倖的高分會被當成最佳結果，Patience 隨後可能提早中止訓練"
+            )
+
+        # 標籤格式 vs Task。指定 .pt 時 task 由權重決定 (這裡讀不到),
+        # 改由 _TrainerThread._align_task() 在載入模型後警告
+        if not resume_pt and info.label_type:
+            expect = "seg" if self.task_combo.currentData() == "segment" else "bbox"
+            if info.label_type != expect:
+                warns.append(
+                    f"dataset 的標籤是 {info.label_type} 格式，但 Task 選的是 "
+                    f"{self.task_combo.currentText()}。\n"
+                    "  • seg 標籤 + Detect：會自動取外接框訓練，不報錯但訓出來的是偵測模型\n"
+                    "  • bbox 標籤 + Segment：訓練會直接失敗"
+                )
+
+        # 總迭代數。ultralytics 的 warmup 是 nw = max(round(warmup_epochs * nb), 100),
+        # 有 100 iteration 的下限, 資料量小又只跑幾輪的話整段訓練都還在 warmup,
+        # 學習率從沒離開起跑點 (resume 的輪數由 args.yaml 決定, 這裡的值不準, 不檢查)
+        batch = self.batch_spin.value()
+        if not resume_mode and batch > 0 and info.n_train:
+            nb = math.ceil(info.n_train / batch)
+            total_iters = self.epochs_spin.value() * nb
+            if total_iters < 300:
+                warns.append(
+                    f"總迭代數只有 {total_iters} 次 ({info.n_train} 張 / batch {batch} "
+                    f"= 每輪 {nb} 次 × {self.epochs_spin.value()} 輪)。"
+                    "ultralytics 的 warmup 至少佔 100 次迭代，這樣學習率幾乎沒離開起跑點，"
+                    "模型學不到東西。請提高 Epochs 或降低 Batch"
+                )
+            if info.n_train % batch == 1:
+                warns.append(
+                    f"{info.n_train} 張圖除以 batch {batch} 後，每輪最後一批只有 1 張，"
+                    "BatchNorm 的統計量會被雜訊污染。建議微調 Batch 大小"
+                )
+        return warns
+
     def _on_start(self) -> None:
         """檢查參數並啟動訓練 thread"""
         yaml_path = self.yaml_edit.text().strip()
@@ -803,24 +948,19 @@ class TrainYoloDialog(QDialog):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        # Task 與 dataset 實際標籤格式的交叉檢查。指定 .pt 時 task 由權重決定 (這裡
-        # 讀不到, 不做無謂的確認), 改由 _TrainerThread._align_task() 載入後警告
-        label_type = _detect_dataset_label_type(yaml_path)
-        if not resume_pt and label_type:
-            expect = "seg" if self.task_combo.currentData() == "segment" else "bbox"
-            if label_type != expect:
-                reply = QMessageBox.question(
-                    self,
-                    "Task 與標籤格式不符",
-                    f"dataset 的標籤是 {label_type} 格式，但 Task 選的是 "
-                    f"{self.task_combo.currentText()}。\n\n"
-                    "• seg 標籤 + Detect：ultralytics 會自動取外接框訓練，不會報錯，"
-                    "但訓出來的是偵測模型\n"
-                    "• bbox 標籤 + Segment：訓練會直接失敗\n\n"
-                    "是否仍要繼續?",
-                )
-                if reply != QMessageBox.StandardButton.Yes:
-                    return
+        # dataset 體檢: 這些設定都不會讓 ultralytics 報錯, 但會安靜地訓出爛模型
+        info = _read_dataset_info(yaml_path)
+        warns = self._preflight_warnings(info, resume_pt, resume_mode)
+        if warns:
+            body = "\n\n".join(f"⚠ {w}" for w in warns)
+            reply = QMessageBox.question(
+                self,
+                "開始訓練前的提醒",
+                f"{body}\n\n是否仍要開始訓練?",
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        label_type = info.label_type
 
         # 把基本參數寫回 settings 並持久化
         self._save_basic_to_settings()

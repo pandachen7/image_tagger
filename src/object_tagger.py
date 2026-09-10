@@ -1,6 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-08-22
-import random
+# 更新日期: 2026-09-10
 import re
 import shutil
 import sys
@@ -43,7 +42,7 @@ from src.dialogs import (
 )
 from src.utils.cropper import CROP_MODE_FIXED, compute_crops
 from src.utils.dynamic_settings import save_settings, settings
-from src.utils.file_handler import file_h
+from src.utils.file_handler import ConvertStats, file_h, split_train_val
 from src.utils.img_handler import inferencer
 from src.utils.func import getMaskPath, getXmlPath, imwrite_unicode, is_same_path
 from src.utils.global_param import g_param
@@ -1313,6 +1312,12 @@ class MainWindow(QMainWindow):
         copy_images = dialog.copy_images
         start_time = datetime.now()
 
+        # 0) 清掉上一次轉檔留下的 split。不清的話, 這次重新洗牌後同一張圖可能被分到
+        # 另一邊, 舊的那份卻還留在原位 —— 標籤已經被搬走, 於是那張圖變成「有物件卻
+        # 沒有標籤」的背景圖, 同時又同時存在於 train 與 val (資料洩漏)。
+        if not self._clear_previous_split(base):
+            return
+
         # 1) 轉換 VOC XML → YOLO txt（先輸出到暫存 labels/ 下），顯示進度條
         tmp_labels = base / YOLO_LABELS_FOLDER
         tmp_labels.mkdir(parents=True, exist_ok=True)
@@ -1334,7 +1339,7 @@ class MainWindow(QMainWindow):
             progress.setLabelText(f"正在轉換 VOC → YOLO ... ({current}/{total})")
             QApplication.processEvents()
 
-        not_matched = file_h.convertVocInFolder(
+        stats = file_h.convertVocInFolder(
             str(base), tmp_labels, self.app_state, progress_callback=on_progress
         )
         progress.close()
@@ -1345,15 +1350,38 @@ class MainWindow(QMainWindow):
 
         # 寫入未對應的 class_name 記錄檔
         not_match_path = None
-        if not_matched:
+        if stats.not_matched:
             not_match_name = f"not_match_{start_time.strftime('%Y_%m%d_%H%M%S')}.txt"
             not_match_path = base / not_match_name
             with open(not_match_path, "w", encoding="utf-8") as f:
-                for image_filename, class_name in not_matched:
+                for image_filename, class_name in stats.not_matched:
                     f.write(f"{image_filename}\t{class_name}\n")
             log.w(f"未對應的 class_name 已寫入: {not_match_path}")
 
-        # 2) 收集有對應 label 的圖片
+        # 2) 只留實際出現的類別, 並把 class id 壓成 0..n-1 連號。
+        # class mapping 裡沒用到的類別不只讓模型多學幾個空類別: optimizer=auto 是用
+        # nc 算學習率的 (lr = 0.002*5/(4+nc)), nc 從 2 變 13 學習率就掉了 2.8 倍。
+        counts = file_h.count_label_classes(tmp_labels)
+        if not counts:
+            QMessageBox.warning(
+                self,
+                "Warning",
+                "轉換後沒有任何標註可用，dataset 會全是背景圖，無法訓練。\n"
+                "請確認 Class Mapping 有涵蓋標註實際使用的 class name"
+                + (f"\n\n未對應清單: {not_match_path.name}" if not_match_path else ""),
+            )
+            return
+        categories = settings.class_names.categories  # {name: id}
+        old_id_to_name = {v: k for k, v in categories.items()}
+        used_ids = sorted(counts)
+        id_map = {old: new for new, old in enumerate(used_ids)}
+        file_h.remap_label_classes(tmp_labels, id_map)
+        id_to_name = {
+            id_map[old]: old_id_to_name.get(old, f"class_{old}") for old in used_ids
+        }
+        class_counts = {id_to_name[id_map[old]]: counts[old] for old in used_ids}
+
+        # 3) 收集有對應 label 的圖片並切分 train / val
         image_files = sorted(
             f for f in base.iterdir()
             if f.is_file() and f.suffix.lower() in IMAGE_EXTS
@@ -1365,13 +1393,19 @@ class MainWindow(QMainWindow):
         if not paired:
             QMessageBox.warning(self, "Warning", "沒有找到成功轉換的圖片/標籤配對")
             return
+        if len(paired) < 2:
+            QMessageBox.warning(
+                self,
+                "Warning",
+                "只有 1 張可用的圖片，無法切出 val set。\n"
+                "val 是空的 (或與 train 相同) 會讓 early stopping 與 best.pt 的挑選失去意義，"
+                "請至少準備 2 張已標註的圖片",
+            )
+            return
 
-        random.shuffle(paired)
-        split_idx = max(1, int(len(paired) * train_ratio))
-        train_files = paired[:split_idx]
-        val_files = paired[split_idx:] if split_idx < len(paired) else []
+        train_files, val_files, grouped = split_train_val(paired, train_ratio)
 
-        # 3) 建立目錄結構並移動檔案
+        # 4) 建立目錄結構並移動檔案
         for split_name, files in [("train", train_files), ("val", val_files)]:
             if not files:
                 continue
@@ -1387,22 +1421,28 @@ class MainWindow(QMainWindow):
                     shutil.move(str(img_path), str(img_dir / img_path.name))
                 shutil.move(str(txt_path), str(lbl_dir / txt_path.name))
 
-        # 清除暫存 labels/ (已搬空)
+        # 清除暫存 labels/ 下殘留的孤兒 txt (圖片已被搬走的舊標籤), 以及已搬空的資料夾
+        for orphan in tmp_labels.glob("*.txt"):
+            try:
+                orphan.unlink()
+            except Exception as e:
+                log.w(f"刪除殘留標籤失敗 ({orphan}): {e}")
         if tmp_labels.exists() and not any(tmp_labels.iterdir()):
             tmp_labels.rmdir()
 
-        # 4) 產生 dataset yaml
-        categories = settings.class_names.categories  # {name: id}
-        # 反轉成 {id: name}，依 id 排序
-        id_to_name = dict(sorted(
-            ((v, k) for k, v in categories.items()),
-            key=lambda x: x[0],
-        ))
+        # ultralytics 的 labels/*.cache 只用「檔案大小總和 + 路徑字串」當 hash, 只改
+        # class id 的話 hash 可能不變而沿用舊快取, 訓練吃到的還是上一版標籤。
+        for cache in base.glob("labels/*.cache"):
+            try:
+                cache.unlink()
+                log.i(f"已刪除舊的標籤快取: {cache}")
+            except Exception as e:
+                log.w(f"刪除標籤快取失敗 ({cache}): {e}")
 
+        # 5) 產生 dataset yaml
         data_yaml = {"path": str(base.resolve())}
         data_yaml["train"] = "images/train"
-        # ultralytics 要求 train/val 都必須存在；無 val split 時退回指向 train
-        data_yaml["val"] = "images/val" if val_files else "images/train"
+        data_yaml["val"] = "images/val"
         data_yaml["nc"] = len(id_to_name)
         data_yaml["names"] = id_to_name
 
@@ -1411,45 +1451,151 @@ class MainWindow(QMainWindow):
         with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.dump(data_yaml, f)
 
-        # 5) 顯示轉換結果摘要
-        self._show_convert_summary(
-            id_to_name, len(train_files), len(val_files),
-            yaml_name, not_matched, not_match_path,
+        # 6) 顯示轉換結果摘要
+        val_labels = sum(
+            file_h.count_label_classes(base / "labels" / "val").values()
         )
+        self._show_convert_summary(
+            id_to_name, class_counts, len(train_files), len(val_files), val_labels,
+            grouped, yaml_name, stats, not_match_path,
+        )
+
+    def _clear_previous_split(self, base: Path) -> bool:
+        """轉檔前清掉既有的 images/labels split（有內容時先問過使用者）
+
+        Args:
+            base: dataset 根目錄
+
+        Returns:
+            bool: True 表示可以繼續轉檔; False 表示使用者取消
+        """
+        split_dirs = [
+            base / "images" / "train", base / "images" / "val",
+            base / "labels" / "train", base / "labels" / "val",
+        ]
+        existing = [d for d in split_dirs if d.is_dir() and any(d.iterdir())]
+        if not existing:
+            return True
+
+        reply = QMessageBox.question(
+            self,
+            "已有舊的 dataset split",
+            "偵測到上一次轉檔留下的 images/train、labels/val 等資料夾。\n\n"
+            "保留舊檔會出問題：這次重新洗牌後同一張圖可能換到另一邊，"
+            "舊的那份卻還留在原位而標籤已被搬走 —— 那張圖會變成「有物件卻沒標籤」的"
+            "背景圖，同時又同時存在於 train 與 val。\n\n"
+            "要清空這些資料夾後重建嗎？(原始圖片與 VOC XML 不會被刪除)",
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            self.statusbar.showMessage("轉換已取消 (保留舊的 dataset split)")
+            return False
+
+        for d in [base / "images", base / "labels"]:
+            for sub in ("train", "val"):
+                target = d / sub
+                if not target.is_dir():
+                    continue
+                try:
+                    shutil.rmtree(target)
+                    log.i(f"已清除舊的 split: {target}")
+                except Exception as e:
+                    log.e(f"清除舊的 split 失敗 ({target}): {e}")
+                    QMessageBox.warning(
+                        self, "Warning", f"無法清除 {target}，請手動刪除後重試"
+                    )
+                    return False
+        for cache in base.glob("labels/*.cache"):
+            try:
+                cache.unlink()
+            except Exception as e:
+                log.w(f"刪除標籤快取失敗 ({cache}): {e}")
+        return True
 
     def _show_convert_summary(
         self,
         id_to_name: dict[int, str],
+        class_counts: dict[str, int],
         train_count: int,
         val_count: int,
+        val_labels: int,
+        grouped: bool,
         yaml_name: str,
-        not_matched: list[tuple[str, str]],
+        stats: ConvertStats,
         not_match_path: Path | None,
     ):
-        """顯示 VOC → YOLO 轉換完成的摘要對話框"""
-        # class_name 對應表
+        """顯示 VOC → YOLO 轉換完成的摘要對話框
+
+        Args:
+            id_to_name: 重新編號後的 {class_id: class_name}
+            class_counts: {class_name: 標註筆數}
+            train_count: train 圖片數
+            val_count: val 圖片數
+            val_labels: val 的標註筆數
+            grouped: split 是否成功依來源分組 (False 代表來源只有一組)
+            yaml_name: 產生的 dataset yaml 檔名
+            stats: 轉換統計
+            not_match_path: 未對應清單的路徑
+        """
+        total_labels = sum(class_counts.values())
         lines = ["轉換完成\n"]
         lines.append(f"  Train: {train_count} 張, Val: {val_count} 張")
+        lines.append(f"  標註總數: {total_labels} 筆 (val: {val_labels} 筆)")
+        if stats.background:
+            ratio = stats.background / (train_count + val_count) * 100
+            lines.append(f"  背景圖 (無框): {stats.background} 張, 佔 {ratio:.0f}%")
         lines.append(f"  Dataset YAML: {yaml_name}")
-        if val_count == 0:
-            lines.append("  ⚠ 無 val split，dataset.yaml 的 val 已退回指向 train (僅供訓練啟動，建議下次設定 val 比例)")
         lines.append("")
-        lines.append("── Class 對應表 ──")
+        lines.append("── Class 對應表 (只含實際出現的類別) ──")
         for cid, cname in id_to_name.items():
-            lines.append(f"  {cid}: {cname}")
+            lines.append(f"  {cid}: {cname}  ({class_counts.get(cname, 0)} 筆)")
 
-        # 未對應提示
-        if not_matched and not_match_path:
-            unique_names = sorted(set(cn for _, cn in not_matched))
-            lines.append(f"\n⚠ 有 {len(not_matched)} 筆標註的 class_name 未對應到 categories:")
-            for name in unique_names:
-                lines.append(f"  - {name}")
-            lines.append(f"\n詳細記錄: {not_match_path.name}")
+        warns = []
+        # val 太小的話, 某一輪僥倖的高分就會把 best_epoch 釘住, patience 隨後把訓練
+        # 砍掉, best.pt 也留在那個雜訊點
+        if val_count < 20 or val_labels < 50:
+            warns.append(
+                f"val 只有 {val_count} 張 / {val_labels} 筆標註，mAP 會被雜訊主導 —— "
+                "early stopping 可能提早砍掉訓練，best.pt 也可能挑到僥倖的那一輪。"
+                "建議累積更多標註後再訓練"
+            )
+        if not grouped:
+            warns.append(
+                "所有圖片都來自同一個來源 (同一段影片或同一張原圖的裁切)，無法分組切分，"
+                "已退回逐檔隨機切。val 與 train 高度相似，分數會明顯偏樂觀"
+            )
+        if stats.background and stats.background / (train_count + val_count) > 0.5:
+            warns.append(
+                f"背景圖佔了 {stats.background / (train_count + val_count) * 100:.0f}%，"
+                "比例過高會讓模型傾向不偵測 (建議控制在 10% 上下)"
+            )
+        if stats.unmatched_only:
+            warns.append(
+                f"{len(stats.unmatched_only)} 張圖的框全數對不上 Class Mapping，"
+                "已整張排除在 dataset 外 (若寫成空標籤，圖裡的物件會被當背景教給模型)"
+            )
+        if stats.seg_dedup:
+            warns.append(
+                f"seg 輸出時去掉了 {stats.seg_dedup} 筆與 polygon 重複的 bndbox "
+                "(label mode = all 會把同一物件同時存成兩種標註)"
+            )
+        if stats.not_matched and not_match_path:
+            unique_names = sorted({cn for _, cn in stats.not_matched})
+            warns.append(
+                f"有 {len(stats.not_matched)} 筆標註的 class_name 未對應到 categories: "
+                + ", ".join(unique_names)
+                + f"\n   詳細記錄: {not_match_path.name}"
+            )
+
+        if warns:
+            lines.append("")
+            lines.append("── 注意 ──")
+            for w in warns:
+                lines.append(f"⚠ {w}")
 
         QMessageBox.information(self, "VOC → YOLO 轉換結果", "\n".join(lines))
         self.statusbar.showMessage(
             f"轉換完成 — train: {train_count}, val: {val_count}, "
-            f"yaml: {yaml_name}"
+            f"標註 {total_labels} 筆, yaml: {yaml_name}"
         )
 
     def categorize_media(self):
