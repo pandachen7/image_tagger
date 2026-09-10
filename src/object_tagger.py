@@ -1,5 +1,5 @@
 # 主視窗：工具列、選單、快捷鍵、儲存標註等主要UI邏輯
-# 更新日期: 2026-09-10
+# 更新日期: 2026-09-11
 import re
 import shutil
 import sys
@@ -746,18 +746,40 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage(f"Invalid folder path `{folder_path}`")
 
     def show_image(self, cmd: str):
-        """show下一個影校或影片, 如有自動記錄則要先儲存之前的labels"""
+        """show下一個影像或影片, 如有自動記錄則要先儲存之前的labels
+
+        Args:
+            cmd: ShowImageCmd 的其中一個 (next / prev / first / last)
+        """
         if self.app_state.auto_save or g_param.user_labeling:
             self.saveImgAndLabels()
+
+        # 已經在第一張 / 最後一張時 file_h 不會換檔, 這裡必須原地返回。
+        # 不能往下做 resetStates(): 它會 clearBboxes() 把畫面上的標註與 undo 歷史
+        # 清掉, 而負責重讀 XML 的 load_image() 只在換檔成功時才會執行 —— 於是目前
+        # 這張的框就這樣消失了。auto_save 開著的話, 下一次按鍵還會把空的標註覆寫
+        # 回 XML, 連檔案裡的標註都一起沒了。
+        if not file_h.show_image(cmd):
+            if not file_h.image_files:
+                self.statusbar.showMessage("沒有可顯示的檔案")
+            elif cmd in (ShowImageCmd.NEXT, ShowImageCmd.LAST):
+                self.statusbar.showMessage(
+                    f"已經是最後一張 [{file_h.current_index + 1} / {len(file_h.image_files)}]"
+                )
+            else:
+                self.statusbar.showMessage(
+                    f"已經是第一張 [{file_h.current_index + 1} / {len(file_h.image_files)}]"
+                )
+            return
+
         self.resetStates()
-        if file_h.show_image(cmd):
-            self.image_widget.load_image(file_h.current_image_path())
-            self.statusbar.showMessage(
-                f"[{file_h.current_index + 1} / {len(file_h.image_files)}] "
-                f"Image: {file_h.current_image_path()}"
-            )
-            settings.file_system.file_index = file_h.current_index
-            save_settings()
+        self.image_widget.load_image(file_h.current_image_path())
+        self.statusbar.showMessage(
+            f"[{file_h.current_index + 1} / {len(file_h.image_files)}] "
+            f"Image: {file_h.current_image_path()}"
+        )
+        settings.file_system.file_index = file_h.current_index
+        save_settings()
 
     def update_frame(self):
         if self.play_state == PlayState.PLAY and self.image_widget.cap:
