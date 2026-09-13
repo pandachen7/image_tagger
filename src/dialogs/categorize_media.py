@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
 
 from src.utils.const import ALL_EXTS, IMAGE_EXTS, VIDEO_EXTS
 from src.utils.dynamic_settings import settings
-from src.utils.func import imread_unicode
+from src.utils.func import getXmlPath, imread_unicode
 from src.utils.img_handler import sam3_label_conf
 from src.utils.logger import getUniqueLogger
 
@@ -36,7 +36,10 @@ class CategorizeMediaDialog(QDialog):
 
     DEFAULT_MODEL = "yolo26s.pt"
     NOT_DETECTED_FOLDER = "not_detected"
+    FALLBACK_FOLDER = "unknown"
     VIDEO_SAMPLE_FRAMES = 5
+    # Windows 檔名不允許的字元; SAM3 的類別名是使用者自由輸入的 text prompt
+    INVALID_NAME_CHARS = '<>:"/\\|?*'
 
     def __init__(
         self, parent=None, default_folder: str = "", default_model: str = ""
@@ -245,23 +248,21 @@ class CategorizeMediaDialog(QDialog):
 
             try:
                 if model_type == "sam3":
-                    class_counts = self._detect_file_sam3(
+                    class_counts, class_confs = self._detect_file_sam3(
                         model, file_path, sam3_labels
                     )
                 else:
-                    class_counts = self._detect_file(model, file_path)
+                    class_counts, class_confs = self._detect_file(model, file_path)
             except Exception:
                 log.e(f"偵測失敗: {file_path.name}")
-                class_counts = {}
+                class_counts, class_confs = {}, {}
 
             if not class_counts:
                 subfolder = self.NOT_DETECTED_FOLDER
             else:
-                max_count = max(class_counts.values())
-                top_classes = sorted(
-                    name for name, cnt in class_counts.items() if cnt == max_count
+                subfolder = self._folder_name(
+                    self._top_class(class_counts, class_confs)
                 )
-                subfolder = "+".join(top_classes)
 
             file_to_subfolder[file_path] = subfolder
 
@@ -276,11 +277,30 @@ class CategorizeMediaDialog(QDialog):
         QApplication.processEvents()
 
         moved_counts: dict[str, int] = {}
+        failed: list[str] = []
         for file_path, subfolder in file_to_subfolder.items():
             dest_dir = base / subfolder
-            dest_dir.mkdir(exist_ok=True)
-            shutil.move(str(file_path), str(dest_dir / file_path.name))
+            # 先算好標註路徑: 圖片搬走後就找不到原本的位置了
+            xml_path = getXmlPath(file_path)
+            try:
+                dest_dir.mkdir(exist_ok=True)
+                shutil.move(str(file_path), str(dest_dir / file_path.name))
+            except Exception as e:
+                # 單一檔案失敗不該中斷整批: 未捕捉的例外會被全域 excepthook 記下來後
+                # 直接結束這個迴圈, 只留下已建好的空資料夾, 其餘檔案完全沒被搬移
+                log.e(f"搬移失敗 ({file_path.name} -> {subfolder}/): {e}")
+                failed.append(file_path.name)
+                continue
             moved_counts[subfolder] = moved_counts.get(subfolder, 0) + 1
+
+            # VOC 標註跟著圖片走; 留在原地的話圖片被分類後標註就斷開了。
+            # 圖片已經搬成功, 標註搬失敗只記錄下來, 不影響這個檔案的分類結果
+            if xml_path.is_file():
+                try:
+                    shutil.move(str(xml_path), str(dest_dir / xml_path.name))
+                except Exception as e:
+                    log.e(f"標註搬移失敗 ({xml_path.name} -> {subfolder}/): {e}")
+                    failed.append(xml_path.name)
 
         self.progress_bar.setValue(total)
         self.status_label.setText("完成")
@@ -290,18 +310,23 @@ class CategorizeMediaDialog(QDialog):
         for subfolder in sorted(moved_counts.keys()):
             lines.append(f"  {subfolder}/: {moved_counts[subfolder]} 個檔案")
         lines.append(f"\n共處理 {total} 個檔案")
+        if failed:
+            lines.append(f"搬移失敗 {len(failed)} 個檔案（詳見 log）")
         QMessageBox.information(self, "Categorize Media 結果", "\n".join(lines))
         self.start_btn.setEnabled(True)
 
-    def _detect_file(self, model, file_path: Path) -> dict[str, int]:
-        """偵測單一檔案，回傳 {class_name: count}"""
+    def _detect_file(
+        self, model, file_path: Path
+    ) -> tuple[dict[str, int], dict[str, float]]:
+        """偵測單一檔案，回傳 ({class_name: 次數}, {class_name: 信心值總和})"""
         counts: Counter = Counter()
+        confs: Counter = Counter()
         suffix = file_path.suffix.lower()
 
         if suffix in IMAGE_EXTS:
             img = imread_unicode(file_path)
             if img is not None:
-                self._count_detections(model, img, counts)
+                self._count_detections(model, img, counts, confs)
         elif suffix in VIDEO_EXTS:
             cap = cv2.VideoCapture(str(file_path))
             try:
@@ -311,15 +336,15 @@ class CategorizeMediaDialog(QDialog):
                         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
                         ret, frame = cap.read()
                         if ret:
-                            self._count_detections(model, frame, counts)
+                            self._count_detections(model, frame, counts, confs)
             finally:
                 cap.release()
 
-        return dict(counts)
+        return dict(counts), dict(confs)
 
     @staticmethod
-    def _count_detections(model, img, counts: Counter):
-        """對單一影像跑 YOLO 推論並累加 class_name 計數"""
+    def _count_detections(model, img, counts: Counter, confs: Counter):
+        """對單一影像跑 YOLO 推論並累加 class_name 的次數與信心值"""
         conf = settings.models.yolo_conf or 0.25
         results = model.predict(img, conf=conf, verbose=False)
         for r in results:
@@ -327,18 +352,20 @@ class CategorizeMediaDialog(QDialog):
                 for box in r.boxes:
                     name = model.names[int(box.cls)]
                     counts[name] += 1
+                    confs[name] += float(box.conf)
 
     def _detect_file_sam3(
         self, predictor, file_path: Path, labels: list[str]
-    ) -> dict[str, int]:
-        """SAM3 偵測單一檔案，回傳 {class_name: count}"""
+    ) -> tuple[dict[str, int], dict[str, float]]:
+        """SAM3 偵測單一檔案，回傳 ({class_name: 次數}, {class_name: 信心值總和})"""
         counts: Counter = Counter()
+        confs: Counter = Counter()
         suffix = file_path.suffix.lower()
 
         if suffix in IMAGE_EXTS:
             img = imread_unicode(file_path)
             if img is not None:
-                self._count_sam3(predictor, img, labels, counts)
+                self._count_sam3(predictor, img, labels, counts, confs)
         elif suffix in VIDEO_EXTS:
             cap = cv2.VideoCapture(str(file_path))
             try:
@@ -348,15 +375,19 @@ class CategorizeMediaDialog(QDialog):
                         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
                         ret, frame = cap.read()
                         if ret:
-                            self._count_sam3(predictor, frame, labels, counts)
+                            self._count_sam3(
+                                predictor, frame, labels, counts, confs
+                            )
             finally:
                 cap.release()
 
-        return dict(counts)
+        return dict(counts), dict(confs)
 
     @staticmethod
-    def _count_sam3(predictor, img, labels: list[str], counts: Counter):
-        """對單一影像跑 SAM3 推論並累加 class_name 計數"""
+    def _count_sam3(
+        predictor, img, labels: list[str], counts: Counter, confs: Counter
+    ):
+        """對單一影像跑 SAM3 推論並累加 class_name 的次數與信心值"""
         predictor.set_image(img)
         src_shape = img.shape[:2]
         masks, boxes = predictor.inference_features(
@@ -368,8 +399,41 @@ class CategorizeMediaDialog(QDialog):
             for i, box in enumerate(boxes_np):
                 x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
                 if (x2 - x1) > 0 and (y2 - y1) > 0:
-                    label, _ = sam3_label_conf(boxes_np, i, labels)
+                    label, score = sam3_label_conf(boxes_np, i, labels)
                     counts[label] += 1
+                    # 取不到分數時 sam3_label_conf 回傳 -1.0, 夾成 0 以免拉低總和
+                    confs[label] += max(score, 0.0)
+
+    @staticmethod
+    def _top_class(counts: dict[str, int], confs: dict[str, float]) -> str:
+        """挑出代表整個檔案的單一類別。
+
+        一個檔案只進一個 class 資料夾: 先比偵測次數, 同票比信心值總和, 再同票
+        取字母序較前者, 讓同一批檔案每次跑的結果一致。
+
+        原本同票是把類別名用 `+` 串成資料夾名 (例如 `dog+person`), 但「各出現
+        一次」的組合非常常見, 每種組合都會長出一個新資料夾, 結果幾乎是一張圖
+        一個資料夾, 失去分類的意義。
+        """
+        return min(
+            counts,
+            key=lambda name: (-counts[name], -confs.get(name, 0.0), name),
+        )
+
+    @classmethod
+    def _folder_name(cls, class_name: str) -> str:
+        """把類別名轉成可用的資料夾名。
+
+        SAM3 的類別來自使用者自由輸入的 text prompt, 可能含有 `/`、`?` 這類
+        字元, 直接拿來 mkdir 會失敗或意外建出多層資料夾。
+        """
+        name = "".join(
+            "_" if ch in cls.INVALID_NAME_CHARS or ord(ch) < 32 else ch
+            for ch in class_name
+        )
+        # Windows 會忽略結尾的空白與點, 建出來的資料夾名會和預期不同
+        name = name.strip().rstrip(". ")
+        return name or cls.FALLBACK_FOLDER
 
     def _sample_frame_indices(self, total: int) -> list[int]:
         """從影片中均勻取樣 frame indices"""
