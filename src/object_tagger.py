@@ -287,6 +287,12 @@ class MainWindow(QMainWindow):
         self.view_menu = self.menu.addMenu("View")
         # self.help_menu = self.menu.addMenu("&Help")
 
+        # 目前使用的模型常駐在選單列右側: 這塊本來就是空的, 而且不會被 statusbar
+        # 的暫時訊息蓋掉。路徑可能很長會把選單擠掉, 因此只顯示檔名, 完整路徑放 tooltip
+        self.model_label = QLabel("")
+        self.model_label.setStyleSheet("color: gray; padding-right: 8px;")
+        self.menu.setCornerWidget(self.model_label, Qt.Corner.TopRightCorner)
+
         # View mode actions
         self.view_action_group = QActionGroup(self)
         self.view_action_group.setExclusive(True)
@@ -554,6 +560,32 @@ class MainWindow(QMainWindow):
             self.use_yolo_action.setChecked(True)
         elif inferencer.active_model_type == ModelType.SAM3:
             self.use_sam_action.setChecked(True)
+        self._update_model_label()
+
+    def _update_model_label(self):
+        """更新選單列右側的模型顯示。
+
+        顯示「類型: 檔名」, 完整路徑放 tooltip。檔案存在時 tooltip 給絕對路徑,
+        不存在時原樣顯示設定值 (例如只填 `yolo26s.pt` 讓 ultralytics 去下載)。
+        """
+        model_type = inferencer.active_model_type
+        if model_type == ModelType.YOLO:
+            model_path = inferencer.model_path or ""
+        elif model_type == ModelType.SAM3:
+            model_path = inferencer.sam_model_path or ""
+        else:
+            model_path = ""
+
+        if not model_path:
+            self.model_label.setText("Model: 未選擇")
+            self.model_label.setToolTip("尚未選擇模型, 請從 Ai 選單挑一個")
+            return
+
+        path = Path(model_path)
+        self.model_label.setText(f"{model_type.upper()}: {path.name}")
+        self.model_label.setToolTip(
+            str(path.resolve()) if path.is_file() else model_path
+        )
 
     def _on_auto_save_changed(self, enabled: bool):
         """Callback when auto save state changes."""
@@ -578,6 +610,7 @@ class MainWindow(QMainWindow):
             self.use_sam_action.setChecked(True)
         settings.models.active_model = model_type
         save_settings()
+        self._update_model_label()
         # 背景預載模型
         self._load_model(model_type)
 
