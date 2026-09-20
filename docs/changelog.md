@@ -1,5 +1,22 @@
 # 更新記錄
 
+2026/9
+- **Categorize Media 多一個「輸出方式」選項：可只產生 CSV / SQLite 索引檔，不搬動原始檔案**
+  - 先前只有搬移一種行為，而搬移是不可逆的：跑完才發現模型選錯或門檻沒調好，要把散進十幾個子資料夾的檔案還原回去沒有工具可用
+  - **搬移排在選單最後一項、預設落在 CSV**：破壞性最大的選項不該是按下去就會發生的那個
+  - 索引檔固定產在目標資料夾內（`categorize_result.csv` / `categorize_result.db`），已存在會先問是否覆蓋 —— **確認提前到偵測開始之前**，免得整輪跑完才被擋下來
+  - 欄位為 `file_name` / `file_path` / `category` / `detections` / `total_count` / `media_type`。`detections` 是 `{class_name: 次數}` 的 JSON，**保留 `category` 以外被偵測到的類別**，事後想換個條件重新篩選不必再跑一次模型
+  - `category` 記的是**未經檔名淨化的原始 class name**：索引檔是純文字欄位，沒有檔案系統的限制，`person/human` 這種 text prompt 存成 `person_human` 反而失真。淨化只在搬移模式真的要 `mkdir` 時才做
+  - CSV 以 `utf-8-sig`（帶 BOM）寫出，Excel 直接開中文類別名稱才不會亂碼；SQLite 重跑時整個 table 重建並補上 `category` 索引，同一個檔案內的其他 table 不受影響
+  - 對話框加一行提示，按下「開始偵測」之前就看得到東西會產在哪個路徑
+- **Categorize Media 的資料夾欄位改為可直接輸入 / 貼上路徑**：先前是唯讀，只能一層層點「瀏覽...」點進去，手上已經有路徑字串時反而最慢
+  - 自動去掉前後的空白與引號 —— 檔案總管的「複製路徑」給的是 `"D:\...\foo"`，帶著引號貼進來會被當成不存在的路徑
+  - 路徑邊打邊驗證，不存在時提示列當場顯示 `⚠ 找不到這個資料夾`，不必等按下「開始偵測」才被擋
+  - Model 欄位同樣改為可輸入，輸入完成後自動判斷類型並同步左側的 YOLO / YOLO-Seg / SAM3 下拉選單；同一個路徑只判斷一次，不重複 `torch.load`
+- **修正模型類型自動判斷把 seg model 認成一般 YOLO**：`getattr(ckpt["model"], "task", "")` 一律拿到空字串 —— ultralytics 的 checkpoint 上根本沒有 `model.task` 這個屬性，`task` 記在 `train_args` 裡
+  - 改以類別名稱（`SegmentationModel` / `DetectionModel`）為主要依據，再退回 `train_args["task"]`
+  - Categorize 的分類結果不受影響（yolo 與 yolo-seg 走同一條 `YOLO(model_path)` 推論路徑），錯的只有畫面上顯示的類型；但現在路徑可以手打，這個顯示正是用來確認自己貼對檔案的依據
+
 2026/8
 - **自動偵測的信心值 (Confidence) 改為可設定**：**Ai → Set YOLO Model** 與 **Ai → Set SAM3 Model** 各加一個 Confidence 欄位，先前寫死 0.25，要調只能改程式碼
   - 兩個模型的門檻各自獨立、也不該互相參考：SAM3 的分數是 `pred_logits.sigmoid() × presence_logit.sigmoid()`，presence（這張圖到底有沒有這個概念）會把數值整體壓低，同一個數字在兩邊的鬆緊度不一樣

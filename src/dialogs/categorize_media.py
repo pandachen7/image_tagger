@@ -1,12 +1,17 @@
-# Categorize Media 對話框：依 YOLO/SAM3 偵測結果將媒體檔案分類到子資料夾
-# 更新日期: 2026-08-20
+# Categorize Media 對話框：依 YOLO/SAM3 偵測結果分類媒體檔案
+# 輸出方式可選只產生 CSV / SQLite 索引檔 (不動原始檔案), 或搬移到子資料夾
+# 更新日期: 2026-09-20
 from __future__ import annotations
 
+import csv
 import shutil
+import sqlite3
 from collections import Counter
 from pathlib import Path
 
 import cv2
+import orjson
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -30,9 +35,12 @@ from src.utils.logger import getUniqueLogger
 
 log = getUniqueLogger(__file__)
 
+# 單筆偵測結果: (檔案路徑, 代表類別的原始 class name, {class_name: 偵測次數})
+DetectResult = tuple[Path, str, dict[str, int]]
+
 
 class CategorizeMediaDialog(QDialog):
-    """依 YOLO 偵測結果將媒體檔案分類到子資料夾"""
+    """依 YOLO 偵測結果分類媒體檔案：輸出 CSV / SQLite 索引, 或搬移到子資料夾"""
 
     DEFAULT_MODEL = "yolo26s.pt"
     NOT_DETECTED_FOLDER = "not_detected"
@@ -40,6 +48,14 @@ class CategorizeMediaDialog(QDialog):
     VIDEO_SAMPLE_FRAMES = 5
     # Windows 檔名不允許的字元; SAM3 的類別名是使用者自由輸入的 text prompt
     INVALID_NAME_CHARS = '<>:"/\\|?*'
+    # 索引檔固定產在目標資料夾內, 不另外跳存檔對話框
+    RESULT_CSV_NAME = "categorize_result.csv"
+    RESULT_DB_NAME = "categorize_result.db"
+    RESULT_TABLE = "categorize_result"
+    RESULT_FIELDS = (
+        "file_name", "file_path", "category",
+        "detections", "total_count", "media_type",
+    )
 
     def __init__(
         self, parent=None, default_folder: str = "", default_model: str = ""
@@ -48,13 +64,15 @@ class CategorizeMediaDialog(QDialog):
         self.setWindowTitle("Categorize Media")
         self.setMinimumWidth(500)
         self._canceled = False
+        # 最近一次判斷過類型的 model 路徑, 用來省下重複的 torch.load
+        self._detected_model_path = ""
 
         main_layout = QVBoxLayout(self)
 
         # 說明
         hint = QLabel(
             "使用 YOLO 模型偵測資料夾中的圖片與影片，\n"
-            "依偵測到最多次的物件名稱，將檔案分類到對應的子資料夾\n"
+            "依偵測到最多次的物件名稱決定每個檔案的分類\n"
             "（也可使用 SAM3 model，但分類效果通常不如 YOLO）"
         )
         hint.setStyleSheet("color: gray; font-size: 11px;")
@@ -64,9 +82,12 @@ class CategorizeMediaDialog(QDialog):
         # --- 資料夾選擇 ---
         form = QFormLayout()
         folder_row = QHBoxLayout()
+        # 路徑可直接打字或貼上, 不一定要走「瀏覽...」
         self.folder_edit = QLineEdit(default_folder)
-        self.folder_edit.setReadOnly(True)
-        self.folder_edit.setPlaceholderText("選擇要分類的資料夾")
+        self.folder_edit.setPlaceholderText("選擇或直接輸入要分類的資料夾路徑")
+        self.folder_edit.setToolTip("可直接輸入或貼上路徑，也可按「瀏覽...」選擇")
+        self.folder_edit.textChanged.connect(self._update_output_hint)
+        self.folder_edit.editingFinished.connect(self._on_folder_edited)
         folder_browse = QPushButton("瀏覽...")
         folder_browse.setFixedWidth(80)
         folder_browse.clicked.connect(self._browse_folder)
@@ -81,9 +102,14 @@ class CategorizeMediaDialog(QDialog):
         self.type_combo.addItem("YOLO-Seg", "yolo-seg")
         self.type_combo.addItem("SAM3", "sam3")
         self.type_combo.setFixedWidth(100)
+        # model 路徑同樣可直接打字或貼上
         self.model_edit = QLineEdit(default_model)
-        self.model_edit.setReadOnly(True)
-        self.model_edit.setPlaceholderText("選擇用於分類的 model (.pt)")
+        self.model_edit.setPlaceholderText("選擇或直接輸入用於分類的 model (.pt)")
+        self.model_edit.setToolTip(
+            "可直接輸入或貼上 .pt 路徑，也可按「瀏覽...」選擇\n"
+            "輸入完成後會自動判斷模型類型 (YOLO / YOLO-Seg / SAM3)"
+        )
+        self.model_edit.editingFinished.connect(self._on_model_edited)
         model_browse = QPushButton("瀏覽...")
         model_browse.setFixedWidth(80)
         model_browse.clicked.connect(self._browse_model)
@@ -96,7 +122,35 @@ class CategorizeMediaDialog(QDialog):
         model_row.addWidget(model_browse)
         model_row.addWidget(model_reset)
         form.addRow("Model:", model_row)
+
+        # --- 輸出方式 ---
+        self.output_combo = QComboBox()
+        # 搬移是不可逆的, 排在最後一項; 預設落在不動原始檔案的 CSV
+        self.output_combo.addItem(f"產生 CSV 檔 ({self.RESULT_CSV_NAME})", "csv")
+        self.output_combo.addItem(
+            f"產生 SQLite 檔 ({self.RESULT_DB_NAME})", "sqlite"
+        )
+        self.output_combo.addItem("搬移到子資料夾 (不可逆)", "move")
+        output_tips = (
+            "只產生 CSV 索引檔, 原始檔案留在原地",
+            "只產生 SQLite 索引檔, 原始檔案留在原地",
+            "把檔案搬到以類別命名的子資料夾, 原始檔案位置會改變且無法還原",
+        )
+        for i, tip in enumerate(output_tips):
+            self.output_combo.setItemData(i, tip, Qt.ItemDataRole.ToolTipRole)
+        self.output_combo.setToolTip(
+            "索引檔記錄每個檔案的分類與各類別偵測次數, 不搬動原始檔案"
+        )
+        self.output_combo.currentIndexChanged.connect(self._update_output_hint)
+        form.addRow("輸出方式:", self.output_combo)
         main_layout.addLayout(form)
+
+        # 依「資料夾 + 輸出方式」顯示實際產出位置, 按下去之前就看得到
+        self.output_hint = QLabel()
+        self.output_hint.setStyleSheet("color: gray; font-size: 11px;")
+        self.output_hint.setWordWrap(True)
+        main_layout.addWidget(self.output_hint)
+        self._update_output_hint()
 
         # --- 按鈕 ---
         btn_layout = QHBoxLayout()
@@ -121,27 +175,93 @@ class CategorizeMediaDialog(QDialog):
 
     def _browse_folder(self):
         path = QFileDialog.getExistingDirectory(
-            self, "選擇資料夾", self.folder_edit.text()
+            self, "選擇資料夾", self._clean_path_text(self.folder_edit.text())
         )
         if path:
+            # setText 會觸發 textChanged, 提示列自己會更新
             self.folder_edit.setText(path)
 
     def _browse_model(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "選擇 Model", self.model_edit.text(), "Model Files (*.pt)"
+            self, "選擇 Model",
+            self._clean_path_text(self.model_edit.text()),
+            "Model Files (*.pt)",
         )
         if path:
             self.model_edit.setText(path)
-            detected = self._detect_model_type(path)
-            if detected:
-                idx = self.type_combo.findData(detected)
-                if idx >= 0:
-                    self.type_combo.setCurrentIndex(idx)
+            self._apply_model_type(path)
+
+    def _on_model_edited(self):
+        """model 路徑輸入完成後正規化, 並自動判斷模型類型"""
+        cleaned = self._clean_path_text(self.model_edit.text())
+        if cleaned != self.model_edit.text():
+            self.model_edit.setText(cleaned)
+
+        if not cleaned:
+            self.status_label.setText("")
+            return
+        if not Path(cleaned).is_file():
+            self.status_label.setText(f"⚠ 找不到這個 model 檔案：{cleaned}")
+            return
+
+        self.status_label.setText("")
+        # torch.load 讀整個 checkpoint 並不便宜, 同一個路徑只判斷一次
+        if cleaned != self._detected_model_path:
+            self._apply_model_type(cleaned)
+
+    def _apply_model_type(self, model_path: str):
+        """判斷 model 類型並同步左側的類型下拉選單"""
+        self._detected_model_path = model_path
+        # 大模型載入要數秒, 先讓使用者知道畫面不是卡住
+        self.status_label.setText("正在判斷模型類型...")
+        QApplication.processEvents()
+        detected = self._detect_model_type(model_path)
+        self.status_label.setText("")
+        if detected:
+            idx = self.type_combo.findData(detected)
+            if idx >= 0:
+                self.type_combo.setCurrentIndex(idx)
 
     def _reset_model(self):
         """重設為預設 YOLO model"""
         self.model_edit.setText(self.DEFAULT_MODEL)
         self.type_combo.setCurrentIndex(0)  # YOLO
+        # 預設就是 YOLO, 類型已經對了, 不必再 torch.load 判斷一次
+        self._detected_model_path = self.DEFAULT_MODEL
+        self.status_label.setText("")
+
+    @staticmethod
+    def _clean_path_text(text: str) -> str:
+        """去掉路徑前後的空白與引號 (檔案總管的「複製路徑」會帶雙引號)"""
+        return text.strip().strip('"').strip("'").strip()
+
+    def _on_folder_edited(self):
+        """輸入完成後把欄位內容正規化, 貼進來的引號不要留在畫面上"""
+        cleaned = self._clean_path_text(self.folder_edit.text())
+        if cleaned != self.folder_edit.text():
+            self.folder_edit.setText(cleaned)  # 觸發 textChanged 更新提示列
+
+    def _update_output_hint(self):
+        """更新輸出位置提示文字"""
+        folder = self._clean_path_text(self.folder_edit.text())
+        mode = self.output_combo.currentData()
+        # 路徑可手動輸入, 打錯字當場就要看得出來, 不必等按下「開始偵測」
+        if folder and not Path(folder).is_dir():
+            self.output_hint.setText(f"⚠ 找不到這個資料夾：{folder}")
+            return
+
+        folder = folder or "<資料夾>"
+        # 用 Path 組合, 提示文字的分隔符才不會混用正反斜線
+        if mode == "move":
+            dest = Path(folder, "<類別>")
+            self.output_hint.setText(
+                f"檔案會搬移到 {dest} （原始檔案位置會改變, 無法還原）"
+            )
+        else:
+            name = self.RESULT_CSV_NAME if mode == "csv" else self.RESULT_DB_NAME
+            self.output_hint.setText(
+                f"索引檔：{Path(folder, name)} （原始檔案不會搬動）"
+            )
 
     @staticmethod
     def _detect_model_type(model_path: str) -> str | None:
@@ -153,7 +273,14 @@ class CategorizeMediaDialog(QDialog):
                 cls_name = type(ckpt["model"]).__name__.lower()
                 if "sam" in cls_name:
                     return "sam3"
+                # ultralytics 的 checkpoint 其實沒有 model.task (getattr 一律拿到
+                # 空字串, seg model 因此被判成 yolo); 類別名稱 SegmentationModel
+                # 才是直接的依據, task 則記在 train_args 裡
+                if "segment" in cls_name:
+                    return "yolo-seg"
                 task = getattr(ckpt["model"], "task", "") or ""
+                if not task:
+                    task = (ckpt.get("train_args") or {}).get("task", "") or ""
                 if task == "segment":
                     return "yolo-seg"
                 return "yolo"
@@ -167,15 +294,18 @@ class CategorizeMediaDialog(QDialog):
         self.reject()
 
     def _run(self):
-        """開始偵測並分類"""
-        folder = self.folder_edit.text()
-        model_path = self.model_edit.text()
+        """開始偵測, 再依輸出方式搬移檔案或產生索引檔"""
+        folder = self._clean_path_text(self.folder_edit.text())
+        model_path = self._clean_path_text(self.model_edit.text())
+        output_mode = self.output_combo.currentData()
 
         if not folder or not Path(folder).is_dir():
-            QMessageBox.warning(self, "Warning", "請選擇有效的資料夾")
+            QMessageBox.warning(self, "Warning", "請選擇或輸入有效的資料夾路徑")
             return
         if not model_path or not Path(model_path).is_file():
-            QMessageBox.warning(self, "Warning", "請選擇有效的 Model 檔案")
+            QMessageBox.warning(
+                self, "Warning", "請選擇或輸入有效的 Model 檔案 (.pt)"
+            )
             return
 
         # 收集媒體檔案（不含子資料夾）
@@ -187,6 +317,13 @@ class CategorizeMediaDialog(QDialog):
         if not media_files:
             QMessageBox.warning(self, "Warning", "資料夾中沒有找到圖片或影片檔案")
             return
+
+        # 索引檔的覆蓋確認提前到偵測之前, 免得整輪跑完才發現使用者不想覆蓋
+        out_path: Path | None = None
+        if output_mode != "move":
+            out_path = self._prepare_output_path(base, output_mode)
+            if out_path is None:
+                return
 
         # 載入 model
         model_type = self.type_combo.currentData()
@@ -233,8 +370,7 @@ class CategorizeMediaDialog(QDialog):
         self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(0)
 
-        # {file_path: subfolder_name}
-        file_to_subfolder: dict[Path, str] = {}
+        results: list[DetectResult] = []
 
         for i, file_path in enumerate(media_files):
             if self._canceled:
@@ -258,13 +394,13 @@ class CategorizeMediaDialog(QDialog):
                 class_counts, class_confs = {}, {}
 
             if not class_counts:
-                subfolder = self.NOT_DETECTED_FOLDER
+                category = self.NOT_DETECTED_FOLDER
             else:
-                subfolder = self._folder_name(
-                    self._top_class(class_counts, class_confs)
-                )
+                # 這裡留原始的 class name, 檔名淨化等到真的要 mkdir 時才做:
+                # 索引檔是純文字欄位, 沒有檔案系統的限制, 記淨化過的名字反而失真
+                category = self._top_class(class_counts, class_confs)
 
-            file_to_subfolder[file_path] = subfolder
+            results.append((file_path, category, class_counts))
 
         if self._canceled:
             self.status_label.setText("已取消")
@@ -272,13 +408,49 @@ class CategorizeMediaDialog(QDialog):
             self.start_btn.setEnabled(True)
             return
 
-        # 搬移檔案
+        # 依輸出方式處理結果
+        if output_mode == "move":
+            ok = self._output_move(base, results)
+        else:
+            ok = self._output_index(out_path, output_mode, results)
+
+        self.progress_bar.setValue(total)
+        self.status_label.setText("完成" if ok else "失敗")
+        self.start_btn.setEnabled(True)
+
+    def _prepare_output_path(self, base: Path, output_mode: str) -> Path | None:
+        """回傳索引檔路徑, 已存在則先問是否覆蓋; 使用者取消回傳 None"""
+        name = self.RESULT_CSV_NAME if output_mode == "csv" else self.RESULT_DB_NAME
+        out_path = base / name
+        if not out_path.exists():
+            return out_path
+
+        if output_mode == "csv":
+            msg = f"{name} 已存在，是否覆蓋？"
+        else:
+            msg = (
+                f"{name} 已存在，是否覆蓋其中的 {self.RESULT_TABLE} 資料表？\n"
+                "（同一個檔案內的其他資料表不受影響）"
+            )
+        reply = QMessageBox.question(
+            self, "檔案已存在", msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return None
+        return out_path
+
+    def _output_move(self, base: Path, results: list[DetectResult]) -> bool:
+        """把檔案搬到以類別命名的子資料夾, 顯示摘要並回傳是否全部成功"""
         self.status_label.setText("正在搬移檔案...")
         QApplication.processEvents()
 
         moved_counts: dict[str, int] = {}
         failed: list[str] = []
-        for file_path, subfolder in file_to_subfolder.items():
+        for file_path, category, _counts in results:
+            # 類別名到了檔案系統才需要淨化
+            subfolder = self._folder_name(category)
             dest_dir = base / subfolder
             # 先算好標註路徑: 圖片搬走後就找不到原本的位置了
             xml_path = getXmlPath(file_path)
@@ -302,18 +474,118 @@ class CategorizeMediaDialog(QDialog):
                     log.e(f"標註搬移失敗 ({xml_path.name} -> {subfolder}/): {e}")
                     failed.append(xml_path.name)
 
-        self.progress_bar.setValue(total)
-        self.status_label.setText("完成")
-
-        # 結果摘要
         lines = ["分類完成\n"]
         for subfolder in sorted(moved_counts.keys()):
             lines.append(f"  {subfolder}/: {moved_counts[subfolder]} 個檔案")
-        lines.append(f"\n共處理 {total} 個檔案")
+        lines.append(f"\n共處理 {len(results)} 個檔案")
         if failed:
             lines.append(f"搬移失敗 {len(failed)} 個檔案（詳見 log）")
         QMessageBox.information(self, "Categorize Media 結果", "\n".join(lines))
-        self.start_btn.setEnabled(True)
+        return not failed
+
+    def _output_index(
+        self, out_path: Path, output_mode: str, results: list[DetectResult]
+    ) -> bool:
+        """產生 CSV / SQLite 索引檔 (不搬動原始檔案), 顯示摘要並回傳是否成功"""
+        self.status_label.setText("正在寫入索引檔...")
+        QApplication.processEvents()
+
+        rows = self._build_rows(results)
+        if output_mode == "csv":
+            ok = self._write_csv(out_path, rows)
+        else:
+            ok = self._write_sqlite(out_path, rows)
+
+        if not ok:
+            QMessageBox.critical(
+                self, "Error", f"索引檔寫入失敗：{out_path.name}\n詳細原因請見 log"
+            )
+            return False
+
+        category_counts: dict[str, int] = {}
+        for _file_path, category, _counts in results:
+            category_counts[category] = category_counts.get(category, 0) + 1
+
+        lines = [f"索引檔已產生：\n{out_path}\n"]
+        for category in sorted(category_counts.keys()):
+            lines.append(f"  {category}: {category_counts[category]} 個檔案")
+        lines.append(f"\n共處理 {len(results)} 個檔案，原始檔案未搬動")
+        QMessageBox.information(self, "Categorize Media 結果", "\n".join(lines))
+        return True
+
+    @staticmethod
+    def _build_rows(results: list[DetectResult]) -> list[dict]:
+        """把偵測結果整理成索引檔的資料列"""
+        rows: list[dict] = []
+        for file_path, category, counts in results:
+            media_type = (
+                "image" if file_path.suffix.lower() in IMAGE_EXTS else "video"
+            )
+            rows.append({
+                "file_name": file_path.name,
+                "file_path": str(file_path),
+                "category": category,
+                # 完整的 {class_name: 次數}, 保留 category 以外被偵測到的類別;
+                # 事後想換條件重新篩選就不必再跑一次模型
+                "detections": orjson.dumps(
+                    counts, option=orjson.OPT_SORT_KEYS
+                ).decode(),
+                "total_count": sum(counts.values()),
+                "media_type": media_type,
+            })
+        return rows
+
+    def _write_csv(self, out_path: Path, rows: list[dict]) -> bool:
+        """寫出 CSV 索引檔, 回傳是否成功"""
+        try:
+            # utf-8-sig: 帶 BOM, Excel 直接開中文類別名稱才不會亂碼
+            with out_path.open("w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=list(self.RESULT_FIELDS))
+                writer.writeheader()
+                writer.writerows(rows)
+        except Exception:
+            log.e(f"CSV 索引檔寫入失敗: {out_path}")
+            return False
+        return True
+
+    def _write_sqlite(self, out_path: Path, rows: list[dict]) -> bool:
+        """寫出 SQLite 索引檔, 回傳是否成功"""
+        conn = None
+        try:
+            conn = sqlite3.connect(str(out_path))
+            cur = conn.cursor()
+            # 重跑時整個 table 重建, 避免殘留上一次的資料列
+            cur.execute(f"DROP TABLE IF EXISTS {self.RESULT_TABLE}")
+            cur.execute(
+                f"CREATE TABLE {self.RESULT_TABLE} ("
+                "file_name TEXT NOT NULL, "
+                "file_path TEXT NOT NULL, "
+                "category TEXT NOT NULL, "
+                "detections TEXT NOT NULL, "
+                "total_count INTEGER NOT NULL, "
+                "media_type TEXT NOT NULL)"
+            )
+            cur.execute(
+                f"CREATE INDEX idx_{self.RESULT_TABLE}_category "
+                f"ON {self.RESULT_TABLE}(category)"
+            )
+            placeholders = ", ".join(["?"] * len(self.RESULT_FIELDS))
+            cur.executemany(
+                f"INSERT INTO {self.RESULT_TABLE} "
+                f"({', '.join(self.RESULT_FIELDS)}) VALUES ({placeholders})",
+                [tuple(row[k] for k in self.RESULT_FIELDS) for row in rows],
+            )
+            conn.commit()
+        except Exception:
+            log.e(f"SQLite 索引檔寫入失敗: {out_path}")
+            return False
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    log.e(f"SQLite 連線關閉失敗: {out_path}")
+        return True
 
     def _detect_file(
         self, model, file_path: Path

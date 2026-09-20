@@ -443,8 +443,10 @@ class MainWindow(QMainWindow):
 
         self.categorize_media_action = QAction("Categorize Media", self)
         self.categorize_media_action.setToolTip(
-            "先用模型掃過整個資料夾, 依偵測到的類別把圖片/影片搬到同名子資料夾\n"
-            "(沒偵測到的進 not_detected); 是搬移不是複製, 用來預先篩素材"
+            "先用模型掃過整個資料夾, 依偵測到的類別決定每個圖片/影片的分類\n"
+            "(沒偵測到的歸 not_detected); 用來預先篩素材\n"
+            "輸出方式預設只產生 CSV / SQLite 索引檔, 不動原始檔案;\n"
+            "也可選搬到同名子資料夾, 但那是搬移不是複製, 無法還原"
         )
         self.categorize_media_action.triggered.connect(self.categorize_media)
         self.ai_menu.addAction(self.categorize_media_action)
