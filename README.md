@@ -54,7 +54,7 @@ uv run main.py
 | Train YOLO (GUI) | 直接在 GUI 內呼叫 ultralytics 訓練，可設定基本參數與進階參數（優化器 / 增強 / cache 等），訓練中顯示進度與 mAP；支援指定既有 `.pt` 做 Resume / Fine-tune 再訓練 |
 | Categorize Media | 用 YOLO/SAM3 模型偵測後，依最多次物件名稱決定分類。預設只產生 CSV / Excel / SQLite 索引檔而不動原始檔案；也可選擇搬到同名子資料夾（搬移不可逆） |
 | 影片標註 | 逐幀標註，支援自動抽幀儲存；狀態列顯示 `frame 目前幀 / 總幀數` |
-| 縮放與平移 | 滾輪以游標為錨點縮放、中鍵/右鍵拖曳平移、`f` 還原檢視；換到同尺寸的影像會保留縮放位置，方便逐張比對同一區域 |
+| 縮放與平移 | 滾輪以游標為錨點縮放、中鍵拖曳平移、`f` 還原檢視；換到同尺寸的影像會保留縮放位置，方便逐張比對同一區域 |
 | 標註調整 | 選取中的框有 8 個控制點：四角一次改兩個方向，四邊只改單一方向；拖框內整體移動 |
 | 邊界限制 | 畫面上的框與多邊形一律留在影像內（畫新框、resize、移動、偵測結果、讀進來的 XML 都會處理）；OBB 旋轉框例外 |
 | Undo / Redo | 標註的畫框、移動、resize、旋轉、頂點拖曳、刪除、改 label、執行偵測都可還原（`Ctrl+Z`），每張影像各自計算 |
@@ -85,13 +85,14 @@ uv run main.py
 | `f` | 還原檢視（整張影像可見並置中）|
 | 滾輪 | 以游標為錨點縮放 |
 | `Ctrl` + 滾輪 | 上/下一個檔案 |
-| 中鍵拖曳 / 右鍵拖曳 | 平移畫面 |
+| 中鍵拖曳 | 平移畫面 |
+| 右鍵點一下 (BBox / Polygon 模式) | 刪除游標下的 bbox 或 polygon（`right_click_delete: false` 可關閉） |
 
 ## 設定檔
 
 | 檔案 | 用途 |
 |------|------|
-| `cfg/system.yaml` | 系統設定：預設 label、undo 步數上限、啟用 SAM3/Mask/OBB 等開關 |
+| `cfg/system.yaml` | 系統設定：預設 label、undo 步數上限、右鍵刪除開關、啟用 SAM3/Mask/OBB 等開關 |
 | `cfg/settings.yaml` | 執行期設定：模型路徑、categories 對應、text prompts、訓練參數暫存 (training 區段)、標註儲存模式 (label 區段). 不存在時會自動生成 |
 
 ## 常用vs code的快捷組合鍵

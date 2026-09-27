@@ -50,6 +50,10 @@ save_folder: ./output
 # 標註 undo / redo 的最大步數 (每張影像各自計算, 換檔即清空)
 undo_limit: 60
 
+# BBox / Polygon 模式下, 右鍵點一下可刪除游標下的 bbox 或 polygon (平移請用中鍵)
+# false 則右鍵在畫布上沒有作用
+right_click_delete: true
+
 # 是否啟用 Draw / Erase / Fill 遮罩工具
 enable_mask_tools: false
 
@@ -89,6 +93,7 @@ class Config(BaseModel):
     show_fps: bool = False
     save_folder: str = "./output"
     undo_limit: int = 60
+    right_click_delete: bool = True
     enable_mask_tools: bool = False
     enable_obb: bool = False
     enable_sam3: bool = False

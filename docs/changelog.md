@@ -1,6 +1,8 @@
 # 更新記錄
 
 2026/9
+- **BBox / Polygon 模式下右鍵點一下可刪除游標下的標註**，不必切回 Select 模式，可 `Ctrl+Z` 還原。`cfg/system.yaml` 新增 `right_click_delete`（預設 `true`），設 `false` 則右鍵在畫布上沒有作用
+- **右鍵不再平移，平移只用中鍵**：右鍵同時負責平移與刪除時，拖曳平移沒拖開就會被當成點一下而誤刪
 - **Categorize Media 的輸出方式多一個 Excel 檔（`categorize_result.xlsx`）**：欄位與內容同 CSV，標題列凍結並附篩選鈕，開檔即可依 `category` 篩選；新增相依套件 `openpyxl`
 - **Categorize Media 多一個「輸出方式」選項：可只產生 CSV / SQLite 索引檔，不搬動原始檔案**
   - 先前只有搬移一種行為，而搬移是不可逆的：跑完才發現模型選錯或門檻沒調好，要把散進十幾個子資料夾的檔案還原回去沒有工具可用

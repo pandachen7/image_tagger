@@ -2,7 +2,7 @@
 # 標註的每次變更都會先在 self.history 記下變更前的快照, 供 undo / redo 還原
 # 影像的縮放與平移集中在 self.tf (ViewTransform); 原圖 <-> widget 的換算只走
 # _scale_to_original / _scale_to_widget, 不在別處自行乘 zoom 或加 offset
-# 更新日期: 2026-08-21
+# 更新日期: 2026-09-27
 import math
 import time
 import xml.etree.ElementTree as ET
@@ -899,6 +899,50 @@ class ImageWidget(QWidget):
             self.history.drop_last()
         return deleted
 
+    def _deleteAnnotationAt(self, pos: QPoint) -> bool:
+        """右鍵 click: 刪除游標下的 bbox 或 polygon (BBOX / POLYGON 模式)
+
+        只刪畫面上看得到的類型 (依 view_mode); 兩種都有時先找目前模式畫的那種,
+        重疊時取最後加入的那個 (畫在最上層)。進行中的繪製不受影響。
+
+        Args:
+            pos: widget 座標
+
+        Returns:
+            bool: 是否有刪除
+        """
+        if not cfg.right_click_delete:
+            return False
+        if self.drawing_mode not in (DrawingMode.BBOX, DrawingMode.POLYGON):
+            return False
+
+        can_bbox = self.view_mode in (ViewMode.BBOX, ViewMode.ALL)
+        can_polygon = self.view_mode in (ViewMode.SEG, ViewMode.ALL)
+        kinds = [
+            (self.bboxes, can_bbox, self._isInBboxArea),
+            (self.polygons, can_polygon, self._isPointInPolygon),
+        ]
+        if self.drawing_mode == DrawingMode.POLYGON:
+            kinds.reverse()
+
+        for items, visible, hit in kinds:
+            if not visible:
+                continue
+            # 從後往前找: 後加入的畫在上層
+            idx = next(
+                (i for i in range(len(items) - 1, -1, -1) if hit(pos, items[i])), -1
+            )
+            if idx < 0:
+                continue
+            self.pushHistory()
+            items.pop(idx)
+            # 刪掉之後既有的 focus / 多選 index 都可能錯位, 直接清掉
+            self._resetSelection()
+            g_param.user_labeling = True
+            self.update()
+            return True
+        return False
+
     def loadBboxFromXml(self, xml_path) -> bool:
         """
         讀取xml的bbox與polygon資訊
@@ -1762,14 +1806,17 @@ class ImageWidget(QWidget):
         if self.on_mouse_press_callback:
             self.on_mouse_press_callback(event)
 
-        # 中鍵與右鍵都是平移。右鍵只做這件事: 先前還兼「原地 click 取消進行中的
-        # 繪製」, 但畫 polygon 畫到一半誤點右鍵就整個重來, 代價太大 —— 取消一律
-        # 走 Esc
-        if self.pixmap and event.button() in (
-            Qt.MouseButton.MiddleButton,
-            Qt.MouseButton.RightButton,
-        ):
+        # 平移只走中鍵: 右鍵另有刪除功能, 兩者共用一個鍵時, 拖曳平移沒拖開
+        # 就會被判成 click 而誤刪
+        if self.pixmap and event.button() == Qt.MouseButton.MiddleButton:
             self._startPan(event.position())
+            return
+
+        # 右鍵只刪除 (cfg.right_click_delete), 不取消進行中的繪製: 先前曾兼
+        # 「click 取消」, 但畫 polygon 畫到一半誤點右鍵就整個重來, 代價太大 ——
+        # 取消一律走 Esc
+        if self.pixmap and event.button() == Qt.MouseButton.RightButton:
+            self._deleteAnnotationAt(event.pos())
             return
 
         if event.button() == Qt.MouseButton.LeftButton:
@@ -2052,7 +2099,7 @@ class ImageWidget(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
-        # 平移結束 (中鍵或右鍵拖曳)
+        # 平移結束 (中鍵拖曳)
         if self._panning:
             self._panning = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
