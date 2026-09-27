@@ -28,6 +28,8 @@ dependencies = [
     "orjson==3.11.9",
     # 刪除圖片與標籤時走資源回收筒而非 unlink，誤刪可還原（純 Python，無 C 擴充）
     "send2trash==2.1.0",
+    # Categorize Media 輸出 Excel (.xlsx) 索引檔
+    "openpyxl==3.1.5",
 ]
 
 # torch / torchvision 從 PyTorch 官方 CUDA 13.0 (cu130) index 安裝，

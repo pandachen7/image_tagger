@@ -52,7 +52,7 @@ uv run main.py
 | Mask 工具 | Draw / Erase / Fill 遮罩繪製，但訓練不需要 |
 | VOC → YOLO 轉換 | 支援 BBox、Seg、OBB 三種輸出格式，轉換進度條、未對應 class 記錄 |
 | Train YOLO (GUI) | 直接在 GUI 內呼叫 ultralytics 訓練，可設定基本參數與進階參數（優化器 / 增強 / cache 等），訓練中顯示進度與 mAP；支援指定既有 `.pt` 做 Resume / Fine-tune 再訓練 |
-| Categorize Media | 用 YOLO/SAM3 模型偵測後，依最多次物件名稱決定分類。預設只產生 CSV / SQLite 索引檔而不動原始檔案；也可選擇搬到同名子資料夾（搬移不可逆） |
+| Categorize Media | 用 YOLO/SAM3 模型偵測後，依最多次物件名稱決定分類。預設只產生 CSV / Excel / SQLite 索引檔而不動原始檔案；也可選擇搬到同名子資料夾（搬移不可逆） |
 | 影片標註 | 逐幀標註，支援自動抽幀儲存；狀態列顯示 `frame 目前幀 / 總幀數` |
 | 縮放與平移 | 滾輪以游標為錨點縮放、中鍵/右鍵拖曳平移、`f` 還原檢視；換到同尺寸的影像會保留縮放位置，方便逐張比對同一區域 |
 | 標註調整 | 選取中的框有 8 個控制點：四角一次改兩個方向，四邊只改單一方向；拖框內整體移動 |

@@ -1,6 +1,6 @@
 # Categorize Media 對話框：依 YOLO/SAM3 偵測結果分類媒體檔案
-# 輸出方式可選只產生 CSV / SQLite 索引檔 (不動原始檔案), 或搬移到子資料夾
-# 更新日期: 2026-09-20
+# 輸出方式可選只產生 CSV / Excel / SQLite 索引檔 (不動原始檔案), 或搬移到子資料夾
+# 更新日期: 2026-09-27
 from __future__ import annotations
 
 import csv
@@ -8,9 +8,12 @@ import shutil
 import sqlite3
 from collections import Counter
 from pathlib import Path
+from typing import ClassVar
 
 import cv2
 import orjson
+from openpyxl import Workbook
+from openpyxl.styles import Font
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
@@ -40,7 +43,7 @@ DetectResult = tuple[Path, str, dict[str, int]]
 
 
 class CategorizeMediaDialog(QDialog):
-    """依 YOLO 偵測結果分類媒體檔案：輸出 CSV / SQLite 索引, 或搬移到子資料夾"""
+    """依 YOLO 偵測結果分類媒體檔案：輸出 CSV / Excel / SQLite 索引, 或搬移到子資料夾"""
 
     DEFAULT_MODEL = "yolo26s.pt"
     NOT_DETECTED_FOLDER = "not_detected"
@@ -50,12 +53,19 @@ class CategorizeMediaDialog(QDialog):
     INVALID_NAME_CHARS = '<>:"/\\|?*'
     # 索引檔固定產在目標資料夾內, 不另外跳存檔對話框
     RESULT_CSV_NAME = "categorize_result.csv"
+    RESULT_XLSX_NAME = "categorize_result.xlsx"
     RESULT_DB_NAME = "categorize_result.db"
     RESULT_TABLE = "categorize_result"
     RESULT_FIELDS = (
         "file_name", "file_path", "category",
         "detections", "total_count", "media_type",
     )
+    # 輸出方式 → 索引檔檔名
+    RESULT_NAMES: ClassVar[dict[str, str]] = {
+        "csv": RESULT_CSV_NAME,
+        "excel": RESULT_XLSX_NAME,
+        "sqlite": RESULT_DB_NAME,
+    }
 
     def __init__(
         self, parent=None, default_folder: str = "", default_model: str = ""
@@ -128,11 +138,15 @@ class CategorizeMediaDialog(QDialog):
         # 搬移是不可逆的, 排在最後一項; 預設落在不動原始檔案的 CSV
         self.output_combo.addItem(f"產生 CSV 檔 ({self.RESULT_CSV_NAME})", "csv")
         self.output_combo.addItem(
+            f"產生 Excel 檔 ({self.RESULT_XLSX_NAME})", "excel"
+        )
+        self.output_combo.addItem(
             f"產生 SQLite 檔 ({self.RESULT_DB_NAME})", "sqlite"
         )
         self.output_combo.addItem("搬移到子資料夾 (不可逆)", "move")
         output_tips = (
             "只產生 CSV 索引檔, 原始檔案留在原地",
+            "只產生 Excel 索引檔 (內容同 CSV), 原始檔案留在原地",
             "只產生 SQLite 索引檔, 原始檔案留在原地",
             "把檔案搬到以類別命名的子資料夾, 原始檔案位置會改變且無法還原",
         )
@@ -258,7 +272,7 @@ class CategorizeMediaDialog(QDialog):
                 f"檔案會搬移到 {dest} （原始檔案位置會改變, 無法還原）"
             )
         else:
-            name = self.RESULT_CSV_NAME if mode == "csv" else self.RESULT_DB_NAME
+            name = self.RESULT_NAMES[mode]
             self.output_hint.setText(
                 f"索引檔：{Path(folder, name)} （原始檔案不會搬動）"
             )
@@ -420,12 +434,12 @@ class CategorizeMediaDialog(QDialog):
 
     def _prepare_output_path(self, base: Path, output_mode: str) -> Path | None:
         """回傳索引檔路徑, 已存在則先問是否覆蓋; 使用者取消回傳 None"""
-        name = self.RESULT_CSV_NAME if output_mode == "csv" else self.RESULT_DB_NAME
+        name = self.RESULT_NAMES[output_mode]
         out_path = base / name
         if not out_path.exists():
             return out_path
 
-        if output_mode == "csv":
+        if output_mode != "sqlite":
             msg = f"{name} 已存在，是否覆蓋？"
         else:
             msg = (
@@ -486,13 +500,15 @@ class CategorizeMediaDialog(QDialog):
     def _output_index(
         self, out_path: Path, output_mode: str, results: list[DetectResult]
     ) -> bool:
-        """產生 CSV / SQLite 索引檔 (不搬動原始檔案), 顯示摘要並回傳是否成功"""
+        """產生 CSV / Excel / SQLite 索引檔 (不搬動原始檔案), 顯示摘要並回傳是否成功"""
         self.status_label.setText("正在寫入索引檔...")
         QApplication.processEvents()
 
         rows = self._build_rows(results)
         if output_mode == "csv":
             ok = self._write_csv(out_path, rows)
+        elif output_mode == "excel":
+            ok = self._write_excel(out_path, rows)
         else:
             ok = self._write_sqlite(out_path, rows)
 
@@ -545,6 +561,31 @@ class CategorizeMediaDialog(QDialog):
                 writer.writerows(rows)
         except Exception:
             log.e(f"CSV 索引檔寫入失敗: {out_path}")
+            return False
+        return True
+
+    def _write_excel(self, out_path: Path, rows: list[dict]) -> bool:
+        """寫出 Excel 索引檔 (欄位同 CSV), 回傳是否成功"""
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = self.RESULT_TABLE
+            ws.append(list(self.RESULT_FIELDS))
+            for row in rows:
+                ws.append([row[k] for k in self.RESULT_FIELDS])
+            # 標題列粗體並凍結, 加上篩選鈕, 開檔就能直接依 category 篩選
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
+            # 欄寬依內容最長者估算, 上限 80 以免 file_path 撐得太寬
+            for col in ws.columns:
+                width = max(len(str(c.value)) for c in col if c.value is not None)
+                ws.column_dimensions[col[0].column_letter].width = min(width + 2, 80)
+            # 檔案被 Excel 開著時這裡會 PermissionError, 交給下方 except 記 log
+            wb.save(out_path)
+        except Exception:
+            log.e(f"Excel 索引檔寫入失敗: {out_path}")
             return False
         return True
 
