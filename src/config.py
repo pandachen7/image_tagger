@@ -1,6 +1,6 @@
 # 系統設定載入：cfg/system.yaml 不存在時自動生成預設範本（含註解）；
 # 存在時依 schema migrate（補新欄位、移除過時欄位），保留使用者既有設定值與註解。
-# 更新日期: 2026-09-10
+# 更新日期: 2026-09-27
 import multiprocessing as mp
 from pathlib import Path
 
@@ -59,6 +59,21 @@ enable_obb: false
 # 是否啟用 SAM3 模型（需另外申請下載 sam3.pt）
 enable_sam3: false
 """
+
+
+def _template_comments() -> dict[str, str]:
+    """從 _DEFAULT_TEMPLATE 取出每個頂層 key 上方的註解 (去掉 "# "), migrate 補欄位時沿用"""
+    comments: dict[str, str] = {}
+    pending: list[str] = []
+    for line in _DEFAULT_TEMPLATE.splitlines():
+        if line.startswith("#"):
+            pending.append(line.lstrip("#").strip())
+        elif line and not line[0].isspace() and ":" in line:
+            comments[line.split(":", 1)[0]] = "\n".join(pending)
+            pending = []
+        elif not line.strip():
+            pending = []
+    return comments
 
 
 class Config(BaseModel):
@@ -127,6 +142,7 @@ def load_config(file_path: str = "cfg/system.yaml") -> Config:
     missing = schema_keys - data_keys    # schema 新增但 yaml 沒有 → 補上
 
     changed = False
+    template_comments = _template_comments()
     for key in obsolete:
         try:
             del data[key]
@@ -134,8 +150,13 @@ def load_config(file_path: str = "cfg/system.yaml") -> Config:
             log.i(f"移除過時設定: {key}")
         except Exception as e:
             log.w(f"移除設定 {key} 失敗: {e}")
-    for key in missing:
+    # 依 schema 順序補上, 並沿用範本註解; 開頭空行讓它與上一個欄位隔開
+    for key in (k for k in Config.model_fields if k in missing):
         data[key] = getattr(cfg_obj, key)
+        comment = template_comments.get(key)
+        data.yaml_set_comment_before_after_key(
+            key, before="\n" + comment if comment else ""
+        )
         changed = True
         log.i(f"新增預設設定: {key} = {getattr(cfg_obj, key)}")
 
